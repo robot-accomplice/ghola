@@ -77,8 +77,27 @@ func handleFlags() {
 		os.Exit(BadFlag.Int())
 	}
 
-	if options.data != "" && options.method == "GET" {
-		options.method = "POST"
+	if options.data != "" && !flag.CommandLine.Changed("request") {
+		options.method = fasthttp.MethodPost
+	}
+
+	switch options.method {
+	case fasthttp.MethodGet:
+	case fasthttp.MethodPost:
+	case fasthttp.MethodPut:
+	case fasthttp.MethodDelete:
+	case fasthttp.MethodPatch:
+		fallthrough
+	case fasthttp.MethodOptions:
+		fallthrough
+	case fasthttp.MethodHead:
+		fallthrough
+	case fasthttp.MethodConnect:
+		fallthrough
+	case fasthttp.MethodTrace:
+		fmt.Println("HTTP method not currently supported: ", options.method)
+	default:
+		fmt.Println("Invalid HTTP method: ", options.method)
 		os.Exit(BadFlag.Int())
 	}
 }
