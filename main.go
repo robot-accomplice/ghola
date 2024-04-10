@@ -86,9 +86,9 @@ func fetchURL() (req fasthttp.Request, rsp fasthttp.Response, e error) {
 	req.SetBodyString(options.data)
 
 	for _, h := range options.headers {
-		hkv := strings.SplitN(h, ": ", 1)
-		if len(hkv) != 2 {
-			// bad header
+		hkv := strings.SplitN(h, ": ", 2)
+		if len(hkv) < 2 {
+			fmt.Printf("Warning: invalid header: %s\n", h)
 			continue
 		}
 		req.Header.Add(hkv[0], hkv[1])
