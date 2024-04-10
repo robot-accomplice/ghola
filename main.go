@@ -45,10 +45,10 @@ func handleFlags() {
 	flag.BoolVarP(&options.silent, "silent", "s", false, "Silent mode")
 	flag.StringVarP(&options.transfer, "upload-file", "T", "", "Transfer local FILE to destination") // TODO
 	flag.StringVarP(&options.user, "user", "u", "", "Server user and password <user:password>") // TODO
-	flag.StringVarP(&options.agent, "user-agent", "A", "", "Send User-Agent <name> to server")
+	flag.StringVarP(&options.agent, "user-agent", "A", "go-gurl", "Send User-Agent <name> to server")
 	flag.StringVarP(&options.method, "request", "X", "GET", "HTTP request method: GET, POST, PUT, DELETE")
 	flag.StringSliceVarP(&options.headers, "header", "H", []string{"Content-Type: application/json"}, "Pass custom headers to server <key: value>")
-	flag.StringSliceVarP(&options.accept, "accept", "a", []string{"Accept: */*"}, "accept headers")
+	flag.StringSliceVarP(&options.accept, "accept", "a", []string{"*/*"}, "Accept headers (comma separated)")
 	flag.BoolVarP(&options.keepOpen, "keep-open", "", false, "keep connection open") // TODO
 	flag.BoolVarP(&options.verbose, "verbose", "v", false, "verbose mode")
 	flag.Usage = usage
@@ -93,6 +93,12 @@ func fetchURL() (req fasthttp.Request, rsp fasthttp.Response, e error) {
 		}
 		req.Header.Add(hkv[0], hkv[1])
 	}
+	req.Header.Add("User-Agent", options.agent)
+
+	for _, a := range options.accept {
+		req.Header.Add("Accept", a)
+	}
+	
 	req.Header.SetMethod(options.method)
 
 	if e = fasthttp.Do(&req, &rsp); e != nil {
