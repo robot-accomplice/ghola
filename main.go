@@ -39,12 +39,12 @@ func handleFlags() {
 	flag.StringVarP(&options.data, "data", "d", "", "HTTP POST data")
 	flag.BoolVarP(&options.fail, "fail", "f", false, "Fail silently (no output at all) on HTTP errors") // TODO
 	var help *bool = flag.BoolP("help", "h", false, "help")
-	flag.BoolVarP(&options.include, "include", "i", false, "Include protocol response headers in the output") // TODO
-	flag.StringVarP(&options.output, "output", "o", "", "Write to file instead of stdout") // TODO
+	flag.BoolVarP(&options.include, "include", "i", false, "Include protocol response headers in the output")   // TODO
+	flag.StringVarP(&options.output, "output", "o", "", "Write to file instead of stdout")                      // TODO
 	flag.StringVarP(&options.remote, "remote-name", "O", "", "Write output to a file named as the remote file") // TODO
 	flag.BoolVarP(&options.silent, "silent", "s", false, "Silent mode")
 	flag.StringVarP(&options.transfer, "upload-file", "T", "", "Transfer local FILE to destination") // TODO
-	flag.StringVarP(&options.user, "user", "u", "", "Server user and password <user:password>") // TODO
+	flag.StringVarP(&options.user, "user", "u", "", "Server user and password <user:password>")      // TODO
 	flag.StringVarP(&options.agent, "user-agent", "A", "go-gurl", "Send User-Agent <name> to server")
 	flag.StringVarP(&options.method, "request", "X", "GET", "HTTP request method: GET, POST, PUT, DELETE")
 	flag.StringSliceVarP(&options.headers, "header", "H", []string{"Content-Type: application/json"}, "Pass custom headers to server <key: value>")
@@ -70,8 +70,8 @@ func handleFlags() {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "go-gurl version %s\n", Version)
-	fmt.Fprintln(os.Stderr, "Usage:")
+	fmt.Printf("go-gurl version %s\n", Version)
+	fmt.Println("Usage: go-gurl [options...] <url>")
 
 	flag.PrintDefaults()
 	os.Exit(0)
@@ -98,7 +98,7 @@ func fetchURL() (req fasthttp.Request, rsp fasthttp.Response, e error) {
 	for _, a := range options.accept {
 		req.Header.Add("Accept", a)
 	}
-	
+
 	req.Header.SetMethod(options.method)
 
 	if e = fasthttp.Do(&req, &rsp); e != nil {
@@ -110,7 +110,7 @@ func fetchURL() (req fasthttp.Request, rsp fasthttp.Response, e error) {
 
 func main() {
 	handleFlags()
-	req, rsp, e := fetchURL();
+	req, rsp, e := fetchURL()
 	if !options.silent {
 		if e == nil {
 			if options.verbose {
