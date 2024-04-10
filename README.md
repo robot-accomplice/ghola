@@ -22,14 +22,9 @@ Usage: go-gurl [options...] <url>
   -f, --fail                 Fail silently (no output at all) on HTTP errors
   -H, --header strings       Pass custom headers to server <key: value> (default [Content-Type: application/json])
   -h, --help                 help
-  -i, --include              Include protocol response headers in the output
-      --keep-open            keep connection open
-  -o, --output string        Write to file instead of stdout
-  -O, --remote-name string   Write output to a file named as the remote file
   -X, --request string       HTTP request method: GET, POST, PUT, DELETE (default "GET")
   -s, --silent               Silent mode
   -T, --upload-file string   Transfer local FILE to destination
-  -u, --user string          Server user and password <user:password>
   -A, --user-agent string    Send User-Agent <name> to server (default "go-gurl")
   -v, --verbose              verbose mode
 ```
