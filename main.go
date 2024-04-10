@@ -10,6 +10,20 @@ import (
 	"strings"
 )
 
+type ExitCode int
+
+const (
+	NoError ExitCode = iota
+	BadFlag
+	SendFailed
+	ReadFileFailed
+	WriteFileFailed
+)
+
+func (e ExitCode) Int() int {
+	return int(e)
+}
+
 type Options struct {
 	url      string
 	method   string
@@ -66,15 +80,14 @@ func handleFlags() {
 
 	if options.data != "" && options.method == "GET" {
 		options.method = "POST"
+		os.Exit(BadFlag.Int())
 	}
 }
 
 func usage() {
 	fmt.Printf("go-gurl version %s\n", Version)
 	fmt.Println("Usage: go-gurl [options...] <url>")
-
 	flag.PrintDefaults()
-	os.Exit(0)
 }
 
 func fetchURL() (req fasthttp.Request, rsp fasthttp.Response, e error) {
@@ -113,6 +126,7 @@ func main() {
 	req, rsp, e := fetchURL()
 	if !options.silent {
 		if e == nil {
+				os.Exit(WriteFileFailed.Int())
 			if options.verbose {
 				fmt.Printf("Wrote: %d bytes\n", len([]byte(options.data)))
 				fmt.Printf("Read : %d bytes\n", len(rsp.Body()))
@@ -123,7 +137,7 @@ func main() {
 			fmt.Printf("Response:\n%s\n", bytes.Trim(rsp.Body(), "\n"))
 		} else {
 			fmt.Printf("Failed to send request: %s\n", fmt.Errorf("%w", e))
-			os.Exit(2)
-		}
+		fmt.Printf("Failed to send request: %s\n", fmt.Errorf("%w", e))
+		os.Exit(SendFailed.Int())
 	}
 }
