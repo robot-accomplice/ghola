@@ -37,19 +37,19 @@ func handleFlags() {
 	options.url = args[len(args)-1]
 
 	flag.StringVarP(&options.data, "data", "d", "", "HTTP POST data")
-	flag.BoolVarP(&options.fail, "fail", "f", false, "Fail silently (no output at all) on HTTP errors")
+	flag.BoolVarP(&options.fail, "fail", "f", false, "Fail silently (no output at all) on HTTP errors") // TODO
 	var help *bool = flag.BoolP("help", "h", false, "help")
-	flag.BoolVarP(&options.include, "include", "i", false, "Include protocol response headers in the output")
-	flag.StringVarP(&options.output, "output", "o", "", "Write to file instead of stdout")
-	flag.StringVarP(&options.remote, "remote-name", "O", "", "Write output to a file named as the remote file")
+	flag.BoolVarP(&options.include, "include", "i", false, "Include protocol response headers in the output") // TODO
+	flag.StringVarP(&options.output, "output", "o", "", "Write to file instead of stdout") // TODO
+	flag.StringVarP(&options.remote, "remote-name", "O", "", "Write output to a file named as the remote file") // TODO
 	flag.BoolVarP(&options.silent, "silent", "s", false, "Silent mode")
-	flag.StringVarP(&options.transfer, "upload-file", "T", "", "Transfer local FILE to destination")
-	flag.StringVarP(&options.user, "user", "u", "", "Server user and password <user:password>")
+	flag.StringVarP(&options.transfer, "upload-file", "T", "", "Transfer local FILE to destination") // TODO
+	flag.StringVarP(&options.user, "user", "u", "", "Server user and password <user:password>") // TODO
 	flag.StringVarP(&options.agent, "user-agent", "A", "", "Send User-Agent <name> to server")
 	flag.StringVarP(&options.method, "request", "X", "GET", "HTTP request method: GET, POST, PUT, DELETE")
 	flag.StringSliceVarP(&options.headers, "header", "H", []string{"Content-Type: application/json"}, "Pass custom headers to server <key: value>")
 	flag.StringSliceVarP(&options.accept, "accept", "a", []string{"Accept: */*"}, "accept headers")
-	flag.BoolVarP(&options.keepOpen, "keep-open", "", false, "keep connection open")
+	flag.BoolVarP(&options.keepOpen, "keep-open", "", false, "keep connection open") // TODO
 	flag.BoolVarP(&options.verbose, "verbose", "v", false, "verbose mode")
 	flag.Usage = usage
 	flag.Parse()
