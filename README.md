@@ -37,7 +37,7 @@ Usage: go-gurl [options...] <url>
 ## Help
 
 ```shell
-go-curl -h
+go-gurl -h
 ```
 
 ## Authors
