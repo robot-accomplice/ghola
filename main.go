@@ -142,7 +142,7 @@ func handleTransfer() {
 	if options.transfer != "" {
 		if options.data != "" {
 			fmt.Println("Options transfer and data are not compatible. Please choose one or the other, but not both")
-			os.Exit(4)
+			os.Exit(BadFlag.Int())
 		}
 		if b, e := os.ReadFile(options.transfer); e != nil {
 			fmt.Printf("Unable to read file at %s: %s\n", options.transfer, e.Error())
