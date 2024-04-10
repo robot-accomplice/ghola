@@ -157,15 +157,15 @@ func handleTransfer() {
 
 func handleRequestResponse() {
 	if req, rsp, e := fetchURL(); e == nil {
-		httpError := rsp.StatusCode() >= 200 && rsp.StatusCode() < 300
-		if options.output != "" && !(options.fail && httpError) {
+		httpOk := rsp.StatusCode() >= 200 && rsp.StatusCode() < 300
+		if options.output != "" && !(options.fail && !httpOk) {
 			if err := os.WriteFile(options.output, rsp.Body(), 0666); err != nil {
 				fmt.Printf("Error writing to file %s: %s\n", options.output, err.Error())
 				os.Exit(WriteFileFailed.Int())
 			}
 		}
 
-		if !options.silent && options.output == "" && !(options.fail && httpError) {
+		if options.output == "" && !options.silent && !(options.fail && !httpOk) {
 			if options.verbose {
 				fmt.Printf("Wrote: %d bytes\n", len([]byte(options.data)))
 				fmt.Printf("Read : %d bytes\n", len(rsp.Body()))
