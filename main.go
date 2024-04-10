@@ -143,7 +143,34 @@ func handleTransfer() {
 		if options.data != "" {
 			fmt.Println("Options transfer and data are not compatible. Please choose one or the other, but not both")
 			os.Exit(4)
+		}
+		if b, e := os.ReadFile(options.transfer); e != nil {
+			fmt.Printf("Unable to read file at %s: %s\n", options.transfer, e.Error())
+			os.Exit(ReadFileFailed.Int())
+		} else if len(b) > 0 {
+			options.data = string(b)
+		} else {
+			fmt.Printf("Warning, transfer file %s appears to be empty\n", options.transfer)
+		}
+	}
+}
+
+// isHttpError may become a less primitive check in the future
+func isHttpError(r fasthttp.Response) bool {
+	return r.StatusCode() >= 200 && r.StatusCode() < 300
+}
+
+func handleRequestResponse() {
+	if req, rsp, e := fetchURL(); e == nil {
+		httpError := isHttpError(rsp)
+		if options.output != "" && !(options.fail && httpError) {
+			if err := os.WriteFile(options.output, rsp.Body(), 0666); err != nil {
+				fmt.Printf("Error writing to file %s: %s\n", options.output, err.Error())
 				os.Exit(WriteFileFailed.Int())
+			}
+		}
+
+		if !options.silent && options.output == "" && !(options.fail && httpError) {
 			if options.verbose {
 				fmt.Printf("Wrote: %d bytes\n", len([]byte(options.data)))
 				fmt.Printf("Read : %d bytes\n", len(rsp.Body()))
