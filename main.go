@@ -33,7 +33,6 @@ type Options struct {
 	transfer string
 	headers  []string
 	accept   []string
-	keepOpen bool
 	verbose  bool
 	fail     bool
 	include  bool
@@ -43,8 +42,8 @@ type Options struct {
 	agent    string
 }
 
-var Version string = "1.0.0a"
-var options Options = Options{}
+var Version = "1.0.0a"
+var options = Options{}
 
 func handleFlags() {
 	args := os.Args[1:]
@@ -52,7 +51,7 @@ func handleFlags() {
 
 	flag.StringVarP(&options.data, "data", "d", "", "HTTP POST data")
 	flag.BoolVarP(&options.fail, "fail", "f", false, "Fail silently (no output at all) on HTTP errors") // TODO
-	var help *bool = flag.BoolP("help", "h", false, "help")
+	var help = flag.BoolP("help", "h", false, "help")
 	flag.BoolVarP(&options.include, "include", "i", false, "Include protocol response headers in the output")   // TODO
 	flag.StringVarP(&options.output, "output", "o", "", "Write to file instead of stdout")                      // TODO
 	flag.StringVarP(&options.remote, "remote-name", "O", "", "Write output to a file named as the remote file") // TODO
@@ -63,19 +62,19 @@ func handleFlags() {
 	flag.StringVarP(&options.method, "request", "X", "GET", "HTTP request method: GET, POST, PUT, DELETE")
 	flag.StringSliceVarP(&options.headers, "header", "H", []string{"Content-Type: application/json"}, "Pass custom headers to server <key: value>")
 	flag.StringSliceVarP(&options.accept, "accept", "a", []string{"*/*"}, "Accept headers (comma separated)")
-	flag.BoolVarP(&options.keepOpen, "keep-open", "", false, "keep connection open") // TODO
 	flag.BoolVarP(&options.verbose, "verbose", "v", false, "verbose mode")
 	flag.Usage = usage
 	flag.Parse()
 
 	if *help {
 		usage()
-		return
+		os.Exit(NoError.Int())
 	}
 
 	if options.url == "" {
 		fmt.Println("URL is mandatory")
 		flag.Usage()
+		os.Exit(BadFlag.Int())
 	}
 
 	if options.data != "" && options.method == "GET" {
@@ -107,7 +106,6 @@ func fetchURL() (req fasthttp.Request, rsp fasthttp.Response, e error) {
 		req.Header.Add(hkv[0], hkv[1])
 	}
 	req.Header.Add("User-Agent", options.agent)
-
 	for _, a := range options.accept {
 		req.Header.Add("Accept", a)
 	}
@@ -121,11 +119,11 @@ func fetchURL() (req fasthttp.Request, rsp fasthttp.Response, e error) {
 	return
 }
 
-func main() {
-	handleFlags()
-	req, rsp, e := fetchURL()
-	if !options.silent {
-		if e == nil {
+func handleTransfer() {
+	if options.transfer != "" {
+		if options.data != "" {
+			fmt.Println("Options transfer and data are not compatible. Please choose one or the other, but not both")
+			os.Exit(4)
 				os.Exit(WriteFileFailed.Int())
 			if options.verbose {
 				fmt.Printf("Wrote: %d bytes\n", len([]byte(options.data)))
@@ -135,8 +133,8 @@ func main() {
 				fmt.Printf("Response Headers:\n%s\n", bytes.Trim(rsp.Header.Header(), "\n"))
 			}
 			fmt.Printf("Response:\n%s\n", bytes.Trim(rsp.Body(), "\n"))
-		} else {
-			fmt.Printf("Failed to send request: %s\n", fmt.Errorf("%w", e))
+		}
+	} else if !options.silent {
 		fmt.Printf("Failed to send request: %s\n", fmt.Errorf("%w", e))
 		os.Exit(SendFailed.Int())
 	}
