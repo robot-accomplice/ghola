@@ -110,17 +110,20 @@ func fetchURL() (req fasthttp.Request, rsp fasthttp.Response, e error) {
 
 func main() {
 	handleFlags()
-	if req, rsp, e := fetchURL(); e == nil {
-		if options.verbose {
-			fmt.Printf("Wrote: %d bytes\n", len([]byte(options.data)))
-			fmt.Printf("Read : %d bytes\n", len(rsp.Body()))
-			fmt.Printf("Request Headers:\n%s\n", bytes.Trim(req.Header.Header(), "\n"))
-			fmt.Printf("Request Body:\n%s\n\n", req.Body())
-			fmt.Printf("Response Headers:\n%s\n", bytes.Trim(rsp.Header.Header(), "\n"))
+	req, rsp, e := fetchURL();
+	if !options.silent {
+		if e == nil {
+			if options.verbose {
+				fmt.Printf("Wrote: %d bytes\n", len([]byte(options.data)))
+				fmt.Printf("Read : %d bytes\n", len(rsp.Body()))
+				fmt.Printf("Request Headers:\n%s\n", bytes.Trim(req.Header.Header(), "\n"))
+				fmt.Printf("Request Body:\n%s\n\n", req.Body())
+				fmt.Printf("Response Headers:\n%s\n", bytes.Trim(rsp.Header.Header(), "\n"))
+			}
+			fmt.Printf("Response:\n%s\n", bytes.Trim(rsp.Body(), "\n"))
+		} else {
+			fmt.Printf("Failed to send request: %s\n", fmt.Errorf("%w", e))
+			os.Exit(2)
 		}
-		fmt.Printf("Response:\n%s\n", bytes.Trim(rsp.Body(), "\n"))
-	} else {
-		fmt.Printf("Failed to send request: %s\n", fmt.Errorf("%w", e))
-		os.Exit(2)
 	}
 }
