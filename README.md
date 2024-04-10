@@ -52,4 +52,4 @@ Jonathan Machen
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE.md file (TODO) for details
+This project is licensed under the MIT License - see the LICENSE.md file for details
