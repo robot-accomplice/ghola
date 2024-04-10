@@ -185,3 +185,9 @@ func handleRequestResponse() {
 		os.Exit(SendFailed.Int())
 	}
 }
+
+func main() {
+	handleFlags()
+	handleTransfer()
+	handleRequestResponse()
+}
