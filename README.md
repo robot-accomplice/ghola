@@ -1,6 +1,6 @@
 # Project Title
 
-_go-gurl_, curl alternative, written in go-lang
+_go-gurl_ (Go Get URL), curl alternative, written in go-lang
 
 ## Description
 
