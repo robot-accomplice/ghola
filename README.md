@@ -4,7 +4,7 @@ _go-gurl_, curl alternative, written in go-lang
 
 ## Description
 
-An in-depth paragraph about your project and overview of use.
+This project started as a lark, but started seeming like a worthwhile repository for some ideas born out of prior go development experiences.  Perhaps I can capture some worthwhile primitive patterns here while simultaneously producing a platform independent version of curl that I (and hopefully others) enjoy using.
 
 ## Getting Started
 
