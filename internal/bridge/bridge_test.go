@@ -14,7 +14,7 @@ func newBridgeServer(upstream fasthttp.RequestHandler) (*fasthttputil.InmemoryLi
 	upstreamSrv := &fasthttp.Server{Handler: upstream}
 	go upstreamSrv.Serve(upstreamLn) //nolint:errcheck
 
-	do := func(req *fasthttp.Request, resp *fasthttp.Response) error {
+	do := func(req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
 		c := &fasthttp.Client{
 			Dial: func(addr string) (net.Conn, error) { return upstreamLn.Dial() },
 		}
@@ -252,7 +252,7 @@ func TestBridge_InvalidJSON(t *testing.T) {
 }
 
 func TestBridge_UpstreamFailure(t *testing.T) {
-	failDoer := func(req *fasthttp.Request, resp *fasthttp.Response) error {
+	failDoer := func(req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
 		return net.ErrClosed
 	}
 

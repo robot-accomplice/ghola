@@ -56,6 +56,7 @@ type Options struct {
 	Snoop       bool
 	Chain       string
 	Serve       bool
+	BufferSize  int
 }
 
 // Version is set at build time via -ldflags.
@@ -93,6 +94,7 @@ func ParseFlags(args []string) (*Options, bool, error) {
 	fs.BoolVarP(&opts.Snoop, "snoop", "S", false, "Snoop Mode: Pre-flight check of headers and security posture")
 	fs.StringVarP(&opts.Chain, "chain", "c", "", "Chain-Aware Shortcut: Pre-fills RPC headers for [eth, base, solana]")
 	fs.BoolVar(&opts.Serve, "serve", false, "Run as local RPC bridge on 127.0.0.1:18789")
+	fs.IntVar(&opts.BufferSize, "buffer-size", 4096, "Read buffer size for large headers")
 
 	fs.Usage = func() {
 		fmt.Print(banner)
