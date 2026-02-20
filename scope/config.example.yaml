@@ -1,0 +1,7 @@
+# Scope configuration
+# Copy to config.yaml and adjust settings.
+
+# Route HTTP requests through the ghola sidecar for stealth capabilities
+# (drift jitter, ghost signing, retry with backoff).
+# Requires `ghola` to be installed and in PATH.
+use_ghola_sidecar: false

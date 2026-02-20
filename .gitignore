@@ -1,0 +1,20 @@
+# Compiled binary
+/ghola
+/ghola.exe
+
+# Test artifacts
+coverage.out
+get
+test_output.txt
+
+# Goreleaser output
+dist/
+
+# Rust build artifacts
+scope/target/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store

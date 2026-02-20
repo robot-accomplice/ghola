@@ -1,50 +1,117 @@
-# Project Title
+# Ghola
 
-_go-gurl_ (Go Get URL), curl alternative, written in go-lang
+[![CI](https://github.com/robot-accomplice/ghola/actions/workflows/ci.yml/badge.svg)](https://github.com/robot-accomplice/ghola/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/robot-accomplice/ghola)](https://goreportcard.com/report/github.com/robot-accomplice/ghola)
+[![GoDoc](https://pkg.go.dev/badge/github.com/robot-accomplice/ghola)](https://pkg.go.dev/github.com/robot-accomplice/ghola)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-## Description
+**Ghola** is a high-performance, Go-based HTTP client designed as a tactical scout for blockchain forensic analysis and stealthy data acquisition. Built on [fasthttp](https://github.com/valyala/fasthttp), it compiles to a single zero-dependency binary.
 
-This project started as a lark, but started seeming like a worthwhile repository for some ideas born out of prior go development experiences.  Perhaps I can capture some worthwhile primitive patterns here while simultaneously producing a platform independent version of curl that I (and hopefully others) enjoy using.
+## Features
 
-## Getting Started
+### Tactical Stealth
 
-### Dependencies
+| Flag | Description |
+| ------ | ------------- |
+| `-D, --drift <ms>` | **Temporal Drift** -- injects cryptographically random jitter into request timing to evade bot-detection and timing analysis. |
+| `-G, --ghost` | **Ghost Sign** -- adds a unique `X-Ghola-Identity` header (SHA256 hash of timestamp + URL) for distributed auditing and traceability. |
 
-No external dependencies
+### Forensic & Companion Tools
 
-### Executing program
+| Flag | Description |
+| ------ | ------------- |
+| `-S, --snoop` | **Snoop Mode** -- pre-flight reconnaissance of target headers, security posture, and WAF detection (Cloudflare, X-Ray). |
+| `-c, --chain <type>` | **Chain Shortcuts** -- pre-fills RPC headers for `eth`, `base`, or `solana` ecosystems. |
+| `-r, --retry <n>` | **Autonomous Retries** -- exponential backoff with configurable base delay (`-b`). |
 
-```shell
-go-gurl version 1.0.0a
-Usage: go-gurl [options...] <url>
-  -a, --accept strings       Accept headers (comma separated) (default [*/*])
-  -d, --data string          HTTP POST data
-  -f, --fail                 Fail silently (no output at all) on HTTP errors
-  -H, --header strings       Pass custom headers to server <key: value> (default [Content-Type: application/json])
-  -h, --help                 help
-  -X, --request string       HTTP request method: GET, POST, PUT, DELETE (default "GET")
-  -s, --silent               Silent mode
-  -T, --upload-file string   Transfer local FILE to destination
-  -A, --user-agent string    Send User-Agent <name> to server (default "go-gurl")
-  -v, --verbose              verbose mode
+### Core Utility
+
+| Flag | Description |
+| ------ | ------------- |
+| `-n <int>` | **Concurrent connections** via goroutines (first successful response wins). |
+| `-w, --wget` | **Wget mode** -- auto-saves to local file using the inferred remote filename. |
+| `-u <user:pass>` | **Basic Auth** -- native HTTP basic authentication. |
+| `-T <file>` | **Upload** -- send a local file as the request body. |
+| `-o <file>` | **Output** -- write response body to a file. |
+| `-H <header>` | **Custom headers** -- repeatable. Default: `Content-Type: application/json`. |
+| `-X <method>` | **HTTP method** -- defaults to GET, auto-switches to POST when `-d` is used. |
+| `-i` | **Include headers** in output. |
+| `-v` | **Verbose** -- show ghost signature and extra diagnostics. |
+| `-s` | **Silent** -- suppress all output. |
+| `-f` | **Fail silently** on non-2xx HTTP status. |
+
+## Installation
+
+### Go Install
+
+```bash
+go install github.com/robot-accomplice/ghola/cmd/ghola@latest
 ```
 
-## Help
+### Download Binary
 
-```shell
-go-gurl -h
+Pre-built binaries for Linux, macOS, and Windows are available on the [Releases](https://github.com/robot-accomplice/ghola/releases) page.
+
+### Build from Source
+
+```bash
+git clone https://github.com/robot-accomplice/ghola.git
+cd ghola
+go build -o ghola ./cmd/ghola
 ```
 
-## Authors
+## Usage
 
-Contributors names and contact info
+```bash
+# Basic GET request
+ghola https://httpbin.org/get
 
-Jonathan Machen  
+# POST with data and verbose ghost signing
+ghola -vG -d '{"query": "balance"}' https://rpc.example.com
 
-## Version History
+# Snoop mode -- check security posture
+ghola -S https://example.com
 
-* 1.0.0a - alpha version, not yet feature complete
+# Chain-aware request with retries
+ghola -c base -r 3 https://rpc.base.org
+
+# Download a file (wget mode)
+ghola -w https://example.com/report.pdf
+
+# Concurrent connections with drift jitter
+ghola -n 5 -D 200 https://api.example.com/data
+```
+
+## Architecture
+
+Ghola is structured as three internal packages wired together by a thin CLI entrypoint:
+
+```text
+cmd/ghola/          Entrypoint (os.Exit, arg wiring)
+internal/config/    CLI flag parsing, Options, validation
+internal/client/    HTTP transport, retry, drift, ghost, concurrency
+internal/output/    Response rendering, file I/O, snoop mode
+```
+
+See [docs/architecture/](docs/architecture/) for C4 diagrams and a detailed dataflow walkthrough.
+
+## Testing
+
+```bash
+go test -v -race -coverprofile=coverage.out ./...
+go tool cover -func=coverage.out
+```
+
+Coverage is enforced at **90% minimum** in CI. Current coverage: **96.9%**.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, testing, and PR guidelines.
+
+## Security
+
+To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE.md file for details
+[MIT](LICENSE) -- Copyright (c) 2026 Jonathan Machen
