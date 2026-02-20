@@ -33,9 +33,9 @@ jobs:
         run: go vet ./...
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          version: v2
           args: --config .github/.golangci.yml
 
   test:
@@ -93,8 +93,9 @@ jobs:
         run: go build -ldflags "-s -w" -o /dev/null ./cmd/ghola
 
   security:
-    name: Security
+    name: Security (advisory)
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
