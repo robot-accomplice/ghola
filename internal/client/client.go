@@ -21,11 +21,14 @@ import (
 )
 
 // Doer abstracts the HTTP round-trip so tests can inject a mock transport.
-type Doer func(req *fasthttp.Request, resp *fasthttp.Response) error
+type Doer func(req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error
 
 // DefaultDoer uses fasthttp.Do for real network calls.
-func DefaultDoer(req *fasthttp.Request, resp *fasthttp.Response) error {
-	return fasthttp.Do(req, resp)
+func DefaultDoer(req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
+	c := &fasthttp.Client{
+		ReadBufferSize: bufferSize,
+	}
+	return c.Do(req, resp)
 }
 
 // FetchURL sends an HTTP request according to opts, with retry and jitter.
@@ -87,7 +90,7 @@ func FetchURL(ctx context.Context, opts *config.Options, do Doer) (*fasthttp.Req
 
 		req.Header.SetMethod(opts.Method)
 
-		lastErr = do(req, rsp)
+		lastErr = do(req, rsp, opts.BufferSize)
 		if lastErr == nil {
 			return req, rsp, nil
 		}

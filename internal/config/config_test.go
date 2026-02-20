@@ -182,6 +182,7 @@ func TestParseFlags_AllFlags(t *testing.T) {
 		"-b", "500",
 		"-S",
 		"-c", "eth",
+		"--buffer-size", "8192",
 		"http://example.com",
 	}
 	opts, _, err := ParseFlags(args)
@@ -235,6 +236,29 @@ func TestParseFlags_AllFlags(t *testing.T) {
 	}
 	if !opts.Snoop {
 		t.Error("Snoop should be true")
+	}
+	if opts.BufferSize != 8192 {
+		t.Errorf("BufferSize = %d, want 8192", opts.BufferSize)
+	}
+}
+
+func TestParseFlags_DefaultBufferSize(t *testing.T) {
+	opts, _, err := ParseFlags([]string{"http://example.com"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if opts.BufferSize != 4096 {
+		t.Errorf("default BufferSize = %d, want 4096", opts.BufferSize)
+	}
+}
+
+func TestParseFlags_CustomBufferSize(t *testing.T) {
+	opts, _, err := ParseFlags([]string{"--buffer-size", "16384", "http://example.com"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if opts.BufferSize != 16384 {
+		t.Errorf("BufferSize = %d, want 16384", opts.BufferSize)
 	}
 }
 

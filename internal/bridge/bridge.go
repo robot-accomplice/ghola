@@ -71,14 +71,15 @@ func Handler(do client.Doer) fasthttp.RequestHandler {
 		}
 
 		opts := &config.Options{
-			URL:     br.URL,
-			Method:  method,
-			Data:    br.Body,
-			Retries: br.Retries,
-			Backoff: 1000,
-			Ghost:   br.Ghost,
-			Agent:   "ghola",
-			Silent:  true,
+			URL:        br.URL,
+			Method:     method,
+			Data:       br.Body,
+			Retries:    br.Retries,
+			Backoff:    1000,
+			Ghost:      br.Ghost,
+			Agent:      "ghola",
+			Silent:     true,
+			BufferSize: 4096,
 		}
 		if br.Drift {
 			opts.Drift = defaultDriftMs
