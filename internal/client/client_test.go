@@ -27,7 +27,7 @@ func newTestServer(handler fasthttp.RequestHandler) (*fasthttputil.InmemoryListe
 			return ln.Dial()
 		},
 	}
-	return ln, func(req *fasthttp.Request, resp *fasthttp.Response) error {
+	return ln, func(req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
 		return c.Do(req, resp)
 	}
 }
@@ -232,7 +232,7 @@ func TestFetchURL_Retries(t *testing.T) {
 }
 
 func TestFetchURL_RetriesExhausted(t *testing.T) {
-	failDoer := func(req *fasthttp.Request, resp *fasthttp.Response) error {
+	failDoer := func(req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
 		return fmt.Errorf("connection refused")
 	}
 
@@ -361,7 +361,7 @@ func TestRunConcurrent_AllGoroutinesComplete(t *testing.T) {
 }
 
 func TestRunConcurrent_AllFail(t *testing.T) {
-	failDoer := func(req *fasthttp.Request, resp *fasthttp.Response) error {
+	failDoer := func(req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
 		return fmt.Errorf("fail")
 	}
 
@@ -384,7 +384,7 @@ func TestRunConcurrent_AllFail(t *testing.T) {
 }
 
 func TestFetchURL_ZeroRetries(t *testing.T) {
-	failDoer := func(req *fasthttp.Request, resp *fasthttp.Response) error {
+	failDoer := func(req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
 		return fmt.Errorf("fail")
 	}
 
@@ -404,7 +404,7 @@ func TestFetchURL_ZeroRetries(t *testing.T) {
 
 func TestFetchURL_CancelledContextStopsRetries(t *testing.T) {
 	var attempts int32
-	slowDoer := func(req *fasthttp.Request, resp *fasthttp.Response) error {
+	slowDoer := func(req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
 		atomic.AddInt32(&attempts, 1)
 		return fmt.Errorf("fail")
 	}
@@ -438,7 +438,7 @@ func TestFetchURL_CancelledContextStopsRetries(t *testing.T) {
 
 func TestFetchURL_CancelDuringBackoff(t *testing.T) {
 	var attempts int32
-	failDoer := func(req *fasthttp.Request, resp *fasthttp.Response) error {
+	failDoer := func(req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
 		atomic.AddInt32(&attempts, 1)
 		return fmt.Errorf("fail")
 	}
@@ -471,7 +471,7 @@ func TestRunConcurrent_CancelsLosers(t *testing.T) {
 	var started int32
 	gate := make(chan struct{})
 
-	slowDoer := func(req *fasthttp.Request, resp *fasthttp.Response) error {
+	slowDoer := func(req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
 		n := atomic.AddInt32(&started, 1)
 		if n == 1 {
 			resp.SetStatusCode(200)
@@ -479,8 +479,6 @@ func TestRunConcurrent_CancelsLosers(t *testing.T) {
 			close(gate)
 			return nil
 		}
-		// Losers block until context cancels them or gate opens.
-		// With or-done, they should be cancelled quickly.
 		<-gate
 		return fmt.Errorf("context cancelled")
 	}
