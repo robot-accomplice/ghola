@@ -21,7 +21,8 @@ type Request struct {
 	Body    string            `json:"body"`
 	Drift   bool              `json:"drift"`
 	Ghost   bool              `json:"ghost"`
-	Retries int               `json:"retries"`
+	Retries    int               `json:"retries"`
+	BufferSize int               `json:"buffer_size"`
 }
 
 // Response is the JSON payload returned by the bridge server.
@@ -70,6 +71,11 @@ func Handler(do client.Doer) fasthttp.RequestHandler {
 			method = "GET"
 		}
 
+		bufSize := br.BufferSize
+		if bufSize == 0 {
+			bufSize = 4096
+		}
+
 		opts := &config.Options{
 			URL:        br.URL,
 			Method:     method,
@@ -79,7 +85,7 @@ func Handler(do client.Doer) fasthttp.RequestHandler {
 			Ghost:      br.Ghost,
 			Agent:      "ghola",
 			Silent:     true,
-			BufferSize: 4096,
+			BufferSize: bufSize,
 		}
 		if br.Drift {
 			opts.Drift = defaultDriftMs
