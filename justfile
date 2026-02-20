@@ -2,7 +2,6 @@ set dotenv-load := false
 
 mod         := "github.com/robot-accomplice/ghola"
 coverage    := "coverage.out"
-threshold   := "90"
 
 # ── Listing ──────────────────────────────────────────────────────────────────
 
@@ -35,16 +34,13 @@ cover:
 cover-html: cover
     go tool cover -html={{ coverage }}
 
-# Assert coverage meets the 90% threshold
-cover-check: cover
-    #!/usr/bin/env bash
-    total=$(go tool cover -func={{ coverage }} | grep ^total | awk '{print $3}' | tr -d '%')
-    echo "Total coverage: ${total}%"
-    if [ "$(echo "$total < {{ threshold }}" | bc -l)" -eq 1 ]; then
-        echo "FAIL: coverage ${total}% is below {{ threshold }}% threshold"
-        exit 1
-    fi
-    echo "PASS: coverage meets threshold"
+# Assert per-package coverage meets 80% floor and never regresses
+cover-check:
+    scripts/check-coverage.sh
+
+# Update coverage baseline after legitimate improvements
+cover-update:
+    scripts/check-coverage.sh --update
 
 # Build the ghola binary (native)
 build:
@@ -98,7 +94,7 @@ _ci-lint:
     @echo "── CI: lint ──"
     @just lint
 
-# [CI] Test job — race tests + 90% coverage gate
+# [CI] Test job — race tests + coverage gates (80% floor + no regression)
 _ci-test:
     @echo "── CI: test ──"
     @just cover-check

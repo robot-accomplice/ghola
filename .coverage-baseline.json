@@ -1,0 +1,7 @@
+{
+  "github.com/robot-accomplice/ghola/cmd/ghola": 81.4,
+  "github.com/robot-accomplice/ghola/internal/bridge": 95.3,
+  "github.com/robot-accomplice/ghola/internal/client": 91.0,
+  "github.com/robot-accomplice/ghola/internal/config": 98.2,
+  "github.com/robot-accomplice/ghola/internal/output": 100.0
+}
