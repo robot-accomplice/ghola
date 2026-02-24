@@ -63,6 +63,16 @@ func TestExecute_Help(t *testing.T) {
 	}
 }
 
+func TestExecute_Version(t *testing.T) {
+	do, cleanup := testDoer(func(ctx *fasthttp.RequestCtx) {})
+	defer cleanup()
+
+	code := execute(bg(), []string{"--version"}, do, os.Stdout)
+	if code != config.NoError.Int() {
+		t.Errorf("exit code = %d, want %d (NoError for version)", code, config.NoError.Int())
+	}
+}
+
 func TestExecute_SendFailed(t *testing.T) {
 	failDoer := func(req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
 		return &net.OpError{Op: "dial", Err: &os.SyscallError{Syscall: "connect", Err: os.ErrNotExist}}

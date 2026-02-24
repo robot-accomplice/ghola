@@ -60,6 +60,16 @@ func TestParseFlags_Help(t *testing.T) {
 	}
 }
 
+func TestParseFlags_Version(t *testing.T) {
+	_, done, err := ParseFlags([]string{"--version"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !done {
+		t.Fatal("expected done=true for --version")
+	}
+}
+
 func TestParseFlags_PostInference(t *testing.T) {
 	opts, _, err := ParseFlags([]string{"-d", "payload", "http://example.com"})
 	if err != nil {

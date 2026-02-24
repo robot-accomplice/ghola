@@ -42,6 +42,26 @@
 
 ## Installation
 
+### Quick Install (Recommended)
+
+#### macOS / Linux
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/robot-accomplice/ghola/main/scripts/install.sh | sh
+```
+
+#### Windows (PowerShell)
+
+```powershell
+iwr https://raw.githubusercontent.com/robot-accomplice/ghola/main/scripts/install.ps1 -UseBasicParsing | iex
+```
+
+After install, verify with:
+
+```bash
+ghola --version
+```
+
 ### Go Install
 
 ```bash
@@ -102,7 +122,9 @@ go test -v -race -coverprofile=coverage.out ./...
 go tool cover -func=coverage.out
 ```
 
-Coverage is enforced at **90% minimum** in CI. Current coverage: **96.9%**.
+Coverage is enforced in CI with two gates:
+- Each package must be at least **80%**
+- Coverage must **not regress** below recorded baselines
 
 ## Contributing
 

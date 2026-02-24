@@ -72,7 +72,9 @@ func ParseFlags(args []string) (*Options, bool, error) {
 	fs := flag.NewFlagSet("ghola", flag.ContinueOnError)
 
 	var help bool
+	var version bool
 	fs.BoolVarP(&help, "help", "h", false, "help")
+	fs.BoolVarP(&version, "version", "V", false, "version")
 	fs.StringVarP(&opts.Data, "data", "d", "", "HTTP POST data")
 	fs.BoolVarP(&opts.Fail, "fail", "f", false, "Fail silently on HTTP errors")
 	fs.BoolVarP(&opts.Include, "include", "i", false, "Include protocol response headers")
@@ -109,6 +111,11 @@ func ParseFlags(args []string) (*Options, bool, error) {
 
 	if help {
 		fs.Usage()
+		return opts, true, nil
+	}
+
+	if version {
+		fmt.Printf("ghola version %s\n", Version)
 		return opts, true, nil
 	}
 
