@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -80,6 +81,9 @@ func execute(ctx context.Context, args []string, do client.Doer, w *os.File) int
 
 	if err := output.ProcessResponse(w, opts, req, rsp); err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		if errors.Is(err, output.ErrNon2xx) {
+			return config.SendFailed.Int()
+		}
 		return config.WriteFileFailed.Int()
 	}
 

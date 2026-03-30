@@ -4,6 +4,7 @@ package output
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,13 +13,16 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
+// ErrNon2xx is returned when --fail is set and the server responds with a non-2xx status.
+var ErrNon2xx = errors.New("non-2xx http status")
+
 // ProcessResponse writes the HTTP response to the appropriate destination
 // (file or stdout) based on opts. It returns a non-nil error if file I/O fails.
 func ProcessResponse(w io.Writer, opts *config.Options, req *fasthttp.Request, rsp *fasthttp.Response) error {
 	httpOk := rsp.StatusCode() >= 200 && rsp.StatusCode() < 300
 
 	if opts.Fail && !httpOk {
-		return nil
+		return fmt.Errorf("%w: %d %s", ErrNon2xx, rsp.StatusCode(), fasthttp.StatusMessage(rsp.StatusCode()))
 	}
 
 	if opts.Output != "" {

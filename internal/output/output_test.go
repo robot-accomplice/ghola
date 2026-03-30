@@ -107,8 +107,8 @@ func TestProcessResponse_FailOnHTTPError(t *testing.T) {
 	var buf bytes.Buffer
 	opts := &config.Options{Fail: true}
 	err := ProcessResponse(&buf, opts, req, rsp)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if err == nil {
+		t.Fatal("expected error for non-2xx with fail=true")
 	}
 	if buf.Len() != 0 {
 		t.Errorf("fail mode with 500 should suppress output, got %q", buf.String())
@@ -185,8 +185,8 @@ func TestProcessResponse_FileOutputFailSuppresses(t *testing.T) {
 	opts := &config.Options{Output: tmpFile, Fail: true}
 	var buf bytes.Buffer
 	err := ProcessResponse(&buf, opts, req, rsp)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
+	if err == nil {
+		t.Fatal("expected error for non-2xx with fail=true")
 	}
 
 	if _, statErr := os.Stat(tmpFile); statErr == nil {

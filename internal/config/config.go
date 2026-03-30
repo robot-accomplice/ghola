@@ -51,8 +51,12 @@ type Options struct {
 	Concurrency int
 	Drift       int
 	Ghost       bool
+	Timeout     int
 	Retries     int
 	Backoff     int
+	RetryHTTP   bool
+	Location    bool
+	MaxRedirs   int
 	Snoop       bool
 	Chain       string
 	Serve       bool
@@ -76,7 +80,7 @@ func ParseFlags(args []string) (*Options, bool, error) {
 	fs.BoolVarP(&help, "help", "h", false, "help")
 	fs.BoolVarP(&version, "version", "V", false, "version")
 	fs.StringVarP(&opts.Data, "data", "d", "", "HTTP POST data")
-	fs.BoolVarP(&opts.Fail, "fail", "f", false, "Fail silently on HTTP errors")
+	fs.BoolVarP(&opts.Fail, "fail", "f", false, "Exit non-zero on non-2xx and suppress body output")
 	fs.BoolVarP(&opts.Include, "include", "i", false, "Include protocol response headers")
 	fs.StringVarP(&opts.Output, "output", "o", "", "Write to file instead of stdout")
 	fs.BoolVarP(&opts.WgetMode, "wget", "w", false, "Enable wget-compatible output")
@@ -91,8 +95,12 @@ func ParseFlags(args []string) (*Options, bool, error) {
 
 	fs.IntVarP(&opts.Drift, "drift", "D", 0, "Temporal Drift (ms jitter)")
 	fs.BoolVarP(&opts.Ghost, "ghost", "G", false, "Ghost Sign (unique identity hash)")
+	fs.IntVar(&opts.Timeout, "timeout", 0, "Request timeout in ms (0 disables)")
 	fs.IntVarP(&opts.Retries, "retry", "r", 0, "Number of retries on failure")
 	fs.IntVarP(&opts.Backoff, "backoff", "b", 1000, "Base backoff time for retries (ms)")
+	fs.BoolVar(&opts.RetryHTTP, "retry-http", false, "Retry on retryable HTTP status codes (e.g. 429, 5xx)")
+	fs.BoolVarP(&opts.Location, "location", "L", false, "Follow HTTP redirects")
+	fs.IntVar(&opts.MaxRedirs, "max-redirs", 10, "Maximum number of redirects to follow")
 	fs.BoolVarP(&opts.Snoop, "snoop", "S", false, "Snoop Mode: Pre-flight check of headers and security posture")
 	fs.StringVarP(&opts.Chain, "chain", "c", "", "Chain-Aware Shortcut: Pre-fills RPC headers for [eth, base, solana]")
 	fs.BoolVar(&opts.Serve, "serve", false, "Run as local RPC bridge on 127.0.0.1:18789")

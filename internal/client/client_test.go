@@ -27,7 +27,7 @@ func newTestServer(handler fasthttp.RequestHandler) (*fasthttputil.InmemoryListe
 			return ln.Dial()
 		},
 	}
-	return ln, func(req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
+	return ln, func(ctx context.Context, req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
 		return c.Do(req, resp)
 	}
 }
@@ -232,7 +232,7 @@ func TestFetchURL_Retries(t *testing.T) {
 }
 
 func TestFetchURL_RetriesExhausted(t *testing.T) {
-	failDoer := func(req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
+	failDoer := func(ctx context.Context, req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
 		return fmt.Errorf("connection refused")
 	}
 
@@ -253,6 +253,232 @@ func TestFetchURL_RetriesExhausted(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "connection refused") {
 		t.Errorf("error = %q, want connection refused", err)
+	}
+}
+
+func TestFetchURL_RetryHTTP_RetryAfterPrecedence(t *testing.T) {
+	var attempts int32
+	ln, do := newTestServer(func(ctx *fasthttp.RequestCtx) {
+		n := atomic.AddInt32(&attempts, 1)
+		if n == 1 {
+			ctx.Response.Header.Set("Retry-After", "0")
+			ctx.SetStatusCode(429)
+			return
+		}
+		ctx.SetStatusCode(200)
+		ctx.SetBodyString("ok")
+	})
+	defer ln.Close()
+
+	opts := &config.Options{
+		URL:       "http://test",
+		Method:    "GET",
+		Agent:     "ghola",
+		Retries:   1,
+		Backoff:   10000, // would be large if exponential backoff were used
+		RetryHTTP: true,
+		Silent:    true,
+	}
+
+	start := time.Now()
+	req, rsp, err := FetchURL(bg(), opts, do)
+	if err != nil {
+		t.Fatalf("FetchURL error: %v", err)
+	}
+	defer fasthttp.ReleaseRequest(req)
+	defer fasthttp.ReleaseResponse(rsp)
+
+	if atomic.LoadInt32(&attempts) != 2 {
+		t.Fatalf("attempts=%d, want 2", attempts)
+	}
+	if rsp.StatusCode() != 200 {
+		t.Fatalf("status=%d, want 200", rsp.StatusCode())
+	}
+	if string(rsp.Body()) != "ok" {
+		t.Fatalf("body=%q, want ok", rsp.Body())
+	}
+	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
+		t.Fatalf("expected Retry-After to avoid long backoff; elapsed=%v", elapsed)
+	}
+}
+
+func TestFetchURL_RetryHTTP_RetryableStatusExhaustedReturnsResponse(t *testing.T) {
+	var attempts int32
+	ln, do := newTestServer(func(ctx *fasthttp.RequestCtx) {
+		atomic.AddInt32(&attempts, 1)
+		ctx.SetStatusCode(503)
+	})
+	defer ln.Close()
+
+	opts := &config.Options{
+		URL:       "http://test",
+		Method:    "GET",
+		Agent:     "ghola",
+		Retries:   1,
+		Backoff:   1,
+		RetryHTTP: true,
+		Silent:    true,
+	}
+
+	req, rsp, err := FetchURL(bg(), opts, do)
+	if err != nil {
+		t.Fatalf("FetchURL error: %v (expected nil error since --fail is not set)", err)
+	}
+	defer fasthttp.ReleaseRequest(req)
+	defer fasthttp.ReleaseResponse(rsp)
+
+	if atomic.LoadInt32(&attempts) != 2 {
+		t.Fatalf("attempts=%d, want 2", attempts)
+	}
+	if rsp.StatusCode() != 503 {
+		t.Fatalf("status=%d, want 503", rsp.StatusCode())
+	}
+}
+
+func TestFetchURL_RedirectLocationRelative(t *testing.T) {
+	var attempts int32
+	ln, do := newTestServer(func(ctx *fasthttp.RequestCtx) {
+		n := atomic.AddInt32(&attempts, 1)
+		switch n {
+		case 1:
+			ctx.SetStatusCode(302)
+			ctx.Response.Header.Set("Location", "/next")
+		default:
+			if string(ctx.Path()) != "/next" {
+				t.Fatalf("path=%q, want /next", ctx.Path())
+			}
+			ctx.SetStatusCode(200)
+			ctx.SetBodyString("ok")
+		}
+	})
+	defer ln.Close()
+
+	opts := &config.Options{
+		URL:         "http://test/start",
+		Method:      "GET",
+		Agent:       "ghola",
+		Retries:     0,
+		Location:    true,
+		MaxRedirs:   5,
+		Silent:      true,
+		RetryHTTP:   false,
+		Backoff:     1,
+		Ghost:       false,
+		Fail:        false,
+		Include:     false,
+		Snoop:       false,
+		Concurrency: 1,
+	}
+
+	req, rsp, err := FetchURL(bg(), opts, do)
+	if err != nil {
+		t.Fatalf("FetchURL error: %v", err)
+	}
+	defer fasthttp.ReleaseRequest(req)
+	defer fasthttp.ReleaseResponse(rsp)
+
+	if atomic.LoadInt32(&attempts) != 2 {
+		t.Fatalf("attempts=%d, want 2", attempts)
+	}
+	if rsp.StatusCode() != 200 {
+		t.Fatalf("status=%d, want 200", rsp.StatusCode())
+	}
+	if string(rsp.Body()) != "ok" {
+		t.Fatalf("body=%q, want ok", rsp.Body())
+	}
+}
+
+func TestFetchURL_RedirectMaxRedirsExceededReturnsLastResponse(t *testing.T) {
+	var attempts int32
+	ln, do := newTestServer(func(ctx *fasthttp.RequestCtx) {
+		atomic.AddInt32(&attempts, 1)
+		ctx.SetStatusCode(302)
+		ctx.Response.Header.Set("Location", "/loop")
+		ctx.SetBodyString("redir")
+	})
+	defer ln.Close()
+
+	opts := &config.Options{
+		URL:         "http://test/start",
+		Method:      "GET",
+		Agent:       "ghola",
+		Retries:     0,
+		Location:    true,
+		MaxRedirs:   1,
+		Silent:      true,
+		RetryHTTP:   false,
+		Backoff:     1,
+		Concurrency: 1,
+	}
+
+	req, rsp, err := FetchURL(bg(), opts, do)
+	if err != nil {
+		t.Fatalf("FetchURL error: %v", err)
+	}
+	defer fasthttp.ReleaseRequest(req)
+	defer fasthttp.ReleaseResponse(rsp)
+
+	if atomic.LoadInt32(&attempts) != 2 {
+		t.Fatalf("attempts=%d, want 2", attempts)
+	}
+	if rsp.StatusCode() != 302 {
+		t.Fatalf("status=%d, want 302", rsp.StatusCode())
+	}
+	if string(rsp.Body()) != "redir" {
+		t.Fatalf("body=%q, want redir", rsp.Body())
+	}
+}
+
+func TestFetchURL_Redirect303RewritesToGET(t *testing.T) {
+	var attempts int32
+	ln, do := newTestServer(func(ctx *fasthttp.RequestCtx) {
+		n := atomic.AddInt32(&attempts, 1)
+		switch n {
+		case 1:
+			ctx.SetStatusCode(303)
+			ctx.Response.Header.Set("Location", "/next")
+		default:
+			if string(ctx.Method()) != "GET" {
+				t.Fatalf("method=%q, want GET", ctx.Method())
+			}
+			if len(ctx.PostBody()) != 0 {
+				t.Fatalf("post body length=%d, want 0", len(ctx.PostBody()))
+			}
+			ctx.SetStatusCode(200)
+			ctx.SetBodyString("ok")
+		}
+	})
+	defer ln.Close()
+
+	opts := &config.Options{
+		URL:         "http://test/start",
+		Method:      "POST",
+		Data:        "abc",
+		Agent:       "ghola",
+		Retries:     0,
+		Location:    true,
+		MaxRedirs:   5,
+		Silent:      true,
+		RetryHTTP:   false,
+		Backoff:     1,
+		Concurrency: 1,
+	}
+
+	req, rsp, err := FetchURL(bg(), opts, do)
+	if err != nil {
+		t.Fatalf("FetchURL error: %v", err)
+	}
+	defer fasthttp.ReleaseRequest(req)
+	defer fasthttp.ReleaseResponse(rsp)
+
+	if atomic.LoadInt32(&attempts) != 2 {
+		t.Fatalf("attempts=%d, want 2", attempts)
+	}
+	if rsp.StatusCode() != 200 {
+		t.Fatalf("status=%d, want 200", rsp.StatusCode())
+	}
+	if string(rsp.Body()) != "ok" {
+		t.Fatalf("body=%q, want ok", rsp.Body())
 	}
 }
 
@@ -329,6 +555,30 @@ func TestFetchURL_MalformedHeaderIgnored(t *testing.T) {
 	defer fasthttp.ReleaseResponse(rsp)
 }
 
+func TestFetchURL_CustomHeadersNoSpaceAfterColon(t *testing.T) {
+	ln, do := newTestServer(func(ctx *fasthttp.RequestCtx) {
+		if string(ctx.Request.Header.Peek("X-Custom")) != "value" {
+			t.Errorf("X-Custom header = %q, want value", ctx.Request.Header.Peek("X-Custom"))
+		}
+		ctx.SetStatusCode(200)
+	})
+	defer ln.Close()
+
+	opts := &config.Options{
+		URL:     "http://test",
+		Method:  "GET",
+		Agent:   "ghola",
+		Headers: []string{"X-Custom:value"},
+	}
+
+	req, rsp, err := FetchURL(bg(), opts, do)
+	if err != nil {
+		t.Fatalf("FetchURL error: %v", err)
+	}
+	defer fasthttp.ReleaseRequest(req)
+	defer fasthttp.ReleaseResponse(rsp)
+}
+
 func TestRunConcurrent_AllGoroutinesComplete(t *testing.T) {
 	var count int32
 	ln, do := newTestServer(func(ctx *fasthttp.RequestCtx) {
@@ -353,7 +603,14 @@ func TestRunConcurrent_AllGoroutinesComplete(t *testing.T) {
 	})
 
 	if atomic.LoadInt32(&count) != 5 {
-		t.Errorf("server received %d requests, want 5", count)
+		// Cancellation happens as soon as the first request succeeds, so not all
+		// goroutines necessarily reach the network call before ctx is canceled.
+		if atomic.LoadInt32(&count) < 1 {
+			t.Errorf("server received %d requests, want at least 1", count)
+		}
+		if atomic.LoadInt32(&count) > 5 {
+			t.Errorf("server received %d requests, want at most 5", count)
+		}
 	}
 	if atomic.LoadInt32(&processed) != 1 {
 		t.Errorf("processed %d responses, want exactly 1", processed)
@@ -361,7 +618,7 @@ func TestRunConcurrent_AllGoroutinesComplete(t *testing.T) {
 }
 
 func TestRunConcurrent_AllFail(t *testing.T) {
-	failDoer := func(req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
+	failDoer := func(ctx context.Context, req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
 		return fmt.Errorf("fail")
 	}
 
@@ -384,7 +641,7 @@ func TestRunConcurrent_AllFail(t *testing.T) {
 }
 
 func TestFetchURL_ZeroRetries(t *testing.T) {
-	failDoer := func(req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
+	failDoer := func(ctx context.Context, req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
 		return fmt.Errorf("fail")
 	}
 
@@ -404,7 +661,7 @@ func TestFetchURL_ZeroRetries(t *testing.T) {
 
 func TestFetchURL_CancelledContextStopsRetries(t *testing.T) {
 	var attempts int32
-	slowDoer := func(req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
+	slowDoer := func(ctx context.Context, req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
 		atomic.AddInt32(&attempts, 1)
 		return fmt.Errorf("fail")
 	}
@@ -438,7 +695,7 @@ func TestFetchURL_CancelledContextStopsRetries(t *testing.T) {
 
 func TestFetchURL_CancelDuringBackoff(t *testing.T) {
 	var attempts int32
-	failDoer := func(req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
+	failDoer := func(ctx context.Context, req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
 		atomic.AddInt32(&attempts, 1)
 		return fmt.Errorf("fail")
 	}
@@ -471,7 +728,7 @@ func TestRunConcurrent_CancelsLosers(t *testing.T) {
 	var started int32
 	gate := make(chan struct{})
 
-	slowDoer := func(req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
+	slowDoer := func(ctx context.Context, req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
 		n := atomic.AddInt32(&started, 1)
 		if n == 1 {
 			resp.SetStatusCode(200)

@@ -38,7 +38,11 @@
 | `-i` | **Include headers** in output. |
 | `-v` | **Verbose** -- show ghost signature and extra diagnostics. |
 | `-s` | **Silent** -- suppress all output. |
-| `-f` | **Fail silently** on non-2xx HTTP status. |
+| `-f` | **Fail** on non-2xx HTTP status (exit non-zero, suppress body output). |
+| `-L, --location` | **Follow redirects** (HTTP 3xx). |
+| `--max-redirs <n>` | **Max redirects** to follow when `--location` is enabled. |
+| `--retry-http` | **Retry on statuses** (e.g. 429, 5xx) in addition to transport failures. |
+| `--timeout <ms>` | **Request timeout** in milliseconds (0 disables). |
 
 ## Installation
 
