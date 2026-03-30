@@ -23,7 +23,7 @@ func testDoer(handler fasthttp.RequestHandler) (client.Doer, func()) {
 			return ln.Dial()
 		},
 	}
-	return func(ctx context.Context, req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
+	return func(ctx context.Context, opts *config.Options, req *fasthttp.Request, resp *fasthttp.Response) error {
 		return c.Do(req, resp)
 	}, func() { ln.Close() }
 }
@@ -74,7 +74,7 @@ func TestExecute_Version(t *testing.T) {
 }
 
 func TestExecute_SendFailed(t *testing.T) {
-	failDoer := func(ctx context.Context, req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
+	failDoer := func(ctx context.Context, opts *config.Options, req *fasthttp.Request, resp *fasthttp.Response) error {
 		return &net.OpError{Op: "dial", Err: &os.SyscallError{Syscall: "connect", Err: os.ErrNotExist}}
 	}
 
@@ -85,7 +85,7 @@ func TestExecute_SendFailed(t *testing.T) {
 }
 
 func TestExecute_SendFailedSilent(t *testing.T) {
-	failDoer := func(ctx context.Context, req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
+	failDoer := func(ctx context.Context, opts *config.Options, req *fasthttp.Request, resp *fasthttp.Response) error {
 		return &net.OpError{Op: "dial", Err: &os.SyscallError{Syscall: "connect", Err: os.ErrNotExist}}
 	}
 

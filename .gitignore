@@ -6,6 +6,7 @@
 coverage.out
 get
 test_output.txt
+.gocache/
 
 # Goreleaser output
 dist/

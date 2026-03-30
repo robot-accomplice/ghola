@@ -41,6 +41,19 @@ func ProcessResponse(w io.Writer, opts *config.Options, req *fasthttp.Request, r
 	}
 	if opts.Verbose {
 		fmt.Fprintf(w, "Ghost Signature: %s\n", req.Header.Peek("X-Ghola-Identity"))
+		if opts.Impersonate != "" {
+			fmt.Fprintf(w, "Profile: %s\n", opts.Impersonate)
+			fmt.Fprintln(w, "Transport: tls-client (pure Go)")
+		}
+		if opts.StealthHeaders {
+			fmt.Fprintln(w, "Stealth Headers: enabled")
+		}
+		if opts.Proxy != "" {
+			fmt.Fprintf(w, "Proxy: %s\n", opts.Proxy)
+		}
+		if opts.CookieJar != "" {
+			fmt.Fprintf(w, "Cookie Jar: %s\n", opts.CookieJar)
+		}
 	}
 	fmt.Fprintf(w, "%s\n", bytes.Trim(rsp.Body(), "\n"))
 	return nil

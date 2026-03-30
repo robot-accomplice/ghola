@@ -19,7 +19,7 @@ import (
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	os.Exit(execute(ctx, os.Args[1:], client.DefaultDoer, os.Stdout))
+	os.Exit(execute(ctx, os.Args[1:], nil, os.Stdout))
 }
 
 func execute(ctx context.Context, args []string, do client.Doer, w *os.File) int {

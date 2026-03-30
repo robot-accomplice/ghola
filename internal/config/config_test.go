@@ -193,6 +193,13 @@ func TestParseFlags_AllFlags(t *testing.T) {
 		"-S",
 		"-c", "eth",
 		"--buffer-size", "8192",
+		"--impersonate", "chrome",
+		"--cookie-jar", "cookies.json",
+		"--cookie", "session=abc",
+		"--proxy", "http://proxy.local:8080",
+		"--proxy-auth", "user:pass",
+		"--referer", "auto",
+		"--accept-language", "de-CH,de;q=0.9",
 		"http://example.com",
 	}
 	opts, _, err := ParseFlags(args)
@@ -249,6 +256,30 @@ func TestParseFlags_AllFlags(t *testing.T) {
 	}
 	if opts.BufferSize != 8192 {
 		t.Errorf("BufferSize = %d, want 8192", opts.BufferSize)
+	}
+	if opts.Impersonate != "chrome" {
+		t.Errorf("Impersonate = %q", opts.Impersonate)
+	}
+	if !opts.StealthHeaders {
+		t.Error("StealthHeaders should default on when impersonate is set")
+	}
+	if opts.CookieJar != "cookies.json" {
+		t.Errorf("CookieJar = %q", opts.CookieJar)
+	}
+	if len(opts.Cookies) != 1 || opts.Cookies[0] != "session=abc" {
+		t.Errorf("Cookies = %v", opts.Cookies)
+	}
+	if opts.Proxy != "http://proxy.local:8080" {
+		t.Errorf("Proxy = %q", opts.Proxy)
+	}
+	if opts.ProxyAuth != "user:pass" {
+		t.Errorf("ProxyAuth = %q", opts.ProxyAuth)
+	}
+	if opts.Referer != "auto" {
+		t.Errorf("Referer = %q", opts.Referer)
+	}
+	if opts.AcceptLanguage != "de-CH,de;q=0.9" {
+		t.Errorf("AcceptLanguage = %q", opts.AcceptLanguage)
 	}
 }
 

@@ -20,21 +20,23 @@ import (
 	"time"
 
 	"github.com/robot-accomplice/ghola/internal/config"
+	gholacookies "github.com/robot-accomplice/ghola/internal/cookies"
+	"github.com/robot-accomplice/ghola/internal/profile"
+	gholaproxy "github.com/robot-accomplice/ghola/internal/proxy"
+	gholatransport "github.com/robot-accomplice/ghola/internal/transport"
 	"github.com/valyala/fasthttp"
 )
 
 // Doer abstracts the HTTP round-trip so tests can inject a mock transport.
-type Doer func(ctx context.Context, req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error
+type Doer func(ctx context.Context, opts *config.Options, req *fasthttp.Request, resp *fasthttp.Response) error
 
 // DefaultDoer uses fasthttp.Do for real network calls.
-func DefaultDoer(ctx context.Context, req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
-	c := &fasthttp.Client{
-		ReadBufferSize: bufferSize,
+func DefaultDoer(ctx context.Context, opts *config.Options, req *fasthttp.Request, resp *fasthttp.Response) error {
+	tr, err := gholatransport.New(opts, "")
+	if err != nil {
+		return err
 	}
-	if deadline, ok := ctx.Deadline(); ok {
-		return c.DoDeadline(req, resp, deadline)
-	}
-	return c.Do(req, resp)
+	return tr.Do(ctx, req, resp)
 }
 
 // FetchURL sends an HTTP request according to opts, with retry and jitter.
@@ -56,6 +58,63 @@ func FetchURL(ctx context.Context, opts *config.Options, do Doer) (*fasthttp.Req
 	effectiveMethod := opts.Method
 	effectiveData := opts.Data
 	redirectsFollowed := 0
+
+	headerOverrides := parseHeaderOverrides(opts.Headers)
+	activeProfile := profile.BrowserProfile{}
+	if opts.Impersonate != "" || opts.StealthHeaders {
+		resolved, err := profile.Resolve(opts.Impersonate)
+		if err != nil {
+			fasthttp.ReleaseRequest(req)
+			fasthttp.ReleaseResponse(rsp)
+			return nil, nil, err
+		}
+		activeProfile = resolved
+	}
+
+	jar, err := gholacookies.New(opts.CookieJar)
+	if err != nil {
+		fasthttp.ReleaseRequest(req)
+		fasthttp.ReleaseResponse(rsp)
+		return nil, nil, err
+	}
+	if err := jar.AddRequestCookies(opts.URL, opts.Cookies); err != nil {
+		fasthttp.ReleaseRequest(req)
+		fasthttp.ReleaseResponse(rsp)
+		return nil, nil, err
+	}
+	if err := jar.Save(); err != nil {
+		fasthttp.ReleaseRequest(req)
+		fasthttp.ReleaseResponse(rsp)
+		return nil, nil, err
+	}
+
+	proxySelector, err := gholaproxy.NewSelector(opts.Proxy, opts.ProxyAuth, opts.ProxyFile, opts.ProxyStrategy)
+	if err != nil {
+		fasthttp.ReleaseRequest(req)
+		fasthttp.ReleaseResponse(rsp)
+		return nil, nil, err
+	}
+	selectedProxy, err := proxySelector.Select()
+	if err != nil {
+		fasthttp.ReleaseRequest(req)
+		fasthttp.ReleaseResponse(rsp)
+		return nil, nil, err
+	}
+	effectiveOpts := *opts
+	if selectedProxy != "" {
+		effectiveOpts.Proxy = selectedProxy
+	}
+	transport, err := gholatransport.New(&effectiveOpts, selectedProxy)
+	if err != nil {
+		fasthttp.ReleaseRequest(req)
+		fasthttp.ReleaseResponse(rsp)
+		return nil, nil, err
+	}
+	if do == nil {
+		do = func(ctx context.Context, opts *config.Options, req *fasthttp.Request, resp *fasthttp.Response) error {
+			return transport.Do(ctx, req, resp)
+		}
+	}
 
 redirectLoop:
 	for {
@@ -97,20 +156,31 @@ redirectLoop:
 			req.SetRequestURI(effectiveURL)
 			req.SetBodyString(effectiveData)
 
-			for _, h := range opts.Headers {
-				// Accept `Key:Value`, `Key: value`, and `Key:  value` forms.
-				i := strings.IndexByte(h, ':')
-				if i < 0 {
+			for _, generated := range profile.BuildHeaders(activeProfile, profile.HeaderOptions{
+				Method:         effectiveMethod,
+				TargetURL:      effectiveURL,
+				RefererMode:    opts.Referer,
+				ExplicitUA:     generatedUA(opts, activeProfile),
+				ExplicitLang:   opts.AcceptLanguage,
+				StealthHeaders: opts.StealthHeaders,
+			}) {
+				if _, overridden := headerOverrides[strings.ToLower(generated.Key)]; overridden {
 					continue
 				}
-				key := strings.TrimSpace(h[:i])
-				val := strings.TrimSpace(h[i+1:])
-				if key == "" {
-					continue
-				}
-				req.Header.Add(key, val)
+				req.Header.Set(generated.Key, generated.Value)
 			}
-			req.Header.Add("User-Agent", opts.Agent)
+
+			for _, h := range opts.Headers {
+				key, val, ok := parseHeader(h)
+				if !ok {
+					continue
+				}
+				req.Header.Set(key, val)
+			}
+
+			if _, overridden := headerOverrides["user-agent"]; !overridden {
+				req.Header.Set("User-Agent", generatedUA(opts, activeProfile))
+			}
 
 			if opts.Ghost {
 				applyGhostSign(req, effectiveURL)
@@ -122,10 +192,20 @@ redirectLoop:
 			}
 
 			req.Header.SetMethod(effectiveMethod)
+			if _, overridden := headerOverrides["cookie"]; !overridden {
+				if cookieHeader := jar.HeaderValue(effectiveURL); cookieHeader != "" {
+					req.Header.Set("Cookie", cookieHeader)
+				}
+			}
 
-			lastErr = do(ctx, req, rsp, opts.BufferSize)
+			lastErr = do(ctx, &effectiveOpts, req, rsp)
 			if lastErr != nil {
 				continue
+			}
+			jar.AbsorbResponse(effectiveURL, rsp)
+			if err := jar.Save(); err != nil {
+				lastErr = err
+				break
 			}
 
 			status := rsp.StatusCode()
@@ -176,6 +256,40 @@ redirectLoop:
 		fasthttp.ReleaseResponse(rsp)
 		return nil, nil, lastErr
 	}
+}
+
+func generatedUA(opts *config.Options, activeProfile profile.BrowserProfile) string {
+	if opts.AgentExplicit {
+		return opts.Agent
+	}
+	if strings.TrimSpace(activeProfile.UserAgent) != "" {
+		return activeProfile.UserAgent
+	}
+	return opts.Agent
+}
+
+func parseHeaderOverrides(headers []string) map[string]string {
+	overrides := make(map[string]string, len(headers))
+	for _, raw := range headers {
+		key, val, ok := parseHeader(raw)
+		if ok {
+			overrides[strings.ToLower(key)] = val
+		}
+	}
+	return overrides
+}
+
+func parseHeader(raw string) (string, string, bool) {
+	i := strings.IndexByte(raw, ':')
+	if i < 0 {
+		return "", "", false
+	}
+	key := strings.TrimSpace(raw[:i])
+	val := strings.TrimSpace(raw[i+1:])
+	if key == "" {
+		return "", "", false
+	}
+	return key, val, true
 }
 
 func isRedirectStatus(status int) bool {

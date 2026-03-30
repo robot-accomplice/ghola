@@ -15,14 +15,25 @@ import (
 
 // Request is the JSON payload accepted by the bridge server.
 type Request struct {
-	URL     string            `json:"url"`
-	Method  string            `json:"method"`
-	Headers map[string]string `json:"headers"`
-	Body    string            `json:"body"`
-	Drift   bool              `json:"drift"`
-	Ghost   bool              `json:"ghost"`
-	Retries    int               `json:"retries"`
-	BufferSize int               `json:"buffer_size"`
+	URL            string            `json:"url"`
+	Method         string            `json:"method"`
+	Headers        map[string]string `json:"headers"`
+	Body           string            `json:"body"`
+	Drift          bool              `json:"drift"`
+	Ghost          bool              `json:"ghost"`
+	Retries        int               `json:"retries"`
+	BufferSize     int               `json:"buffer_size"`
+	Impersonate    string            `json:"impersonate"`
+	StealthHeaders bool              `json:"stealth_headers"`
+	CookieJar      string            `json:"cookie_jar"`
+	Cookies        []string          `json:"cookies"`
+	Proxy          string            `json:"proxy"`
+	ProxyAuth      string            `json:"proxy_auth"`
+	ProxyFile      string            `json:"proxy_file"`
+	ProxyStrategy  string            `json:"proxy_strategy"`
+	Referer        string            `json:"referer"`
+	AcceptLanguage string            `json:"accept_language"`
+	HTTP3          bool              `json:"http3"`
 }
 
 // Response is the JSON payload returned by the bridge server.
@@ -77,15 +88,26 @@ func Handler(do client.Doer) fasthttp.RequestHandler {
 		}
 
 		opts := &config.Options{
-			URL:        br.URL,
-			Method:     method,
-			Data:       br.Body,
-			Retries:    br.Retries,
-			Backoff:    1000,
-			Ghost:      br.Ghost,
-			Agent:      "ghola",
-			Silent:     true,
-			BufferSize: bufSize,
+			URL:            br.URL,
+			Method:         method,
+			Data:           br.Body,
+			Retries:        br.Retries,
+			Backoff:        1000,
+			Ghost:          br.Ghost,
+			Agent:          "ghola",
+			Silent:         true,
+			BufferSize:     bufSize,
+			Impersonate:    br.Impersonate,
+			StealthHeaders: br.StealthHeaders,
+			CookieJar:      br.CookieJar,
+			Cookies:        br.Cookies,
+			Proxy:          br.Proxy,
+			ProxyAuth:      br.ProxyAuth,
+			ProxyFile:      br.ProxyFile,
+			ProxyStrategy:  br.ProxyStrategy,
+			Referer:        br.Referer,
+			AcceptLanguage: br.AcceptLanguage,
+			HTTP3:          br.HTTP3,
 		}
 		if br.Drift {
 			opts.Drift = defaultDriftMs
@@ -130,5 +152,5 @@ func writeError(ctx *fasthttp.RequestCtx, msg string) {
 // real network transport.
 func ListenAndServe(addr string) error {
 	fmt.Fprintf(os.Stderr, "ghola bridge listening on %s\n", addr)
-	return fasthttp.ListenAndServe(addr, Handler(client.DefaultDoer))
+	return fasthttp.ListenAndServe(addr, Handler(nil))
 }

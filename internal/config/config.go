@@ -8,6 +8,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/robot-accomplice/ghola/internal/profile"
 	flag "github.com/spf13/pflag"
 	"github.com/valyala/fasthttp"
 )
@@ -35,32 +36,45 @@ func (e ExitCode) Int() int {
 
 // Options holds every user-configurable setting parsed from CLI flags.
 type Options struct {
-	URL         string
-	Method      string
-	Data        string
-	Output      string
-	Transfer    string
-	Headers     []string
-	Verbose     bool
-	Fail        bool
-	Include     bool
-	Silent      bool
-	User        string
-	Agent       string
-	WgetMode    bool
-	Concurrency int
-	Drift       int
-	Ghost       bool
-	Timeout     int
-	Retries     int
-	Backoff     int
-	RetryHTTP   bool
-	Location    bool
-	MaxRedirs   int
-	Snoop       bool
-	Chain       string
-	Serve       bool
-	BufferSize  int
+	URL            string
+	Method         string
+	Data           string
+	Output         string
+	Transfer       string
+	Headers        []string
+	Verbose        bool
+	Fail           bool
+	Include        bool
+	Silent         bool
+	User           string
+	Agent          string
+	AgentExplicit  bool
+	WgetMode       bool
+	Concurrency    int
+	Drift          int
+	Ghost          bool
+	Timeout        int
+	Retries        int
+	Backoff        int
+	RetryHTTP      bool
+	Location       bool
+	MaxRedirs      int
+	Snoop          bool
+	Chain          string
+	Serve          bool
+	BufferSize     int
+	Impersonate    string
+	StealthHeaders bool
+	HTTP3          bool
+	CookieJar      string
+	Cookies        []string
+	Proxy          string
+	ProxyAuth      string
+	ProxyFile      string
+	ProxyStrategy  string
+	Referer        string
+	AcceptLanguage string
+	ProfileList    bool
 }
 
 // Version is set at build time via -ldflags.
@@ -105,6 +119,18 @@ func ParseFlags(args []string) (*Options, bool, error) {
 	fs.StringVarP(&opts.Chain, "chain", "c", "", "Chain-Aware Shortcut: Pre-fills RPC headers for [eth, base, solana]")
 	fs.BoolVar(&opts.Serve, "serve", false, "Run as local RPC bridge on 127.0.0.1:18789")
 	fs.IntVar(&opts.BufferSize, "buffer-size", 4096, "Read buffer size for large headers")
+	fs.StringVar(&opts.Impersonate, "impersonate", "", "Use a browser-like request profile (chrome, firefox, safari, edge)")
+	fs.BoolVar(&opts.StealthHeaders, "stealth-headers", false, "Generate coherent browser-like headers")
+	fs.BoolVar(&opts.HTTP3, "http3", false, "Attempt HTTP/3 when supported by the active transport")
+	fs.StringVar(&opts.CookieJar, "cookie-jar", "", "Persist cookies to a JSON jar file")
+	fs.StringSliceVar(&opts.Cookies, "cookie", nil, "Seed request cookies as name=value")
+	fs.StringVar(&opts.Proxy, "proxy", "", "Route traffic through an HTTP proxy URL")
+	fs.StringVar(&opts.ProxyAuth, "proxy-auth", "", "Proxy credentials in user:pass form")
+	fs.StringVar(&opts.ProxyFile, "proxy-file", "", "Load proxies from a newline-delimited file")
+	fs.StringVar(&opts.ProxyStrategy, "proxy-strategy", "sticky", "Proxy selection strategy: sticky, random, round-robin")
+	fs.StringVar(&opts.Referer, "referer", "none", "Referer behavior: none, auto, or an explicit URL")
+	fs.StringVar(&opts.AcceptLanguage, "accept-language", "", "Override the profile default Accept-Language")
+	fs.BoolVar(&opts.ProfileList, "profile-list", false, "List available browser-like profiles and exit")
 
 	fs.Usage = func() {
 		fmt.Print(banner)
@@ -127,6 +153,13 @@ func ParseFlags(args []string) (*Options, bool, error) {
 		return opts, true, nil
 	}
 
+	if opts.ProfileList {
+		for _, name := range profile.ProfileNames() {
+			fmt.Println(name)
+		}
+		return opts, true, nil
+	}
+
 	if fs.NArg() > 0 {
 		opts.URL = fs.Arg(0)
 	}
@@ -136,6 +169,25 @@ func ParseFlags(args []string) (*Options, bool, error) {
 	}
 
 	applyChainShortcuts(opts)
+	opts.AgentExplicit = fs.Changed("user-agent")
+
+	if opts.Impersonate != "" {
+		if _, err := profile.Resolve(opts.Impersonate); err != nil {
+			return nil, false, err
+		}
+		if !fs.Changed("stealth-headers") {
+			opts.StealthHeaders = true
+		}
+	}
+
+	if opts.Proxy != "" && opts.ProxyFile != "" {
+		return nil, false, fmt.Errorf("--proxy and --proxy-file cannot be used together")
+	}
+	if opts.Referer != "none" && opts.Referer != "auto" {
+		if _, err := url.ParseRequestURI(opts.Referer); err != nil {
+			return nil, false, fmt.Errorf("invalid --referer value %q", opts.Referer)
+		}
+	}
 
 	if opts.Data != "" && !fs.Changed("request") {
 		opts.Method = fasthttp.MethodPost

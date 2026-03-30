@@ -27,7 +27,7 @@ func newTestServer(handler fasthttp.RequestHandler) (*fasthttputil.InmemoryListe
 			return ln.Dial()
 		},
 	}
-	return ln, func(ctx context.Context, req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
+	return ln, func(ctx context.Context, opts *config.Options, req *fasthttp.Request, resp *fasthttp.Response) error {
 		return c.Do(req, resp)
 	}
 }
@@ -232,7 +232,7 @@ func TestFetchURL_Retries(t *testing.T) {
 }
 
 func TestFetchURL_RetriesExhausted(t *testing.T) {
-	failDoer := func(ctx context.Context, req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
+	failDoer := func(ctx context.Context, opts *config.Options, req *fasthttp.Request, resp *fasthttp.Response) error {
 		return fmt.Errorf("connection refused")
 	}
 
@@ -618,7 +618,7 @@ func TestRunConcurrent_AllGoroutinesComplete(t *testing.T) {
 }
 
 func TestRunConcurrent_AllFail(t *testing.T) {
-	failDoer := func(ctx context.Context, req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
+	failDoer := func(ctx context.Context, opts *config.Options, req *fasthttp.Request, resp *fasthttp.Response) error {
 		return fmt.Errorf("fail")
 	}
 
@@ -641,7 +641,7 @@ func TestRunConcurrent_AllFail(t *testing.T) {
 }
 
 func TestFetchURL_ZeroRetries(t *testing.T) {
-	failDoer := func(ctx context.Context, req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
+	failDoer := func(ctx context.Context, opts *config.Options, req *fasthttp.Request, resp *fasthttp.Response) error {
 		return fmt.Errorf("fail")
 	}
 
@@ -661,7 +661,7 @@ func TestFetchURL_ZeroRetries(t *testing.T) {
 
 func TestFetchURL_CancelledContextStopsRetries(t *testing.T) {
 	var attempts int32
-	slowDoer := func(ctx context.Context, req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
+	slowDoer := func(ctx context.Context, opts *config.Options, req *fasthttp.Request, resp *fasthttp.Response) error {
 		atomic.AddInt32(&attempts, 1)
 		return fmt.Errorf("fail")
 	}
@@ -695,7 +695,7 @@ func TestFetchURL_CancelledContextStopsRetries(t *testing.T) {
 
 func TestFetchURL_CancelDuringBackoff(t *testing.T) {
 	var attempts int32
-	failDoer := func(ctx context.Context, req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
+	failDoer := func(ctx context.Context, opts *config.Options, req *fasthttp.Request, resp *fasthttp.Response) error {
 		atomic.AddInt32(&attempts, 1)
 		return fmt.Errorf("fail")
 	}
@@ -728,7 +728,7 @@ func TestRunConcurrent_CancelsLosers(t *testing.T) {
 	var started int32
 	gate := make(chan struct{})
 
-	slowDoer := func(ctx context.Context, req *fasthttp.Request, resp *fasthttp.Response, bufferSize int) error {
+	slowDoer := func(ctx context.Context, opts *config.Options, req *fasthttp.Request, resp *fasthttp.Response) error {
 		n := atomic.AddInt32(&started, 1)
 		if n == 1 {
 			resp.SetStatusCode(200)
@@ -783,5 +783,106 @@ func TestSleepCtx_CancelledContext(t *testing.T) {
 	}
 	if elapsed > 100*time.Millisecond {
 		t.Errorf("sleepCtx took %v; should return immediately", elapsed)
+	}
+}
+
+func TestFetchURL_ImpersonationAddsBrowserHeaders(t *testing.T) {
+	ln, do := newTestServer(func(ctx *fasthttp.RequestCtx) {
+		if !strings.Contains(string(ctx.Request.Header.Peek("User-Agent")), "Chrome/146") {
+			t.Errorf("user-agent=%q, want browser-like chrome UA", ctx.Request.Header.Peek("User-Agent"))
+		}
+		if string(ctx.Request.Header.Peek("Sec-Fetch-Mode")) != "navigate" {
+			t.Errorf("sec-fetch-mode=%q, want navigate", ctx.Request.Header.Peek("Sec-Fetch-Mode"))
+		}
+		if string(ctx.Request.Header.Peek("Accept-Language")) != "en-US,en;q=0.9" {
+			t.Errorf("accept-language=%q, want en-US,en;q=0.9", ctx.Request.Header.Peek("Accept-Language"))
+		}
+		ctx.SetStatusCode(200)
+	})
+	defer ln.Close()
+
+	opts := &config.Options{
+		URL:            "http://test",
+		Method:         "GET",
+		Agent:          "ghola",
+		Impersonate:    "chrome",
+		StealthHeaders: true,
+	}
+
+	req, rsp, err := FetchURL(bg(), opts, do)
+	if err != nil {
+		t.Fatalf("FetchURL error: %v", err)
+	}
+	defer fasthttp.ReleaseRequest(req)
+	defer fasthttp.ReleaseResponse(rsp)
+}
+
+func TestFetchURL_DefaultPathStillUsesInjectedLegacyTransport(t *testing.T) {
+	ln, do := newTestServer(func(ctx *fasthttp.RequestCtx) {
+		if string(ctx.Request.Header.Peek("User-Agent")) != "ghola-test" {
+			t.Errorf("user-agent=%q, want ghola-test", ctx.Request.Header.Peek("User-Agent"))
+		}
+		ctx.SetStatusCode(200)
+		ctx.SetBodyString("ok")
+	})
+	defer ln.Close()
+
+	opts := &config.Options{
+		URL:        "http://test",
+		Method:     "GET",
+		Agent:      "ghola-test",
+		BufferSize: 8192,
+	}
+
+	req, rsp, err := FetchURL(bg(), opts, do)
+	if err != nil {
+		t.Fatalf("FetchURL error: %v", err)
+	}
+	defer fasthttp.ReleaseRequest(req)
+	defer fasthttp.ReleaseResponse(rsp)
+
+	if rsp.StatusCode() != 200 {
+		t.Fatalf("status=%d, want 200", rsp.StatusCode())
+	}
+	if string(rsp.Body()) != "ok" {
+		t.Fatalf("body=%q, want ok", rsp.Body())
+	}
+}
+
+func TestFetchURL_CookieJarPersistsAcrossRequests(t *testing.T) {
+	jarPath := t.TempDir() + "/cookies.json"
+	var seenCookie string
+	ln, do := newTestServer(func(ctx *fasthttp.RequestCtx) {
+		seenCookie = string(ctx.Request.Header.Peek("Cookie"))
+		if seenCookie == "" {
+			ctx.Response.Header.Add("Set-Cookie", "session=abc; Path=/")
+		}
+		ctx.SetStatusCode(200)
+	})
+	defer ln.Close()
+
+	opts := &config.Options{
+		URL:       "http://test",
+		Method:    "GET",
+		Agent:     "ghola",
+		CookieJar: jarPath,
+	}
+
+	req, rsp, err := FetchURL(bg(), opts, do)
+	if err != nil {
+		t.Fatalf("first FetchURL error: %v", err)
+	}
+	fasthttp.ReleaseRequest(req)
+	fasthttp.ReleaseResponse(rsp)
+
+	req, rsp, err = FetchURL(bg(), opts, do)
+	if err != nil {
+		t.Fatalf("second FetchURL error: %v", err)
+	}
+	defer fasthttp.ReleaseRequest(req)
+	defer fasthttp.ReleaseResponse(rsp)
+
+	if !strings.Contains(seenCookie, "session=abc") {
+		t.Fatalf("cookie header=%q, want persisted session cookie", seenCookie)
 	}
 }
