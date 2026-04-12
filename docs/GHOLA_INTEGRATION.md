@@ -2,8 +2,10 @@
 
 Ghola is a Go-based surgical HTTP scout built for blockchain forensics.
 Scope uses ghola as an optional sidecar to add stealth capabilities
-(temporal drift, ghost signing, snoop mode) to its HTTP requests without
+(temporal drift, ghost signing, browser-like request shaping, and snoop mode) to its HTTP requests without
 embedding Go code in the Rust binary.
+
+Attribution: Ghola's browser-like fetching direction was inspired by ideas demonstrated in the Scrapling project by Karim Shoair. Ghola applies those ideas to a narrower command-line fetcher and sidecar bridge.
 
 ## Architecture
 
@@ -13,7 +15,7 @@ embedding Go code in the Rust binary.
 │  (Rust)   │  :18789      │  bridge server   │             │  RPC     │
 └───────────┘              └──────────────────┘             └──────────┘
       │                            │
-      │ fallback (native reqwest)  │ drift / ghost / retry
+      │ fallback (native reqwest)  │ drift / ghost / profile / retry
       └────────────────────────────┘
 ```
 
@@ -102,6 +104,13 @@ ghola to:
 - **Ghost sign** — attach a unique `X-Ghola-Identity` SHA-256 header,
   enabling request provenance without exposing real credentials.
 
+When the bridge payload includes impersonation fields, ghola can also:
+
+- **Impersonate** — use a pure-Go browser profile such as Chrome or Firefox.
+- **Shape headers** — emit browser-like headers that match the active profile.
+- **Persist cookies** — carry session cookies across requests with a cookie jar.
+- **Use proxy pools** — route requests through a selected proxy strategy.
+
 ## Bridge Protocol
 
 The bridge accepts `POST /` with a JSON body:
@@ -114,7 +123,11 @@ The bridge accepts `POST /` with a JSON body:
   "body": "{\"jsonrpc\":\"2.0\",\"method\":\"eth_blockNumber\",\"params\":[],\"id\":1}",
   "drift": true,
   "ghost": true,
-  "retries": 2
+  "retries": 2,
+  "impersonate": "chrome",
+  "stealth_headers": true,
+  "cookie_jar": "/tmp/ghola-cookies.json",
+  "proxy": "http://proxy.local:8080"
 }
 ```
 

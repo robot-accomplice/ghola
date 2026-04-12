@@ -15,14 +15,25 @@ import (
 
 // Request is the JSON payload accepted by the bridge server.
 type Request struct {
-	URL     string            `json:"url"`
-	Method  string            `json:"method"`
-	Headers map[string]string `json:"headers"`
-	Body    string            `json:"body"`
-	Drift   bool              `json:"drift"`
-	Ghost   bool              `json:"ghost"`
-	Retries    int               `json:"retries"`
-	BufferSize int               `json:"buffer_size"`
+	URL            string            `json:"url"`
+	Method         string            `json:"method"`
+	Headers        map[string]string `json:"headers"`
+	Body           string            `json:"body"`
+	Drift          bool              `json:"drift"`
+	Ghost          bool              `json:"ghost"`
+	Retries        int               `json:"retries"`
+	BufferSize     int               `json:"buffer_size"`
+	Impersonate    string            `json:"impersonate"`
+	StealthHeaders bool              `json:"stealth_headers"`
+	CookieJar      string            `json:"cookie_jar"`
+	Cookies        []string          `json:"cookies"`
+	Proxy          string            `json:"proxy"`
+	ProxyAuth      string            `json:"proxy_auth"`
+	ProxyFile      string            `json:"proxy_file"`
+	ProxyStrategy  string            `json:"proxy_strategy"`
+	Referer        string            `json:"referer"`
+	AcceptLanguage string            `json:"accept_language"`
+	HTTP3          bool              `json:"http3"`
 }
 
 // Response is the JSON payload returned by the bridge server.
@@ -35,8 +46,6 @@ type Response struct {
 
 // Addr is the default listen address for the bridge sidecar.
 const Addr = "127.0.0.1:18789"
-
-const defaultDriftMs = 500
 
 // Handler processes a single bridge request. Exported for testing with
 // custom Doer injection; production callers should use ListenAndServe.
@@ -68,27 +77,48 @@ func Handler(do client.Doer) fasthttp.RequestHandler {
 
 		method := br.Method
 		if method == "" {
-			method = "GET"
+			method = config.DefaultMethod
 		}
 
 		bufSize := br.BufferSize
 		if bufSize == 0 {
-			bufSize = 4096
+			bufSize = config.DefaultBufferSize
 		}
 
 		opts := &config.Options{
-			URL:        br.URL,
-			Method:     method,
-			Data:       br.Body,
-			Retries:    br.Retries,
-			Backoff:    1000,
-			Ghost:      br.Ghost,
-			Agent:      "ghola",
-			Silent:     true,
-			BufferSize: bufSize,
+			URL:     br.URL,
+			Method:  method,
+			Data:    br.Body,
+			User:    "",
+			Headers: nil,
+			Stealth: config.StealthOptions{
+				Ghost:          br.Ghost,
+				Agent:          config.DefaultAgent,
+				Impersonate:    br.Impersonate,
+				StealthHeaders: br.StealthHeaders,
+				CookieJar:      br.CookieJar,
+				Cookies:        br.Cookies,
+				Referer:        br.Referer,
+				AcceptLanguage: br.AcceptLanguage,
+				HTTP3:          br.HTTP3,
+			},
+			Resilience: config.ResilienceOptions{
+				Retries:    br.Retries,
+				Backoff:    config.DefaultBackoffMs,
+				BufferSize: bufSize,
+			},
+			Output: config.OutputOptions{
+				Silent: true,
+			},
+			ProxyCfg: config.ProxyOptions{
+				Proxy:    br.Proxy,
+				Auth:     br.ProxyAuth,
+				File:     br.ProxyFile,
+				Strategy: br.ProxyStrategy,
+			},
 		}
 		if br.Drift {
-			opts.Drift = defaultDriftMs
+			opts.Stealth.Drift = config.DefaultDriftMs
 		}
 
 		for k, v := range br.Headers {
@@ -109,11 +139,17 @@ func Handler(do client.Doer) fasthttp.RequestHandler {
 			rspHeaders[string(key)] = string(value)
 		})
 
-		out, _ := json.Marshal(Response{
+		out, err := json.Marshal(Response{
 			StatusCode: rsp.StatusCode(),
 			Headers:    rspHeaders,
 			Body:       string(rsp.Body()),
 		})
+		if err != nil {
+			ctx.SetStatusCode(fasthttp.StatusInternalServerError)
+			ctx.SetContentType("application/json")
+			ctx.SetBodyString(`{"error":"response marshal failed"}`)
+			return
+		}
 
 		ctx.SetContentType("application/json")
 		ctx.SetBody(out)
@@ -122,7 +158,11 @@ func Handler(do client.Doer) fasthttp.RequestHandler {
 
 func writeError(ctx *fasthttp.RequestCtx, msg string) {
 	ctx.SetContentType("application/json")
-	out, _ := json.Marshal(Response{Error: msg})
+	out, err := json.Marshal(Response{Error: msg})
+	if err != nil {
+		ctx.SetBodyString(`{"error":"marshal failed"}`)
+		return
+	}
 	ctx.SetBody(out)
 }
 
@@ -130,5 +170,5 @@ func writeError(ctx *fasthttp.RequestCtx, msg string) {
 // real network transport.
 func ListenAndServe(addr string) error {
 	fmt.Fprintf(os.Stderr, "ghola bridge listening on %s\n", addr)
-	return fasthttp.ListenAndServe(addr, Handler(client.DefaultDoer))
+	return fasthttp.ListenAndServe(addr, Handler(nil))
 }

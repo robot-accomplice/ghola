@@ -8,6 +8,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/robot-accomplice/ghola/internal/profile"
 	flag "github.com/spf13/pflag"
 	"github.com/valyala/fasthttp"
 )
@@ -33,30 +34,68 @@ func (e ExitCode) Int() int {
 	return int(e)
 }
 
+// OutputOptions controls how HTTP responses are rendered.
+type OutputOptions struct {
+	File     string
+	Verbose  bool
+	Fail     bool
+	Include  bool
+	Silent   bool
+	Snoop    bool
+	WgetMode bool
+}
+
+// StealthOptions controls browser impersonation and identity features.
+type StealthOptions struct {
+	Impersonate    string
+	StealthHeaders bool
+	Ghost          bool
+	Drift          int
+	Agent          string
+	AgentExplicit  bool
+	Referer        string
+	AcceptLanguage string
+	HTTP3          bool
+	CookieJar      string
+	Cookies        []string
+	ProfileList    bool
+}
+
+// ResilienceOptions controls retry, timeout, redirect, and buffer behavior.
+type ResilienceOptions struct {
+	Timeout    int
+	Retries    int
+	Backoff    int
+	RetryHTTP  bool
+	Location   bool
+	MaxRedirs  int
+	BufferSize int
+}
+
+// ProxyOptions controls proxy routing behavior.
+type ProxyOptions struct {
+	Proxy    string
+	Auth     string
+	File     string
+	Strategy string
+}
+
 // Options holds every user-configurable setting parsed from CLI flags.
 type Options struct {
 	URL         string
 	Method      string
 	Data        string
-	Output      string
-	Transfer    string
 	Headers     []string
-	Verbose     bool
-	Fail        bool
-	Include     bool
-	Silent      bool
+	Transfer    string
 	User        string
-	Agent       string
-	WgetMode    bool
 	Concurrency int
-	Drift       int
-	Ghost       bool
-	Retries     int
-	Backoff     int
-	Snoop       bool
 	Chain       string
 	Serve       bool
-	BufferSize  int
+
+	Output     OutputOptions
+	Stealth    StealthOptions
+	Resilience ResilienceOptions
+	ProxyCfg   ProxyOptions
 }
 
 // Version is set at build time via -ldflags.
@@ -76,27 +115,43 @@ func ParseFlags(args []string) (*Options, bool, error) {
 	fs.BoolVarP(&help, "help", "h", false, "help")
 	fs.BoolVarP(&version, "version", "V", false, "version")
 	fs.StringVarP(&opts.Data, "data", "d", "", "HTTP POST data")
-	fs.BoolVarP(&opts.Fail, "fail", "f", false, "Fail silently on HTTP errors")
-	fs.BoolVarP(&opts.Include, "include", "i", false, "Include protocol response headers")
-	fs.StringVarP(&opts.Output, "output", "o", "", "Write to file instead of stdout")
-	fs.BoolVarP(&opts.WgetMode, "wget", "w", false, "Enable wget-compatible output")
-	fs.IntVarP(&opts.Concurrency, "connections", "n", 1, "Number of concurrent connections")
-	fs.BoolVarP(&opts.Silent, "silent", "s", false, "Silent mode")
+	fs.BoolVarP(&opts.Output.Fail, "fail", "f", false, "Exit non-zero on non-2xx and suppress body output")
+	fs.BoolVarP(&opts.Output.Include, "include", "i", false, "Include protocol response headers")
+	fs.StringVarP(&opts.Output.File, "output", "o", "", "Write to file instead of stdout")
+	fs.BoolVarP(&opts.Output.WgetMode, "wget", "w", false, "Enable wget-compatible output")
+	fs.IntVarP(&opts.Concurrency, "connections", "n", DefaultConcurrency, "Number of concurrent connections")
+	fs.BoolVarP(&opts.Output.Silent, "silent", "s", false, "Silent mode")
 	fs.StringVarP(&opts.Transfer, "upload-file", "T", "", "Transfer local FILE to destination")
 	fs.StringVarP(&opts.User, "user", "u", "", "Server user and password <user:password>")
-	fs.StringVarP(&opts.Agent, "user-agent", "A", "ghola", "Send User-Agent <name>")
-	fs.StringVarP(&opts.Method, "request", "X", "GET", "HTTP request method")
-	fs.StringSliceVarP(&opts.Headers, "header", "H", []string{"Content-Type: application/json"}, "Pass custom headers")
-	fs.BoolVarP(&opts.Verbose, "verbose", "v", false, "verbose mode")
+	fs.StringVarP(&opts.Stealth.Agent, "user-agent", "A", DefaultAgent, "Send User-Agent <name>")
+	fs.StringVarP(&opts.Method, "request", "X", DefaultMethod, "HTTP request method")
+	fs.StringSliceVarP(&opts.Headers, "header", "H", []string{DefaultContentType}, "Pass custom headers")
+	fs.BoolVarP(&opts.Output.Verbose, "verbose", "v", false, "verbose mode")
 
-	fs.IntVarP(&opts.Drift, "drift", "D", 0, "Temporal Drift (ms jitter)")
-	fs.BoolVarP(&opts.Ghost, "ghost", "G", false, "Ghost Sign (unique identity hash)")
-	fs.IntVarP(&opts.Retries, "retry", "r", 0, "Number of retries on failure")
-	fs.IntVarP(&opts.Backoff, "backoff", "b", 1000, "Base backoff time for retries (ms)")
-	fs.BoolVarP(&opts.Snoop, "snoop", "S", false, "Snoop Mode: Pre-flight check of headers and security posture")
+	fs.IntVarP(&opts.Stealth.Drift, "drift", "D", 0, "Temporal Drift (ms jitter)")
+	fs.BoolVarP(&opts.Stealth.Ghost, "ghost", "G", false, "Ghost Sign (unique identity hash)")
+	fs.IntVar(&opts.Resilience.Timeout, "timeout", 0, "Request timeout in ms (0 disables)")
+	fs.IntVarP(&opts.Resilience.Retries, "retry", "r", 0, "Number of retries on failure")
+	fs.IntVarP(&opts.Resilience.Backoff, "backoff", "b", DefaultBackoffMs, "Base backoff time for retries (ms)")
+	fs.BoolVar(&opts.Resilience.RetryHTTP, "retry-http", false, "Retry on retryable HTTP status codes (e.g. 429, 5xx)")
+	fs.BoolVarP(&opts.Resilience.Location, "location", "L", false, "Follow HTTP redirects")
+	fs.IntVar(&opts.Resilience.MaxRedirs, "max-redirs", DefaultMaxRedirs, "Maximum number of redirects to follow")
+	fs.BoolVarP(&opts.Output.Snoop, "snoop", "S", false, "Snoop Mode: Pre-flight check of headers and security posture")
 	fs.StringVarP(&opts.Chain, "chain", "c", "", "Chain-Aware Shortcut: Pre-fills RPC headers for [eth, base, solana]")
 	fs.BoolVar(&opts.Serve, "serve", false, "Run as local RPC bridge on 127.0.0.1:18789")
-	fs.IntVar(&opts.BufferSize, "buffer-size", 4096, "Read buffer size for large headers")
+	fs.IntVar(&opts.Resilience.BufferSize, "buffer-size", DefaultBufferSize, "Read buffer size for large headers")
+	fs.StringVar(&opts.Stealth.Impersonate, "impersonate", "", "Use a browser-like request profile (chrome, firefox, safari, edge)")
+	fs.BoolVar(&opts.Stealth.StealthHeaders, "stealth-headers", false, "Generate coherent browser-like headers")
+	fs.BoolVar(&opts.Stealth.HTTP3, "http3", false, "Attempt HTTP/3 when supported by the active transport")
+	fs.StringVar(&opts.Stealth.CookieJar, "cookie-jar", "", "Persist cookies to a JSON jar file")
+	fs.StringSliceVar(&opts.Stealth.Cookies, "cookie", nil, "Seed request cookies as name=value")
+	fs.StringVar(&opts.ProxyCfg.Proxy, "proxy", "", "Route traffic through an HTTP proxy URL")
+	fs.StringVar(&opts.ProxyCfg.Auth, "proxy-auth", "", "Proxy credentials in user:pass form")
+	fs.StringVar(&opts.ProxyCfg.File, "proxy-file", "", "Load proxies from a newline-delimited file")
+	fs.StringVar(&opts.ProxyCfg.Strategy, "proxy-strategy", DefaultProxyStrategy, "Proxy selection strategy: sticky, random, round-robin")
+	fs.StringVar(&opts.Stealth.Referer, "referer", DefaultReferer, "Referer behavior: none, auto, or an explicit URL")
+	fs.StringVar(&opts.Stealth.AcceptLanguage, "accept-language", "", "Override the profile default Accept-Language")
+	fs.BoolVar(&opts.Stealth.ProfileList, "profile-list", false, "List available browser-like profiles and exit")
 
 	fs.Usage = func() {
 		fmt.Print(banner)
@@ -119,6 +174,13 @@ func ParseFlags(args []string) (*Options, bool, error) {
 		return opts, true, nil
 	}
 
+	if opts.Stealth.ProfileList {
+		for _, name := range profile.ProfileNames() {
+			fmt.Println(name)
+		}
+		return opts, true, nil
+	}
+
 	if fs.NArg() > 0 {
 		opts.URL = fs.Arg(0)
 	}
@@ -128,12 +190,31 @@ func ParseFlags(args []string) (*Options, bool, error) {
 	}
 
 	applyChainShortcuts(opts)
+	opts.Stealth.AgentExplicit = fs.Changed("user-agent")
+
+	if opts.Stealth.Impersonate != "" {
+		if _, err := profile.Resolve(opts.Stealth.Impersonate); err != nil {
+			return nil, false, err
+		}
+		if !fs.Changed("stealth-headers") {
+			opts.Stealth.StealthHeaders = true
+		}
+	}
+
+	if opts.ProxyCfg.Proxy != "" && opts.ProxyCfg.File != "" {
+		return nil, false, fmt.Errorf("--proxy and --proxy-file cannot be used together")
+	}
+	if opts.Stealth.Referer != "none" && opts.Stealth.Referer != "auto" {
+		if _, err := url.ParseRequestURI(opts.Stealth.Referer); err != nil {
+			return nil, false, fmt.Errorf("invalid --referer value %q", opts.Stealth.Referer)
+		}
+	}
 
 	if opts.Data != "" && !fs.Changed("request") {
 		opts.Method = fasthttp.MethodPost
 	}
 
-	if opts.WgetMode && opts.Output == "" {
+	if opts.Output.WgetMode && opts.Output.File == "" {
 		inferWgetFilename(opts)
 	}
 
@@ -156,8 +237,8 @@ func inferWgetFilename(opts *Options) {
 	if err != nil {
 		return
 	}
-	opts.Output = path.Base(u.Path)
-	if opts.Output == "." || opts.Output == "/" {
-		opts.Output = "index.html"
+	opts.Output.File = path.Base(u.Path)
+	if opts.Output.File == "." || opts.Output.File == "/" {
+		opts.Output.File = "index.html"
 	}
 }

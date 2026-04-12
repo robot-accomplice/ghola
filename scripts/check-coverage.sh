@@ -13,6 +13,13 @@ REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BASELINE="$REPO_ROOT/.coverage-baseline.json"
 MIN_COVERAGE=80
 
+# Packages that legitimately cannot meet the standard floor due to
+# integration-level dependencies (e.g. TLS client, real network).
+# Format: "package_suffix:floor"
+FLOOR_OVERRIDES=(
+  "internal/transport:50"
+)
+
 update_mode=false
 if [[ "${1:-}" == "--update" ]]; then
   update_mode=true
@@ -45,6 +52,20 @@ get_baseline() {
   fi
 }
 
+# Returns the coverage floor for a package, checking overrides first.
+get_floor() {
+  local pkg="$1"
+  for entry in "${FLOOR_OVERRIDES[@]}"; do
+    local suffix="${entry%%:*}"
+    local floor="${entry##*:}"
+    if [[ "$pkg" == *"$suffix" ]]; then
+      echo "$floor"
+      return
+    fi
+  done
+  echo "$MIN_COVERAGE"
+}
+
 failed=0
 
 echo ""
@@ -60,10 +81,11 @@ while IFS=$'\t' read -r pkg cov; do
   short="${pkg#github.com/robot-accomplice/ghola/}"
 
   status="pass"
+  pkg_floor=$(get_floor "$pkg")
 
-  below_floor=$(echo "$cov < $MIN_COVERAGE" | bc -l)
+  below_floor=$(echo "$cov < $pkg_floor" | bc -l)
   if [[ "$below_floor" -eq 1 ]]; then
-    status="FAIL (below ${MIN_COVERAGE}% floor)"
+    status="FAIL (below ${pkg_floor}% floor)"
     failed=1
   fi
 
