@@ -203,10 +203,10 @@ func TestBuildHeaders_ExplicitLang(t *testing.T) {
 
 func TestProfileNames(t *testing.T) {
 	names := ProfileNames()
-	if len(names) != 4 {
-		t.Errorf("ProfileNames count = %d, want 4", len(names))
+	if len(names) != 6 {
+		t.Errorf("ProfileNames count = %d, want 6", len(names))
 	}
-	expected := map[string]bool{"chrome": true, "firefox": true, "safari": true, "edge": true}
+	expected := map[string]bool{"chrome": true, "firefox": true, "safari": true, "edge": true, "chrome-mobile": true, "safari-mobile": true}
 	for _, n := range names {
 		if !expected[n] {
 			t.Errorf("unexpected profile name %q", n)
@@ -216,8 +216,22 @@ func TestProfileNames(t *testing.T) {
 
 func TestListProfiles(t *testing.T) {
 	all := ListProfiles()
-	if len(all) != 4 {
-		t.Errorf("ListProfiles count = %d, want 4", len(all))
+	if len(all) != 6 {
+		t.Errorf("ListProfiles count = %d, want 6", len(all))
+	}
+}
+
+func TestResolve_MobileProfiles(t *testing.T) {
+	for _, name := range []string{"chrome-mobile", "safari-mobile"} {
+		t.Run(name, func(t *testing.T) {
+			p, err := Resolve(name)
+			if err != nil {
+				t.Fatalf("Resolve(%q): %v", name, err)
+			}
+			if p.Name != name {
+				t.Errorf("Name = %q, want %q", p.Name, name)
+			}
+		})
 	}
 }
 

@@ -18,6 +18,8 @@ MIN_COVERAGE=80
 # Format: "package_suffix:floor"
 FLOOR_OVERRIDES=(
   "internal/transport:50"
+  "cmd/ghola:60"
+  "internal/proxy:60"
 )
 
 update_mode=false

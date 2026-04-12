@@ -5,10 +5,12 @@ import (
 	"crypto/rand"
 	"fmt"
 	"math/big"
+	"net"
 	"net/url"
 	"os"
 	"strings"
 	"sync/atomic"
+	"time"
 )
 
 type Selector struct {
@@ -94,6 +96,48 @@ func loadProxyFile(path, proxyAuth string) ([]string, error) {
 		return nil, err
 	}
 	return proxies, nil
+}
+
+// HealthCheck tests each proxy via TCP connect and removes unreachable ones.
+// It logs results to stderr and returns an error only if all proxies fail.
+func (s *Selector) HealthCheck() error {
+	if s == nil || len(s.proxies) == 0 {
+		return nil
+	}
+
+	const timeout = 5 * time.Second
+	var alive []string
+
+	for _, proxy := range s.proxies {
+		u, err := url.Parse(proxy)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "proxy-check: %s — parse error: %v\n", proxy, err)
+			continue
+		}
+		host := u.Host
+		if !strings.Contains(host, ":") {
+			if u.Scheme == "https" {
+				host += ":443"
+			} else {
+				host += ":80"
+			}
+		}
+		conn, err := net.DialTimeout("tcp", host, timeout)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "proxy-check: %s — DEAD (%v)\n", proxy, err)
+			continue
+		}
+		conn.Close()
+		fmt.Fprintf(os.Stderr, "proxy-check: %s — OK\n", proxy)
+		alive = append(alive, proxy)
+	}
+
+	if len(alive) == 0 && len(s.proxies) > 0 {
+		return fmt.Errorf("all %d proxies failed health check", len(s.proxies))
+	}
+
+	s.proxies = alive
+	return nil
 }
 
 func withAuth(rawProxy, proxyAuth string) string {
