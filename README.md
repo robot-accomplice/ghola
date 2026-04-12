@@ -87,7 +87,7 @@ go install github.com/robot-accomplice/ghola/cmd/ghola@latest
 
 ### Download Binary
 
-Pre-built binaries for Linux, macOS, and Windows are available on the [Releases](https://github.com/robot-accomplice/ghola/releases) page.
+Pre-built binaries for Linux, macOS, and Windows are available on the [Releases](https://github.com/robot-accomplice/ghola/releases) page and at [roboticus.ai](https://roboticus.ai).
 
 ### Build from Source
 
@@ -140,7 +140,7 @@ Ghola is structured as a CLI entrypoint plus focused internal packages:
 ```text
 cmd/ghola/          Entrypoint (os.Exit, arg wiring)
 internal/config/    CLI flag parsing, Options, validation
-internal/client/    Request pipeline, retry, drift, redirect, cookie/session integration
+internal/client/    Request pipeline (fetchState, retry, drift, redirect, cookie/session)
 internal/transport/ Runtime backend selection (simple or pure-Go impersonation)
 internal/profile/   Browser-like profile definitions and header generation
 internal/cookies/   Persistent JSON cookie jar
