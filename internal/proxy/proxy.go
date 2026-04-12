@@ -2,13 +2,13 @@ package proxy
 
 import (
 	"bufio"
+	"crypto/rand"
 	"fmt"
-	"math/rand"
+	"math/big"
 	"net/url"
 	"os"
 	"strings"
 	"sync/atomic"
-	"time"
 )
 
 type Selector struct {
@@ -48,8 +48,11 @@ func (s *Selector) Select() (string, error) {
 	}
 	switch s.strategy {
 	case "random":
-		r := rand.New(rand.NewSource(time.Now().UnixNano()))
-		return s.proxies[r.Intn(len(s.proxies))], nil
+		n, err := rand.Int(rand.Reader, big.NewInt(int64(len(s.proxies))))
+		if err != nil {
+			return "", fmt.Errorf("select random proxy: %w", err)
+		}
+		return s.proxies[n.Int64()], nil
 	case "round-robin":
 		idx := s.lastIndex.Add(1) - 1
 		return s.proxies[idx%uint64(len(s.proxies))], nil

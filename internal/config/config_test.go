@@ -18,8 +18,8 @@ func TestParseFlags_BasicURL(t *testing.T) {
 	if opts.Method != "GET" {
 		t.Errorf("Method = %q, want GET", opts.Method)
 	}
-	if opts.Agent != "ghola" {
-		t.Errorf("Agent = %q, want ghola", opts.Agent)
+	if opts.Stealth.Agent != "ghola" {
+		t.Errorf("Agent = %q, want ghola", opts.Stealth.Agent)
 	}
 }
 
@@ -109,10 +109,10 @@ func TestParseFlags_WgetFilename(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if opts.Output != tt.want {
-				t.Errorf("Output = %q, want %q", opts.Output, tt.want)
+			if opts.Output.File != tt.want {
+				t.Errorf("Output = %q, want %q", opts.Output.File, tt.want)
 			}
-			if !opts.WgetMode {
+			if !opts.Output.WgetMode {
 				t.Error("WgetMode should be true")
 			}
 		})
@@ -124,8 +124,8 @@ func TestParseFlags_WgetWithExplicitOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if opts.Output != "custom.bin" {
-		t.Errorf("Output = %q, want custom.bin (explicit -o should override wget inference)", opts.Output)
+	if opts.Output.File != "custom.bin" {
+		t.Errorf("Output = %q, want custom.bin (explicit -o should override wget inference)", opts.Output.File)
 	}
 }
 
@@ -209,19 +209,19 @@ func TestParseFlags_AllFlags(t *testing.T) {
 	if opts.Data != "body" {
 		t.Errorf("Data = %q", opts.Data)
 	}
-	if !opts.Fail {
+	if !opts.Output.Fail {
 		t.Error("Fail should be true")
 	}
-	if !opts.Include {
+	if !opts.Output.Include {
 		t.Error("Include should be true")
 	}
-	if opts.Output != "out.json" {
-		t.Errorf("Output = %q", opts.Output)
+	if opts.Output.File != "out.json" {
+		t.Errorf("Output = %q", opts.Output.File)
 	}
 	if opts.Concurrency != 4 {
 		t.Errorf("Concurrency = %d", opts.Concurrency)
 	}
-	if !opts.Silent {
+	if !opts.Output.Silent {
 		t.Error("Silent should be true")
 	}
 	if opts.Transfer != "upload.bin" {
@@ -230,56 +230,56 @@ func TestParseFlags_AllFlags(t *testing.T) {
 	if opts.User != "admin:secret" {
 		t.Errorf("User = %q", opts.User)
 	}
-	if opts.Agent != "custom-agent" {
-		t.Errorf("Agent = %q", opts.Agent)
+	if opts.Stealth.Agent != "custom-agent" {
+		t.Errorf("Agent = %q", opts.Stealth.Agent)
 	}
 	if opts.Method != "PATCH" {
 		t.Errorf("Method = %q", opts.Method)
 	}
-	if !opts.Verbose {
+	if !opts.Output.Verbose {
 		t.Error("Verbose should be true")
 	}
-	if opts.Drift != 50 {
-		t.Errorf("Drift = %d", opts.Drift)
+	if opts.Stealth.Drift != 50 {
+		t.Errorf("Drift = %d", opts.Stealth.Drift)
 	}
-	if !opts.Ghost {
+	if !opts.Stealth.Ghost {
 		t.Error("Ghost should be true")
 	}
-	if opts.Retries != 3 {
-		t.Errorf("Retries = %d", opts.Retries)
+	if opts.Resilience.Retries != 3 {
+		t.Errorf("Retries = %d", opts.Resilience.Retries)
 	}
-	if opts.Backoff != 500 {
-		t.Errorf("Backoff = %d", opts.Backoff)
+	if opts.Resilience.Backoff != 500 {
+		t.Errorf("Backoff = %d", opts.Resilience.Backoff)
 	}
-	if !opts.Snoop {
+	if !opts.Output.Snoop {
 		t.Error("Snoop should be true")
 	}
-	if opts.BufferSize != 8192 {
-		t.Errorf("BufferSize = %d, want 8192", opts.BufferSize)
+	if opts.Resilience.BufferSize != 8192 {
+		t.Errorf("BufferSize = %d, want 8192", opts.Resilience.BufferSize)
 	}
-	if opts.Impersonate != "chrome" {
-		t.Errorf("Impersonate = %q", opts.Impersonate)
+	if opts.Stealth.Impersonate != "chrome" {
+		t.Errorf("Impersonate = %q", opts.Stealth.Impersonate)
 	}
-	if !opts.StealthHeaders {
+	if !opts.Stealth.StealthHeaders {
 		t.Error("StealthHeaders should default on when impersonate is set")
 	}
-	if opts.CookieJar != "cookies.json" {
-		t.Errorf("CookieJar = %q", opts.CookieJar)
+	if opts.Stealth.CookieJar != "cookies.json" {
+		t.Errorf("CookieJar = %q", opts.Stealth.CookieJar)
 	}
-	if len(opts.Cookies) != 1 || opts.Cookies[0] != "session=abc" {
-		t.Errorf("Cookies = %v", opts.Cookies)
+	if len(opts.Stealth.Cookies) != 1 || opts.Stealth.Cookies[0] != "session=abc" {
+		t.Errorf("Cookies = %v", opts.Stealth.Cookies)
 	}
-	if opts.Proxy != "http://proxy.local:8080" {
-		t.Errorf("Proxy = %q", opts.Proxy)
+	if opts.ProxyCfg.Proxy != "http://proxy.local:8080" {
+		t.Errorf("Proxy = %q", opts.ProxyCfg.Proxy)
 	}
-	if opts.ProxyAuth != "user:pass" {
-		t.Errorf("ProxyAuth = %q", opts.ProxyAuth)
+	if opts.ProxyCfg.Auth != "user:pass" {
+		t.Errorf("ProxyAuth = %q", opts.ProxyCfg.Auth)
 	}
-	if opts.Referer != "auto" {
-		t.Errorf("Referer = %q", opts.Referer)
+	if opts.Stealth.Referer != "auto" {
+		t.Errorf("Referer = %q", opts.Stealth.Referer)
 	}
-	if opts.AcceptLanguage != "de-CH,de;q=0.9" {
-		t.Errorf("AcceptLanguage = %q", opts.AcceptLanguage)
+	if opts.Stealth.AcceptLanguage != "de-CH,de;q=0.9" {
+		t.Errorf("AcceptLanguage = %q", opts.Stealth.AcceptLanguage)
 	}
 }
 
@@ -288,8 +288,8 @@ func TestParseFlags_DefaultBufferSize(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if opts.BufferSize != 4096 {
-		t.Errorf("default BufferSize = %d, want 4096", opts.BufferSize)
+	if opts.Resilience.BufferSize != 4096 {
+		t.Errorf("default BufferSize = %d, want 4096", opts.Resilience.BufferSize)
 	}
 }
 
@@ -298,8 +298,8 @@ func TestParseFlags_CustomBufferSize(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if opts.BufferSize != 16384 {
-		t.Errorf("BufferSize = %d, want 16384", opts.BufferSize)
+	if opts.Resilience.BufferSize != 16384 {
+		t.Errorf("BufferSize = %d, want 16384", opts.Resilience.BufferSize)
 	}
 }
 
@@ -369,7 +369,7 @@ func TestParseFlags_DefaultBackoff(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if opts.Backoff != 1000 {
-		t.Errorf("default Backoff = %d, want 1000", opts.Backoff)
+	if opts.Resilience.Backoff != 1000 {
+		t.Errorf("default Backoff = %d, want 1000", opts.Resilience.Backoff)
 	}
 }

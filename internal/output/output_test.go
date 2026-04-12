@@ -41,7 +41,7 @@ func TestProcessResponse_IncludeHeaders(t *testing.T) {
 	rsp.SetBodyString("body")
 
 	var buf bytes.Buffer
-	opts := &config.Options{Include: true}
+	opts := &config.Options{Output: config.OutputOptions{Include: true}}
 	err := ProcessResponse(&buf, opts, req, rsp)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -65,7 +65,7 @@ func TestProcessResponse_Verbose(t *testing.T) {
 	rsp.SetBodyString("data")
 
 	var buf bytes.Buffer
-	opts := &config.Options{Verbose: true}
+	opts := &config.Options{Output: config.OutputOptions{Verbose: true}}
 	err := ProcessResponse(&buf, opts, req, rsp)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -85,7 +85,7 @@ func TestProcessResponse_Silent(t *testing.T) {
 	rsp.SetBodyString("should not appear")
 
 	var buf bytes.Buffer
-	opts := &config.Options{Silent: true}
+	opts := &config.Options{Output: config.OutputOptions{Silent: true}}
 	err := ProcessResponse(&buf, opts, req, rsp)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -105,7 +105,7 @@ func TestProcessResponse_FailOnHTTPError(t *testing.T) {
 	rsp.SetBodyString("error body")
 
 	var buf bytes.Buffer
-	opts := &config.Options{Fail: true}
+	opts := &config.Options{Output: config.OutputOptions{Fail: true}}
 	err := ProcessResponse(&buf, opts, req, rsp)
 	if err == nil {
 		t.Fatal("expected error for non-2xx with fail=true")
@@ -125,7 +125,7 @@ func TestProcessResponse_FailWithSuccess(t *testing.T) {
 	rsp.SetBodyString("ok")
 
 	var buf bytes.Buffer
-	opts := &config.Options{Fail: true}
+	opts := &config.Options{Output: config.OutputOptions{Fail: true}}
 	err := ProcessResponse(&buf, opts, req, rsp)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -147,7 +147,7 @@ func TestProcessResponse_FileOutput(t *testing.T) {
 	rsp.SetBodyString("file content")
 
 	var buf bytes.Buffer
-	opts := &config.Options{Output: tmpFile}
+	opts := &config.Options{Output: config.OutputOptions{File: tmpFile}}
 	err := ProcessResponse(&buf, opts, req, rsp)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -182,7 +182,7 @@ func TestProcessResponse_FileOutputFailSuppresses(t *testing.T) {
 	rsp.Header.SetStatusCode(404)
 	rsp.SetBodyString("not found")
 
-	opts := &config.Options{Output: tmpFile, Fail: true}
+	opts := &config.Options{Output: config.OutputOptions{File: tmpFile, Fail: true}}
 	var buf bytes.Buffer
 	err := ProcessResponse(&buf, opts, req, rsp)
 	if err == nil {
@@ -203,7 +203,7 @@ func TestProcessResponse_FileOutputError(t *testing.T) {
 	rsp.Header.SetStatusCode(200)
 	rsp.SetBodyString("data")
 
-	opts := &config.Options{Output: "/nonexistent/dir/file.txt"}
+	opts := &config.Options{Output: config.OutputOptions{File: "/nonexistent/dir/file.txt"}}
 	var buf bytes.Buffer
 	err := ProcessResponse(&buf, opts, req, rsp)
 	if err == nil {
@@ -300,7 +300,7 @@ func TestProcessResponse_StatusCodes(t *testing.T) {
 			rsp.SetBodyString("content")
 
 			var buf bytes.Buffer
-			opts := &config.Options{Fail: tt.fail}
+			opts := &config.Options{Output: config.OutputOptions{Fail: tt.fail}}
 			_ = ProcessResponse(&buf, opts, req, rsp)
 
 			hasOutput := buf.Len() > 0

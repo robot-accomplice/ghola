@@ -21,38 +21,38 @@ var ErrNon2xx = errors.New("non-2xx http status")
 func ProcessResponse(w io.Writer, opts *config.Options, req *fasthttp.Request, rsp *fasthttp.Response) error {
 	httpOk := rsp.StatusCode() >= 200 && rsp.StatusCode() < 300
 
-	if opts.Fail && !httpOk {
+	if opts.Output.Fail && !httpOk {
 		return fmt.Errorf("%w: %d %s", ErrNon2xx, rsp.StatusCode(), fasthttp.StatusMessage(rsp.StatusCode()))
 	}
 
-	if opts.Output != "" {
-		if err := os.WriteFile(opts.Output, rsp.Body(), 0644); err != nil {
+	if opts.Output.File != "" {
+		if err := os.WriteFile(opts.Output.File, rsp.Body(), 0644); err != nil {
 			return fmt.Errorf("write output file: %w", err)
 		}
 		return nil
 	}
 
-	if opts.Silent {
+	if opts.Output.Silent {
 		return nil
 	}
 
-	if opts.Include {
+	if opts.Output.Include {
 		fmt.Fprintf(w, "%s\n\n", bytes.Trim(rsp.Header.Header(), "\n"))
 	}
-	if opts.Verbose {
+	if opts.Output.Verbose {
 		fmt.Fprintf(w, "Ghost Signature: %s\n", req.Header.Peek("X-Ghola-Identity"))
-		if opts.Impersonate != "" {
-			fmt.Fprintf(w, "Profile: %s\n", opts.Impersonate)
+		if opts.Stealth.Impersonate != "" {
+			fmt.Fprintf(w, "Profile: %s\n", opts.Stealth.Impersonate)
 			fmt.Fprintln(w, "Transport: tls-client (pure Go)")
 		}
-		if opts.StealthHeaders {
+		if opts.Stealth.StealthHeaders {
 			fmt.Fprintln(w, "Stealth Headers: enabled")
 		}
-		if opts.Proxy != "" {
-			fmt.Fprintf(w, "Proxy: %s\n", opts.Proxy)
+		if opts.ProxyCfg.Proxy != "" {
+			fmt.Fprintf(w, "Proxy: %s\n", opts.ProxyCfg.Proxy)
 		}
-		if opts.CookieJar != "" {
-			fmt.Fprintf(w, "Cookie Jar: %s\n", opts.CookieJar)
+		if opts.Stealth.CookieJar != "" {
+			fmt.Fprintf(w, "Cookie Jar: %s\n", opts.Stealth.CookieJar)
 		}
 	}
 	fmt.Fprintf(w, "%s\n", bytes.Trim(rsp.Body(), "\n"))

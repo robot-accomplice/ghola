@@ -40,9 +40,9 @@ func TestFetchURL_BasicGET(t *testing.T) {
 	defer ln.Close()
 
 	opts := &config.Options{
-		URL:    "http://test",
-		Method: "GET",
-		Agent:  "ghola-test",
+		URL:     "http://test",
+		Method:  "GET",
+		Stealth: config.StealthOptions{Agent: "ghola-test"},
 	}
 
 	req, rsp, err := FetchURL(bg(), opts, do)
@@ -75,7 +75,7 @@ func TestFetchURL_CustomHeaders(t *testing.T) {
 	opts := &config.Options{
 		URL:     "http://test",
 		Method:  "GET",
-		Agent:   "test-agent",
+		Stealth: config.StealthOptions{Agent: "test-agent"},
 		Headers: []string{"X-Custom: value"},
 	}
 
@@ -100,10 +100,10 @@ func TestFetchURL_PostWithBody(t *testing.T) {
 	defer ln.Close()
 
 	opts := &config.Options{
-		URL:    "http://test",
-		Method: "POST",
-		Data:   "test-data",
-		Agent:  "ghola",
+		URL:     "http://test",
+		Method:  "POST",
+		Data:    "test-data",
+		Stealth: config.StealthOptions{Agent: "ghola"},
 	}
 
 	req, rsp, err := FetchURL(bg(), opts, do)
@@ -132,10 +132,9 @@ func TestFetchURL_GhostSign(t *testing.T) {
 	defer ln.Close()
 
 	opts := &config.Options{
-		URL:    "http://test",
-		Method: "GET",
-		Agent:  "ghola",
-		Ghost:  true,
+		URL:     "http://test",
+		Method:  "GET",
+		Stealth: config.StealthOptions{Agent: "ghola", Ghost: true},
 	}
 
 	req, rsp, err := FetchURL(bg(), opts, do)
@@ -156,10 +155,9 @@ func TestFetchURL_NoGhostByDefault(t *testing.T) {
 	defer ln.Close()
 
 	opts := &config.Options{
-		URL:    "http://test",
-		Method: "GET",
-		Agent:  "ghola",
-		Ghost:  false,
+		URL:     "http://test",
+		Method:  "GET",
+		Stealth: config.StealthOptions{Agent: "ghola", Ghost: false},
 	}
 
 	req, rsp, err := FetchURL(bg(), opts, do)
@@ -182,10 +180,10 @@ func TestFetchURL_BasicAuth(t *testing.T) {
 	defer ln.Close()
 
 	opts := &config.Options{
-		URL:    "http://test",
-		Method: "GET",
-		Agent:  "ghola",
-		User:   "admin:secret",
+		URL:     "http://test",
+		Method:  "GET",
+		Stealth: config.StealthOptions{Agent: "ghola"},
+		User:    "admin:secret",
 	}
 
 	req, rsp, err := FetchURL(bg(), opts, do)
@@ -211,12 +209,11 @@ func TestFetchURL_Retries(t *testing.T) {
 	defer ln.Close()
 
 	opts := &config.Options{
-		URL:     "http://test",
-		Method:  "GET",
-		Agent:   "ghola",
-		Retries: 3,
-		Backoff: 1,
-		Silent:  true,
+		URL:        "http://test",
+		Method:     "GET",
+		Stealth:    config.StealthOptions{Agent: "ghola"},
+		Resilience: config.ResilienceOptions{Retries: 3, Backoff: 1},
+		Output:     config.OutputOptions{Silent: true},
 	}
 
 	req, rsp, err := FetchURL(bg(), opts, do)
@@ -237,12 +234,11 @@ func TestFetchURL_RetriesExhausted(t *testing.T) {
 	}
 
 	opts := &config.Options{
-		URL:     "http://test",
-		Method:  "GET",
-		Agent:   "ghola",
-		Retries: 1,
-		Backoff: 1,
-		Silent:  true,
+		URL:        "http://test",
+		Method:     "GET",
+		Stealth:    config.StealthOptions{Agent: "ghola"},
+		Resilience: config.ResilienceOptions{Retries: 1, Backoff: 1},
+		Output:     config.OutputOptions{Silent: true},
 	}
 
 	req, rsp, err := FetchURL(bg(), opts, failDoer)
@@ -271,13 +267,11 @@ func TestFetchURL_RetryHTTP_RetryAfterPrecedence(t *testing.T) {
 	defer ln.Close()
 
 	opts := &config.Options{
-		URL:       "http://test",
-		Method:    "GET",
-		Agent:     "ghola",
-		Retries:   1,
-		Backoff:   10000, // would be large if exponential backoff were used
-		RetryHTTP: true,
-		Silent:    true,
+		URL:        "http://test",
+		Method:     "GET",
+		Stealth:    config.StealthOptions{Agent: "ghola"},
+		Resilience: config.ResilienceOptions{Retries: 1, Backoff: 10000, RetryHTTP: true},
+		Output:     config.OutputOptions{Silent: true},
 	}
 
 	start := time.Now()
@@ -311,13 +305,11 @@ func TestFetchURL_RetryHTTP_RetryableStatusExhaustedReturnsResponse(t *testing.T
 	defer ln.Close()
 
 	opts := &config.Options{
-		URL:       "http://test",
-		Method:    "GET",
-		Agent:     "ghola",
-		Retries:   1,
-		Backoff:   1,
-		RetryHTTP: true,
-		Silent:    true,
+		URL:        "http://test",
+		Method:     "GET",
+		Stealth:    config.StealthOptions{Agent: "ghola"},
+		Resilience: config.ResilienceOptions{Retries: 1, Backoff: 1, RetryHTTP: true},
+		Output:     config.OutputOptions{Silent: true},
 	}
 
 	req, rsp, err := FetchURL(bg(), opts, do)
@@ -356,17 +348,9 @@ func TestFetchURL_RedirectLocationRelative(t *testing.T) {
 	opts := &config.Options{
 		URL:         "http://test/start",
 		Method:      "GET",
-		Agent:       "ghola",
-		Retries:     0,
-		Location:    true,
-		MaxRedirs:   5,
-		Silent:      true,
-		RetryHTTP:   false,
-		Backoff:     1,
-		Ghost:       false,
-		Fail:        false,
-		Include:     false,
-		Snoop:       false,
+		Stealth:     config.StealthOptions{Agent: "ghola", Ghost: false},
+		Resilience:  config.ResilienceOptions{Retries: 0, Location: true, MaxRedirs: 5, RetryHTTP: false, Backoff: 1},
+		Output:      config.OutputOptions{Silent: true, Fail: false, Include: false, Snoop: false},
 		Concurrency: 1,
 	}
 
@@ -401,13 +385,9 @@ func TestFetchURL_RedirectMaxRedirsExceededReturnsLastResponse(t *testing.T) {
 	opts := &config.Options{
 		URL:         "http://test/start",
 		Method:      "GET",
-		Agent:       "ghola",
-		Retries:     0,
-		Location:    true,
-		MaxRedirs:   1,
-		Silent:      true,
-		RetryHTTP:   false,
-		Backoff:     1,
+		Stealth:     config.StealthOptions{Agent: "ghola"},
+		Resilience:  config.ResilienceOptions{Retries: 0, Location: true, MaxRedirs: 1, RetryHTTP: false, Backoff: 1},
+		Output:      config.OutputOptions{Silent: true},
 		Concurrency: 1,
 	}
 
@@ -454,13 +434,9 @@ func TestFetchURL_Redirect303RewritesToGET(t *testing.T) {
 		URL:         "http://test/start",
 		Method:      "POST",
 		Data:        "abc",
-		Agent:       "ghola",
-		Retries:     0,
-		Location:    true,
-		MaxRedirs:   5,
-		Silent:      true,
-		RetryHTTP:   false,
-		Backoff:     1,
+		Stealth:     config.StealthOptions{Agent: "ghola"},
+		Resilience:  config.ResilienceOptions{Retries: 0, Location: true, MaxRedirs: 5, RetryHTTP: false, Backoff: 1},
+		Output:      config.OutputOptions{Silent: true},
 		Concurrency: 1,
 	}
 
@@ -489,10 +465,9 @@ func TestFetchURL_Drift(t *testing.T) {
 	defer ln.Close()
 
 	opts := &config.Options{
-		URL:    "http://test",
-		Method: "GET",
-		Agent:  "ghola",
-		Drift:  1,
+		URL:     "http://test",
+		Method:  "GET",
+		Stealth: config.StealthOptions{Agent: "ghola", Drift: 1},
 	}
 
 	req, rsp, err := FetchURL(bg(), opts, do)
@@ -522,7 +497,7 @@ func TestFetchURL_MultipleHeaders(t *testing.T) {
 	opts := &config.Options{
 		URL:     "http://test",
 		Method:  "GET",
-		Agent:   "ghola",
+		Stealth: config.StealthOptions{Agent: "ghola"},
 		Headers: []string{"X-A: 1", "X-B: 2"},
 	}
 
@@ -543,7 +518,7 @@ func TestFetchURL_MalformedHeaderIgnored(t *testing.T) {
 	opts := &config.Options{
 		URL:     "http://test",
 		Method:  "GET",
-		Agent:   "ghola",
+		Stealth: config.StealthOptions{Agent: "ghola"},
 		Headers: []string{"no-colon-separator"},
 	}
 
@@ -567,7 +542,7 @@ func TestFetchURL_CustomHeadersNoSpaceAfterColon(t *testing.T) {
 	opts := &config.Options{
 		URL:     "http://test",
 		Method:  "GET",
-		Agent:   "ghola",
+		Stealth: config.StealthOptions{Agent: "ghola"},
 		Headers: []string{"X-Custom:value"},
 	}
 
@@ -591,7 +566,7 @@ func TestRunConcurrent_AllGoroutinesComplete(t *testing.T) {
 	opts := &config.Options{
 		URL:         "http://test",
 		Method:      "GET",
-		Agent:       "ghola",
+		Stealth:     config.StealthOptions{Agent: "ghola"},
 		Concurrency: 5,
 	}
 
@@ -625,9 +600,9 @@ func TestRunConcurrent_AllFail(t *testing.T) {
 	opts := &config.Options{
 		URL:         "http://test",
 		Method:      "GET",
-		Agent:       "ghola",
+		Stealth:     config.StealthOptions{Agent: "ghola"},
 		Concurrency: 3,
-		Silent:      true,
+		Output:      config.OutputOptions{Silent: true},
 	}
 
 	var processed int32
@@ -646,11 +621,11 @@ func TestFetchURL_ZeroRetries(t *testing.T) {
 	}
 
 	opts := &config.Options{
-		URL:     "http://test",
-		Method:  "GET",
-		Agent:   "ghola",
-		Retries: 0,
-		Silent:  true,
+		URL:        "http://test",
+		Method:     "GET",
+		Stealth:    config.StealthOptions{Agent: "ghola"},
+		Resilience: config.ResilienceOptions{Retries: 0},
+		Output:     config.OutputOptions{Silent: true},
 	}
 
 	_, _, err := FetchURL(bg(), opts, failDoer)
@@ -670,12 +645,11 @@ func TestFetchURL_CancelledContextStopsRetries(t *testing.T) {
 	cancel()
 
 	opts := &config.Options{
-		URL:     "http://test",
-		Method:  "GET",
-		Agent:   "ghola",
-		Retries: 100,
-		Backoff: 60000,
-		Silent:  true,
+		URL:        "http://test",
+		Method:     "GET",
+		Stealth:    config.StealthOptions{Agent: "ghola"},
+		Resilience: config.ResilienceOptions{Retries: 100, Backoff: 60000},
+		Output:     config.OutputOptions{Silent: true},
 	}
 
 	start := time.Now()
@@ -704,12 +678,11 @@ func TestFetchURL_CancelDuringBackoff(t *testing.T) {
 	defer cancel()
 
 	opts := &config.Options{
-		URL:     "http://test",
-		Method:  "GET",
-		Agent:   "ghola",
-		Retries: 10,
-		Backoff: 10000,
-		Silent:  true,
+		URL:        "http://test",
+		Method:     "GET",
+		Stealth:    config.StealthOptions{Agent: "ghola"},
+		Resilience: config.ResilienceOptions{Retries: 10, Backoff: 10000},
+		Output:     config.OutputOptions{Silent: true},
 	}
 
 	start := time.Now()
@@ -743,9 +716,9 @@ func TestRunConcurrent_CancelsLosers(t *testing.T) {
 	opts := &config.Options{
 		URL:         "http://test",
 		Method:      "GET",
-		Agent:       "ghola",
+		Stealth:     config.StealthOptions{Agent: "ghola"},
 		Concurrency: 5,
-		Silent:      true,
+		Output:      config.OutputOptions{Silent: true},
 	}
 
 	var processed int32
@@ -802,11 +775,13 @@ func TestFetchURL_ImpersonationAddsBrowserHeaders(t *testing.T) {
 	defer ln.Close()
 
 	opts := &config.Options{
-		URL:            "http://test",
-		Method:         "GET",
-		Agent:          "ghola",
-		Impersonate:    "chrome",
-		StealthHeaders: true,
+		URL:    "http://test",
+		Method: "GET",
+		Stealth: config.StealthOptions{
+			Agent:          "ghola",
+			Impersonate:    "chrome",
+			StealthHeaders: true,
+		},
 	}
 
 	req, rsp, err := FetchURL(bg(), opts, do)
@@ -830,8 +805,8 @@ func TestFetchURL_DefaultPathStillUsesInjectedLegacyTransport(t *testing.T) {
 	opts := &config.Options{
 		URL:        "http://test",
 		Method:     "GET",
-		Agent:      "ghola-test",
-		BufferSize: 8192,
+		Stealth:    config.StealthOptions{Agent: "ghola-test"},
+		Resilience: config.ResilienceOptions{BufferSize: 8192},
 	}
 
 	req, rsp, err := FetchURL(bg(), opts, do)
@@ -862,10 +837,9 @@ func TestFetchURL_CookieJarPersistsAcrossRequests(t *testing.T) {
 	defer ln.Close()
 
 	opts := &config.Options{
-		URL:       "http://test",
-		Method:    "GET",
-		Agent:     "ghola",
-		CookieJar: jarPath,
+		URL:     "http://test",
+		Method:  "GET",
+		Stealth: config.StealthOptions{Agent: "ghola", CookieJar: jarPath},
 	}
 
 	req, rsp, err := FetchURL(bg(), opts, do)

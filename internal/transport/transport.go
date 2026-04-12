@@ -35,15 +35,15 @@ type tlsClientTransport struct {
 
 // New constructs the current transport backend.
 func New(opts *config.Options, selectedProxy string) (Transport, error) {
-	if strings.TrimSpace(opts.Impersonate) != "" {
+	if strings.TrimSpace(opts.Stealth.Impersonate) != "" {
 		return newTLSClientTransport(opts, selectedProxy)
 	}
-	if opts.HTTP3 {
+	if opts.Stealth.HTTP3 {
 		return nil, fmt.Errorf("--http3 requires --impersonate with the pure-Go transport backend")
 	}
 
 	client := &fasthttp.Client{
-		ReadBufferSize: opts.BufferSize,
+		ReadBufferSize: opts.Resilience.BufferSize,
 	}
 	if selectedProxy != "" {
 		proxyURL, err := url.Parse(selectedProxy)
@@ -60,11 +60,11 @@ func New(opts *config.Options, selectedProxy string) (Transport, error) {
 }
 
 func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transport, error) {
-	activeProfile, err := profile.Resolve(opts.Impersonate)
+	activeProfile, err := profile.Resolve(opts.Stealth.Impersonate)
 	if err != nil {
 		return nil, err
 	}
-	if opts.HTTP3 && !activeProfile.SupportsHTTP3 {
+	if opts.Stealth.HTTP3 && !activeProfile.SupportsHTTP3 {
 		return nil, fmt.Errorf("profile %q does not support http3 in the pure-Go backend", activeProfile.Name)
 	}
 
@@ -78,13 +78,13 @@ func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transpor
 		tlsclient.WithNotFollowRedirects(),
 		tlsclient.WithRandomTLSExtensionOrder(),
 	}
-	if opts.Timeout > 0 {
-		options = append(options, tlsclient.WithTimeoutMilliseconds(opts.Timeout))
+	if opts.Resilience.Timeout > 0 {
+		options = append(options, tlsclient.WithTimeoutMilliseconds(opts.Resilience.Timeout))
 	}
 	if selectedProxy != "" {
 		options = append(options, tlsclient.WithProxyUrl(selectedProxy))
 	}
-	if !opts.HTTP3 {
+	if !opts.Stealth.HTTP3 {
 		options = append(options, tlsclient.WithDisableHttp3())
 	}
 
