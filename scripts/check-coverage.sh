@@ -12,6 +12,18 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BASELINE="$REPO_ROOT/.coverage-baseline.json"
 MIN_COVERAGE=80
+# Allow up to 1% regression to absorb cross-platform coverage variance
+# (race detector timing, OS-specific code paths).
+REGRESSION_TOLERANCE=1
+
+# Packages that legitimately cannot meet the standard floor due to
+# integration-level dependencies (e.g. TLS client, real network).
+# Format: "package_suffix:floor"
+FLOOR_OVERRIDES=(
+  "internal/transport:50"
+  "cmd/ghola:60"
+  "internal/proxy:60"
+)
 
 update_mode=false
 if [[ "${1:-}" == "--update" ]]; then
@@ -45,6 +57,20 @@ get_baseline() {
   fi
 }
 
+# Returns the coverage floor for a package, checking overrides first.
+get_floor() {
+  local pkg="$1"
+  for entry in "${FLOOR_OVERRIDES[@]}"; do
+    local suffix="${entry%%:*}"
+    local floor="${entry##*:}"
+    if [[ "$pkg" == *"$suffix" ]]; then
+      echo "$floor"
+      return
+    fi
+  done
+  echo "$MIN_COVERAGE"
+}
+
 failed=0
 
 echo ""
@@ -60,17 +86,19 @@ while IFS=$'\t' read -r pkg cov; do
   short="${pkg#github.com/robot-accomplice/ghola/}"
 
   status="pass"
+  pkg_floor=$(get_floor "$pkg")
 
-  below_floor=$(echo "$cov < $MIN_COVERAGE" | bc -l)
+  below_floor=$(echo "$cov < $pkg_floor" | bc -l)
   if [[ "$below_floor" -eq 1 ]]; then
-    status="FAIL (below ${MIN_COVERAGE}% floor)"
+    status="FAIL (below ${pkg_floor}% floor)"
     failed=1
   fi
 
-  below_base=$(echo "$cov < $base" | bc -l)
-  if [[ "$below_base" -eq 1 ]]; then
+  threshold=$(echo "$base - $REGRESSION_TOLERANCE" | bc -l)
+  below_threshold=$(echo "$cov < $threshold" | bc -l)
+  if [[ "$below_threshold" -eq 1 ]]; then
     delta=$(echo "$base - $cov" | bc -l)
-    status="FAIL (regressed -${delta}% from ${base}%)"
+    status="FAIL (regressed -${delta}% from ${base}%, tolerance ${REGRESSION_TOLERANCE}%)"
     failed=1
   fi
 

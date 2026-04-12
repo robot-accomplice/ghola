@@ -4,9 +4,12 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
+	"time"
 
 	"github.com/robot-accomplice/ghola/internal/bridge"
 	"github.com/robot-accomplice/ghola/internal/client"
@@ -18,7 +21,7 @@ import (
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	os.Exit(execute(ctx, os.Args[1:], client.DefaultDoer, os.Stdout))
+	os.Exit(execute(ctx, os.Args[1:], nil, os.Stdout))
 }
 
 func execute(ctx context.Context, args []string, do client.Doer, w *os.File) int {
@@ -48,14 +51,31 @@ func execute(ctx context.Context, args []string, do client.Doer, w *os.File) int
 		opts.Data = string(b)
 	}
 
+	// Stdin/file substitution: -d - reads stdin, -d @file reads from file.
+	if opts.Data == "-" || opts.Data == "@-" {
+		b, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "read stdin: %v\n", err)
+			return config.ReadFileFailed.Int()
+		}
+		opts.Data = string(b)
+	} else if len(opts.Data) > 1 && opts.Data[0] == '@' {
+		b, err := os.ReadFile(opts.Data[1:])
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "read data file: %v\n", err)
+			return config.ReadFileFailed.Int()
+		}
+		opts.Data = string(b)
+	}
+
 	if opts.Concurrency > 1 {
 		client.RunConcurrent(ctx, opts, do, func(req *fasthttp.Request, rsp *fasthttp.Response) {
 			defer fasthttp.ReleaseRequest(req)
 			defer fasthttp.ReleaseResponse(rsp)
-			if opts.Snoop {
+			if opts.Output.Snoop {
 				output.RunSnoop(w, opts, rsp)
 			} else {
-				if err := output.ProcessResponse(w, opts, req, rsp); err != nil {
+				if err := output.ProcessResponse(w, opts, req, rsp, 0); err != nil {
 					fmt.Fprintln(os.Stderr, err)
 				}
 			}
@@ -63,9 +83,11 @@ func execute(ctx context.Context, args []string, do client.Doer, w *os.File) int
 		return config.NoError.Int()
 	}
 
+	start := time.Now()
 	req, rsp, err := client.FetchURL(ctx, opts, do)
+	elapsed := time.Since(start)
 	if err != nil {
-		if !opts.Silent {
+		if !opts.Output.Silent {
 			fmt.Fprintf(os.Stderr, "Failed: %s\n", err)
 		}
 		return config.SendFailed.Int()
@@ -73,14 +95,23 @@ func execute(ctx context.Context, args []string, do client.Doer, w *os.File) int
 	defer fasthttp.ReleaseRequest(req)
 	defer fasthttp.ReleaseResponse(rsp)
 
-	if opts.Snoop {
+	if opts.Output.Snoop {
 		output.RunSnoop(w, opts, rsp)
 		return config.NoError.Int()
 	}
 
-	if err := output.ProcessResponse(w, opts, req, rsp); err != nil {
+	if err := output.ProcessResponse(w, opts, req, rsp, elapsed); err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		if errors.Is(err, output.ErrNon2xx) {
+			return config.SendFailed.Int()
+		}
 		return config.WriteFileFailed.Int()
+	}
+
+	if opts.Output.HAR != "" {
+		if err := output.WriteHAR(opts.Output.HAR, opts, req, rsp, start, elapsed); err != nil {
+			fmt.Fprintf(os.Stderr, "har: %v\n", err)
+		}
 	}
 
 	return config.NoError.Int()
