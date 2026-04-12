@@ -3,8 +3,10 @@ package output
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/robot-accomplice/ghola/internal/config"
 	"github.com/valyala/fasthttp"
@@ -21,7 +23,7 @@ func TestProcessResponse_Stdout(t *testing.T) {
 
 	var buf bytes.Buffer
 	opts := &config.Options{}
-	err := ProcessResponse(&buf, opts, req, rsp)
+	err := ProcessResponse(&buf, opts, req, rsp, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -42,7 +44,7 @@ func TestProcessResponse_IncludeHeaders(t *testing.T) {
 
 	var buf bytes.Buffer
 	opts := &config.Options{Output: config.OutputOptions{Include: true}}
-	err := ProcessResponse(&buf, opts, req, rsp)
+	err := ProcessResponse(&buf, opts, req, rsp, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -66,7 +68,7 @@ func TestProcessResponse_Verbose(t *testing.T) {
 
 	var buf bytes.Buffer
 	opts := &config.Options{Output: config.OutputOptions{Verbose: true}}
-	err := ProcessResponse(&buf, opts, req, rsp)
+	err := ProcessResponse(&buf, opts, req, rsp, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -86,7 +88,7 @@ func TestProcessResponse_Silent(t *testing.T) {
 
 	var buf bytes.Buffer
 	opts := &config.Options{Output: config.OutputOptions{Silent: true}}
-	err := ProcessResponse(&buf, opts, req, rsp)
+	err := ProcessResponse(&buf, opts, req, rsp, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -106,7 +108,7 @@ func TestProcessResponse_FailOnHTTPError(t *testing.T) {
 
 	var buf bytes.Buffer
 	opts := &config.Options{Output: config.OutputOptions{Fail: true}}
-	err := ProcessResponse(&buf, opts, req, rsp)
+	err := ProcessResponse(&buf, opts, req, rsp, 0)
 	if err == nil {
 		t.Fatal("expected error for non-2xx with fail=true")
 	}
@@ -126,7 +128,7 @@ func TestProcessResponse_FailWithSuccess(t *testing.T) {
 
 	var buf bytes.Buffer
 	opts := &config.Options{Output: config.OutputOptions{Fail: true}}
-	err := ProcessResponse(&buf, opts, req, rsp)
+	err := ProcessResponse(&buf, opts, req, rsp, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -148,7 +150,7 @@ func TestProcessResponse_FileOutput(t *testing.T) {
 
 	var buf bytes.Buffer
 	opts := &config.Options{Output: config.OutputOptions{File: tmpFile}}
-	err := ProcessResponse(&buf, opts, req, rsp)
+	err := ProcessResponse(&buf, opts, req, rsp, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -184,7 +186,7 @@ func TestProcessResponse_FileOutputFailSuppresses(t *testing.T) {
 
 	opts := &config.Options{Output: config.OutputOptions{File: tmpFile, Fail: true}}
 	var buf bytes.Buffer
-	err := ProcessResponse(&buf, opts, req, rsp)
+	err := ProcessResponse(&buf, opts, req, rsp, 0)
 	if err == nil {
 		t.Fatal("expected error for non-2xx with fail=true")
 	}
@@ -205,7 +207,7 @@ func TestProcessResponse_FileOutputError(t *testing.T) {
 
 	opts := &config.Options{Output: config.OutputOptions{File: "/nonexistent/dir/file.txt"}}
 	var buf bytes.Buffer
-	err := ProcessResponse(&buf, opts, req, rsp)
+	err := ProcessResponse(&buf, opts, req, rsp, 0)
 	if err == nil {
 		t.Fatal("expected error for invalid output path")
 	}
@@ -253,25 +255,25 @@ func TestRunSnoop_NoWAF(t *testing.T) {
 	RunSnoop(&buf, opts, rsp)
 
 	out := buf.String()
-	if !strings.Contains(out, "LOW") {
-		t.Error("should report LOW for non-cloudflare server")
+	if !strings.Contains(out, "not detected") {
+		t.Error("should report 'not detected' for non-cloudflare server")
 	}
 }
 
-func TestRunSnoop_XRayDetected(t *testing.T) {
+func TestRunSnoop_AWSDetected(t *testing.T) {
 	rsp := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseResponse(rsp)
 
 	rsp.Header.SetStatusCode(200)
 	rsp.Header.Set("Server", "nginx")
-	rsp.Header.Set("X-Ray", "true")
+	rsp.Header.Set("X-Amzn-Requestid", "abc-123")
 
 	var buf bytes.Buffer
-	opts := &config.Options{URL: "http://xray.com"}
+	opts := &config.Options{URL: "http://aws.com"}
 	RunSnoop(&buf, opts, rsp)
 
 	if !strings.Contains(buf.String(), "DETECTED") {
-		t.Error("should detect WAF via X-Ray header")
+		t.Error("should detect AWS via X-Amzn-Requestid header")
 	}
 }
 
@@ -301,7 +303,7 @@ func TestProcessResponse_StatusCodes(t *testing.T) {
 
 			var buf bytes.Buffer
 			opts := &config.Options{Output: config.OutputOptions{Fail: tt.fail}}
-			_ = ProcessResponse(&buf, opts, req, rsp)
+			_ = ProcessResponse(&buf, opts, req, rsp, 0)
 
 			hasOutput := buf.Len() > 0
 			if hasOutput != tt.output {
@@ -325,5 +327,155 @@ func TestRunSnoop_ContentLength(t *testing.T) {
 
 	if !strings.Contains(buf.String(), "42 bytes") {
 		t.Error("snoop should display content length")
+	}
+}
+
+func TestProcessResponse_JQ(t *testing.T) {
+	req := fasthttp.AcquireRequest()
+	rsp := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseRequest(req)
+	defer fasthttp.ReleaseResponse(rsp)
+
+	rsp.SetStatusCode(200)
+	rsp.SetBodyString(`{"result":"0x1a2b","id":1}`)
+
+	var buf bytes.Buffer
+	opts := &config.Options{Output: config.OutputOptions{JQ: "result"}}
+	err := ProcessResponse(&buf, opts, req, rsp, 0)
+	if err != nil {
+		t.Fatalf("ProcessResponse: %v", err)
+	}
+	if !strings.Contains(buf.String(), "0x1a2b") {
+		t.Errorf("JQ output = %q, want to contain '0x1a2b'", buf.String())
+	}
+}
+
+func TestProcessResponse_JQ_NoMatch(t *testing.T) {
+	req := fasthttp.AcquireRequest()
+	rsp := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseRequest(req)
+	defer fasthttp.ReleaseResponse(rsp)
+
+	rsp.SetStatusCode(200)
+	rsp.SetBodyString(`{"result":"0x1a2b"}`)
+
+	var buf bytes.Buffer
+	opts := &config.Options{Output: config.OutputOptions{JQ: "nonexistent"}}
+	err := ProcessResponse(&buf, opts, req, rsp, 0)
+	if err == nil {
+		t.Fatal("expected error for non-matching JQ path")
+	}
+}
+
+func TestProcessResponse_Timing(t *testing.T) {
+	req := fasthttp.AcquireRequest()
+	rsp := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseRequest(req)
+	defer fasthttp.ReleaseResponse(rsp)
+
+	rsp.SetStatusCode(200)
+	rsp.SetBodyString("ok")
+
+	var buf bytes.Buffer
+	opts := &config.Options{Output: config.OutputOptions{Timing: true}}
+	err := ProcessResponse(&buf, opts, req, rsp, 150*time.Millisecond)
+	if err != nil {
+		t.Fatalf("ProcessResponse: %v", err)
+	}
+	if !strings.Contains(buf.String(), "Total: 150ms") {
+		t.Errorf("timing output = %q, want 'Total: 150ms'", buf.String())
+	}
+}
+
+func TestProcessResponse_JQ_WithFileOutput(t *testing.T) {
+	req := fasthttp.AcquireRequest()
+	rsp := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseRequest(req)
+	defer fasthttp.ReleaseResponse(rsp)
+
+	rsp.SetStatusCode(200)
+	rsp.SetBodyString(`{"data":{"value":42}}`)
+
+	tmpFile := filepath.Join(t.TempDir(), "jq-out.txt")
+	var buf bytes.Buffer
+	opts := &config.Options{Output: config.OutputOptions{File: tmpFile, JQ: "data.value"}}
+	err := ProcessResponse(&buf, opts, req, rsp, 0)
+	if err != nil {
+		t.Fatalf("ProcessResponse: %v", err)
+	}
+	data, _ := os.ReadFile(tmpFile)
+	if string(data) != "42" {
+		t.Errorf("file content = %q, want '42'", data)
+	}
+}
+
+func TestWriteHAR(t *testing.T) {
+	req := fasthttp.AcquireRequest()
+	rsp := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseRequest(req)
+	defer fasthttp.ReleaseResponse(rsp)
+
+	req.SetRequestURI("http://example.com/test?q=1")
+	req.Header.SetMethod("GET")
+	rsp.SetStatusCode(200)
+	rsp.Header.SetContentType("application/json")
+	rsp.SetBodyString(`{"ok":true}`)
+
+	harFile := filepath.Join(t.TempDir(), "test.har")
+	start := time.Now()
+	err := WriteHAR(harFile, &config.Options{}, req, rsp, start, 100*time.Millisecond)
+	if err != nil {
+		t.Fatalf("WriteHAR: %v", err)
+	}
+
+	data, _ := os.ReadFile(harFile)
+	if !strings.Contains(string(data), `"version": "1.2"`) {
+		t.Error("HAR file missing version")
+	}
+	if !strings.Contains(string(data), "example.com") {
+		t.Error("HAR file missing URL")
+	}
+	if !strings.Contains(string(data), "ok") {
+		t.Errorf("HAR file missing response body, got: %s", string(data)[:min(len(data), 500)])
+	}
+}
+
+func TestRunSnoop_SecurityHeaders(t *testing.T) {
+	rsp := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseResponse(rsp)
+
+	rsp.Header.SetStatusCode(200)
+	rsp.Header.Set("Strict-Transport-Security", "max-age=31536000")
+	rsp.Header.Set("X-Frame-Options", "DENY")
+	rsp.Header.Set("Content-Security-Policy", "default-src 'self'")
+
+	var buf bytes.Buffer
+	opts := &config.Options{URL: "https://secure.com"}
+	RunSnoop(&buf, opts, rsp)
+
+	out := buf.String()
+	if !strings.Contains(out, "max-age=31536000") {
+		t.Error("missing HSTS in snoop output")
+	}
+	if !strings.Contains(out, "DENY") {
+		t.Error("missing X-Frame-Options in snoop output")
+	}
+}
+
+func TestRunSnoop_RateLimitHeaders(t *testing.T) {
+	rsp := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseResponse(rsp)
+
+	rsp.Header.SetStatusCode(200)
+	rsp.Header.Set("X-RateLimit-Limit", "100")
+	rsp.Header.Set("X-RateLimit-Remaining", "42")
+
+	var buf bytes.Buffer
+	opts := &config.Options{URL: "https://api.com"}
+	RunSnoop(&buf, opts, rsp)
+
+	out := buf.String()
+	if !strings.Contains(out, "Rate Limiting") {
+		t.Error("missing rate limit section in snoop output")
 	}
 }

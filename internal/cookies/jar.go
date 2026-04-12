@@ -22,6 +22,7 @@ type Entry struct {
 	Expires  *time.Time `json:"expires,omitempty"`
 	Secure   bool       `json:"secure,omitempty"`
 	HTTPOnly bool       `json:"http_only,omitempty"`
+	SameSite string     `json:"same_site,omitempty"`
 }
 
 // Jar is a JSON-backed cookie jar.
@@ -162,6 +163,7 @@ func (j *Jar) AbsorbResponse(rawURL string, rsp *fasthttp.Response) {
 			Expires:  expires,
 			Secure:   cookie.Secure,
 			HTTPOnly: cookie.HttpOnly,
+			SameSite: sameSiteString(cookie.SameSite),
 		})
 	}
 }
@@ -202,4 +204,17 @@ func matches(u *url.URL, entry Entry) bool {
 		return false
 	}
 	return true
+}
+
+func sameSiteString(s http.SameSite) string {
+	switch s {
+	case http.SameSiteStrictMode:
+		return "Strict"
+	case http.SameSiteLaxMode:
+		return "Lax"
+	case http.SameSiteNoneMode:
+		return "None"
+	default:
+		return ""
+	}
 }

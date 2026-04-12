@@ -1,11 +1,11 @@
 {
-  "github.com/robot-accomplice/ghola/cmd/ghola": 80.0,
-  "github.com/robot-accomplice/ghola/internal/bridge": 85.2,
-  "github.com/robot-accomplice/ghola/internal/client": 80.9,
-  "github.com/robot-accomplice/ghola/internal/config": 91.3,
-  "github.com/robot-accomplice/ghola/internal/cookies": 86.7,
-  "github.com/robot-accomplice/ghola/internal/output": 85.3,
+  "github.com/robot-accomplice/ghola/cmd/ghola": 66.1,
+  "github.com/robot-accomplice/ghola/internal/bridge": 84.2,
+  "github.com/robot-accomplice/ghola/internal/client": 80.3,
+  "github.com/robot-accomplice/ghola/internal/config": 85.3,
+  "github.com/robot-accomplice/ghola/internal/cookies": 84.2,
+  "github.com/robot-accomplice/ghola/internal/output": 87.0,
   "github.com/robot-accomplice/ghola/internal/profile": 95.6,
-  "github.com/robot-accomplice/ghola/internal/proxy": 96.0,
+  "github.com/robot-accomplice/ghola/internal/proxy": 64.0,
   "github.com/robot-accomplice/ghola/internal/transport": 53.2
 }

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/url"
 	"path"
-	"strings"
 
 	"github.com/robot-accomplice/ghola/internal/profile"
 	flag "github.com/spf13/pflag"
@@ -43,6 +42,9 @@ type OutputOptions struct {
 	Silent   bool
 	Snoop    bool
 	WgetMode bool
+	JQ       string
+	Timing   bool
+	HAR      string
 }
 
 // StealthOptions controls browser impersonation and identity features.
@@ -74,10 +76,11 @@ type ResilienceOptions struct {
 
 // ProxyOptions controls proxy routing behavior.
 type ProxyOptions struct {
-	Proxy    string
-	Auth     string
-	File     string
-	Strategy string
+	Proxy       string
+	Auth        string
+	File        string
+	Strategy    string
+	HealthCheck bool
 }
 
 // Options holds every user-configurable setting parsed from CLI flags.
@@ -149,9 +152,13 @@ func ParseFlags(args []string) (*Options, bool, error) {
 	fs.StringVar(&opts.ProxyCfg.Auth, "proxy-auth", "", "Proxy credentials in user:pass form")
 	fs.StringVar(&opts.ProxyCfg.File, "proxy-file", "", "Load proxies from a newline-delimited file")
 	fs.StringVar(&opts.ProxyCfg.Strategy, "proxy-strategy", DefaultProxyStrategy, "Proxy selection strategy: sticky, random, round-robin")
+	fs.BoolVar(&opts.ProxyCfg.HealthCheck, "proxy-check", false, "Check proxy health before use and evict dead proxies")
 	fs.StringVar(&opts.Stealth.Referer, "referer", DefaultReferer, "Referer behavior: none, auto, or an explicit URL")
 	fs.StringVar(&opts.Stealth.AcceptLanguage, "accept-language", "", "Override the profile default Accept-Language")
 	fs.BoolVar(&opts.Stealth.ProfileList, "profile-list", false, "List available browser-like profiles and exit")
+	fs.StringVar(&opts.Output.JQ, "jq", "", "Extract a JSON path from the response body (gjson syntax)")
+	fs.BoolVar(&opts.Output.Timing, "timing", false, "Show response timing information")
+	fs.StringVar(&opts.Output.HAR, "har", "", "Export request/response as HAR 1.2 to a file")
 
 	fs.Usage = func() {
 		fmt.Print(banner)
@@ -185,11 +192,11 @@ func ParseFlags(args []string) (*Options, bool, error) {
 		opts.URL = fs.Arg(0)
 	}
 
+	applyChainShortcuts(opts)
+
 	if opts.URL == "" && !opts.Serve {
 		return nil, false, fmt.Errorf("URL is mandatory")
 	}
-
-	applyChainShortcuts(opts)
 	opts.Stealth.AgentExplicit = fs.Changed("user-agent")
 
 	if opts.Stealth.Impersonate != "" {
@@ -222,13 +229,16 @@ func ParseFlags(args []string) (*Options, bool, error) {
 }
 
 func applyChainShortcuts(opts *Options) {
-	switch strings.ToLower(opts.Chain) {
-	case "eth", "ethereum":
-		opts.Headers = append(opts.Headers, "X-Chain: ethereum")
-	case "base":
-		opts.Headers = append(opts.Headers, "X-Chain: base")
-	case "solana", "sol":
-		opts.Headers = append(opts.Headers, "X-Chain: solana")
+	if opts.Chain == "" {
+		return
+	}
+	info, ok := LookupChain(opts.Chain)
+	if !ok {
+		return
+	}
+	opts.Headers = append(opts.Headers, "X-Chain: "+info.Header)
+	if opts.URL == "" && info.DefaultRPC != "" {
+		opts.URL = info.DefaultRPC
 	}
 }
 

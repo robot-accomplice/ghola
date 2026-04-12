@@ -34,6 +34,11 @@ type Request struct {
 	Referer        string            `json:"referer"`
 	AcceptLanguage string            `json:"accept_language"`
 	HTTP3          bool              `json:"http3"`
+	Timeout        int               `json:"timeout"`
+	Location       bool              `json:"location"`
+	MaxRedirs      int               `json:"max_redirs"`
+	RetryHTTP      bool              `json:"retry_http"`
+	User           string            `json:"user"`
 }
 
 // Response is the JSON payload returned by the bridge server.
@@ -89,7 +94,7 @@ func Handler(do client.Doer) fasthttp.RequestHandler {
 			URL:     br.URL,
 			Method:  method,
 			Data:    br.Body,
-			User:    "",
+			User:    br.User,
 			Headers: nil,
 			Stealth: config.StealthOptions{
 				Ghost:          br.Ghost,
@@ -106,6 +111,10 @@ func Handler(do client.Doer) fasthttp.RequestHandler {
 				Retries:    br.Retries,
 				Backoff:    config.DefaultBackoffMs,
 				BufferSize: bufSize,
+				Timeout:    br.Timeout,
+				Location:   br.Location,
+				MaxRedirs:  maxRedirs(br.MaxRedirs),
+				RetryHTTP:  br.RetryHTTP,
 			},
 			Output: config.OutputOptions{
 				Silent: true,
@@ -164,6 +173,13 @@ func writeError(ctx *fasthttp.RequestCtx, msg string) {
 		return
 	}
 	ctx.SetBody(out)
+}
+
+func maxRedirs(n int) int {
+	if n > 0 {
+		return n
+	}
+	return config.DefaultMaxRedirs
 }
 
 // ListenAndServe starts the bridge server on the given address using the

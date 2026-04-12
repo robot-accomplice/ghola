@@ -81,6 +81,11 @@ func newFetchState(opts *config.Options, do Doer) (*fetchState, error) {
 	if err != nil {
 		return nil, err
 	}
+	if opts.ProxyCfg.HealthCheck {
+		if err := proxySelector.HealthCheck(); err != nil {
+			return nil, err
+		}
+	}
 	selectedProxy, err := proxySelector.Select()
 	if err != nil {
 		return nil, err

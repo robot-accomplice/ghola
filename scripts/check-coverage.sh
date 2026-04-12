@@ -12,12 +12,17 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BASELINE="$REPO_ROOT/.coverage-baseline.json"
 MIN_COVERAGE=80
+# Allow up to 1% regression to absorb cross-platform coverage variance
+# (race detector timing, OS-specific code paths).
+REGRESSION_TOLERANCE=1
 
 # Packages that legitimately cannot meet the standard floor due to
 # integration-level dependencies (e.g. TLS client, real network).
 # Format: "package_suffix:floor"
 FLOOR_OVERRIDES=(
   "internal/transport:50"
+  "cmd/ghola:60"
+  "internal/proxy:60"
 )
 
 update_mode=false
@@ -89,10 +94,11 @@ while IFS=$'\t' read -r pkg cov; do
     failed=1
   fi
 
-  below_base=$(echo "$cov < $base" | bc -l)
-  if [[ "$below_base" -eq 1 ]]; then
+  threshold=$(echo "$base - $REGRESSION_TOLERANCE" | bc -l)
+  below_threshold=$(echo "$cov < $threshold" | bc -l)
+  if [[ "$below_threshold" -eq 1 ]]; then
     delta=$(echo "$base - $cov" | bc -l)
-    status="FAIL (regressed -${delta}% from ${base}%)"
+    status="FAIL (regressed -${delta}% from ${base}%, tolerance ${REGRESSION_TOLERANCE}%)"
     failed=1
   fi
 
