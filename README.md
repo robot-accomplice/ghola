@@ -59,7 +59,19 @@ Attribution: the direction for Ghola's browser-like fetching work was inspired b
 
 ## Installation
 
-### Quick Install (Recommended)
+### Homebrew (macOS / Linux)
+
+```bash
+brew install robot-accomplice/tap/ghola
+```
+
+To upgrade:
+
+```bash
+brew upgrade ghola
+```
+
+### Quick Install Script
 
 #### macOS / Linux
 

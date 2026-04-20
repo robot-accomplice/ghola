@@ -33,6 +33,26 @@ archives:
 checksum:
   name_template: "checksums.txt"
 
+brews:
+  - name: ghola
+    repository:
+      owner: robot-accomplice
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    commit_author:
+      name: goreleaserbot
+      email: bot@goreleaser.com
+    commit_msg_template: "brew: bump {{ .ProjectName }} to {{ .Tag }}"
+    homepage: "https://github.com/robot-accomplice/ghola"
+    description: "High-performance Go HTTP client for blockchain forensic analysis and browser-like URL fetching"
+    license: "MIT"
+    skip_upload: auto
+    install: |
+      bin.install "ghola"
+    test: |
+      system "#{bin}/ghola", "--version"
+
 changelog:
   sort: asc
   filters:
