@@ -1,0 +1,174 @@
+name: Homebrew
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish to the tap (e.g. v0.4.0)"
+        required: true
+        type: string
+
+jobs:
+  bump-formula:
+    name: Bump Homebrew formula
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || !github.event.release.prerelease }}
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - name: Compute release download URLs and SHAs
+        id: assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          version="${TAG#v}"
+          base_url="https://github.com/robot-accomplice/ghola/releases/download/${TAG}"
+
+          tmpdir="$(mktemp -d)"
+          trap 'rm -rf "${tmpdir}"' EXIT
+
+          fetch_checksums() {
+            local out="${tmpdir}/checksums.txt"
+            local attempt=0
+            local max_attempts=30
+            while [ "${attempt}" -lt "${max_attempts}" ]; do
+              if curl -fsSL "${base_url}/checksums.txt" -o "${out}"; then
+                cat "${out}"
+                return 0
+              fi
+              attempt=$((attempt + 1))
+              echo "Waiting for checksums.txt (attempt ${attempt}/${max_attempts})..." >&2
+              sleep 20
+            done
+            echo "Timed out waiting for checksums.txt" >&2
+            return 1
+          }
+
+          checksums="$(fetch_checksums)"
+
+          sha_for() {
+            local asset="$1"
+            echo "${checksums}" | awk -v asset="${asset}" '$2 == asset { print $1; exit }'
+          }
+
+          name_darwin_arm64="ghola_${version}_darwin_arm64.tar.gz"
+          name_darwin_amd64="ghola_${version}_darwin_amd64.tar.gz"
+          name_linux_amd64="ghola_${version}_linux_amd64.tar.gz"
+          name_linux_arm64="ghola_${version}_linux_arm64.tar.gz"
+
+          sha_darwin_arm64="$(sha_for "${name_darwin_arm64}")"
+          sha_darwin_amd64="$(sha_for "${name_darwin_amd64}")"
+          sha_linux_amd64="$(sha_for "${name_linux_amd64}")"
+          sha_linux_arm64="$(sha_for "${name_linux_arm64}")"
+
+          for pair in \
+            "darwin_arm64:${sha_darwin_arm64}" \
+            "darwin_amd64:${sha_darwin_amd64}" \
+            "linux_amd64:${sha_linux_amd64}" \
+            "linux_arm64:${sha_linux_arm64}"; do
+            label="${pair%%:*}"
+            value="${pair##*:}"
+            if [ -z "${value}" ]; then
+              echo "Missing sha256 for ${label}" >&2
+              exit 1
+            fi
+          done
+
+          {
+            echo "version=${version}"
+            echo "base_url=${base_url}"
+            echo "name_darwin_arm64=${name_darwin_arm64}"
+            echo "name_darwin_amd64=${name_darwin_amd64}"
+            echo "name_linux_amd64=${name_linux_amd64}"
+            echo "name_linux_arm64=${name_linux_arm64}"
+            echo "sha_darwin_arm64=${sha_darwin_arm64}"
+            echo "sha_darwin_amd64=${sha_darwin_amd64}"
+            echo "sha_linux_amd64=${sha_linux_amd64}"
+            echo "sha_linux_arm64=${sha_linux_arm64}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Checkout homebrew-tap
+        uses: actions/checkout@v6
+        with:
+          repository: robot-accomplice/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          path: homebrew-tap
+          ref: main
+
+      - name: Render ghola.rb
+        env:
+          VERSION: ${{ steps.assets.outputs.version }}
+          BASE_URL: ${{ steps.assets.outputs.base_url }}
+          NAME_DARWIN_ARM64: ${{ steps.assets.outputs.name_darwin_arm64 }}
+          NAME_DARWIN_AMD64: ${{ steps.assets.outputs.name_darwin_amd64 }}
+          NAME_LINUX_AMD64: ${{ steps.assets.outputs.name_linux_amd64 }}
+          NAME_LINUX_ARM64: ${{ steps.assets.outputs.name_linux_arm64 }}
+          SHA_DARWIN_ARM64: ${{ steps.assets.outputs.sha_darwin_arm64 }}
+          SHA_DARWIN_AMD64: ${{ steps.assets.outputs.sha_darwin_amd64 }}
+          SHA_LINUX_AMD64: ${{ steps.assets.outputs.sha_linux_amd64 }}
+          SHA_LINUX_ARM64: ${{ steps.assets.outputs.sha_linux_arm64 }}
+        run: |
+          set -euo pipefail
+
+          formula="homebrew-tap/ghola.rb"
+
+          cat > "${formula}" <<FORMULA
+          class Ghola < Formula
+            desc "High-performance Go HTTP client for blockchain forensic analysis and browser-like URL fetching"
+            homepage "https://github.com/robot-accomplice/ghola"
+            version "${VERSION}"
+            license "MIT"
+
+            on_macos do
+              on_arm do
+                url "${BASE_URL}/${NAME_DARWIN_ARM64}"
+                sha256 "${SHA_DARWIN_ARM64}"
+              end
+              on_intel do
+                url "${BASE_URL}/${NAME_DARWIN_AMD64}"
+                sha256 "${SHA_DARWIN_AMD64}"
+              end
+            end
+
+            on_linux do
+              on_intel do
+                url "${BASE_URL}/${NAME_LINUX_AMD64}"
+                sha256 "${SHA_LINUX_AMD64}"
+              end
+              on_arm do
+                url "${BASE_URL}/${NAME_LINUX_ARM64}"
+                sha256 "${SHA_LINUX_ARM64}"
+              end
+            end
+
+            def install
+              bin.install "ghola"
+            end
+
+            test do
+              assert_match "ghola", shell_output("#{bin}/ghola --version")
+            end
+          end
+          FORMULA
+
+      - name: Commit and push formula update
+        working-directory: homebrew-tap
+        env:
+          VERSION: ${{ steps.assets.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name "robot-accomplice-bot"
+          git config user.email "bot@robot-accomplice.github.io"
+
+          if git diff --quiet -- ghola.rb; then
+            echo "No changes to ghola.rb; skipping commit."
+            exit 0
+          fi
+
+          git add ghola.rb
+          git commit -m "ghola: bump to v${VERSION}"
+          git push origin main
