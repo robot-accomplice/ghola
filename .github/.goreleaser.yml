@@ -30,6 +30,25 @@ archives:
       - goos: windows
         format: zip
 
+nfpms:
+  - id: ghola
+    package_name: ghola
+    vendor: robot-accomplice
+    homepage: https://github.com/robot-accomplice/ghola
+    maintainer: robot-accomplice-bot <bot@robot-accomplice.github.io>
+    description: High-performance Go HTTP client for blockchain forensic analysis and browser-like URL fetching
+    license: MIT
+    formats:
+      - rpm
+      - deb
+      - apk
+      - archlinux
+    bindir: /usr/bin
+    # Match the uniform release asset naming (ghola_<version>_<os>_<arch>) used by
+    # the tarballs, install scripts, and Homebrew formula. The package's internal
+    # arch metadata is still set correctly per format (e.g. x86_64 for rpm).
+    file_name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
 checksum:
   name_template: "checksums.txt"
 
