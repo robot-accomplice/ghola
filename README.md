@@ -59,18 +59,30 @@ Attribution: the direction for Ghola's browser-like fetching work was inspired b
 
 ## Installation
 
-### Quick Install (Recommended)
+### Homebrew (macOS / Linux)
+
+```bash
+brew install robot-accomplice/tap/ghola
+```
+
+To upgrade:
+
+```bash
+brew upgrade ghola
+```
+
+### Quick Install Script
 
 #### macOS / Linux
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/robot-accomplice/ghola/main/scripts/install.sh | sh
+bash <(curl -fsSL https://roboticus.ai/ghola-install.sh)
 ```
 
 #### Windows (PowerShell)
 
 ```powershell
-iwr https://raw.githubusercontent.com/robot-accomplice/ghola/main/scripts/install.ps1 -UseBasicParsing | iex
+irm https://roboticus.ai/ghola-install.ps1 | iex
 ```
 
 After install, verify with:
