@@ -1,0 +1,36 @@
+# Dependabot configuration.
+#
+# target-branch routes version-update PRs to develop, matching our gitflow
+# (feature work merges to develop; develop -> main only at release time).
+#
+# NOTE: Dependabot *security* updates target the repository's default branch
+# regardless of target-branch. To route those through develop as well, make
+# develop the default branch in the repo settings.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: "/"
+    target-branch: develop
+    schedule:
+      interval: weekly
+    groups:
+      go-dependencies:
+        patterns: ["*"]
+
+  - package-ecosystem: cargo
+    directory: "/scope"
+    target-branch: develop
+    schedule:
+      interval: weekly
+    groups:
+      cargo-dependencies:
+        patterns: ["*"]
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    target-branch: develop
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
