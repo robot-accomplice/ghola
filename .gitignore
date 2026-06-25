@@ -19,3 +19,6 @@ scope/target/
 .vscode/
 *.swp
 .DS_Store
+
+# Serena MCP (local tooling cache/config)
+.serena/
