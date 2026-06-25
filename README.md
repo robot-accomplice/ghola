@@ -89,6 +89,26 @@ go install github.com/robot-accomplice/ghola/cmd/ghola@latest
 
 Pre-built binaries for Linux, macOS, and Windows are available on the [Releases](https://github.com/robot-accomplice/ghola/releases) page and at [roboticus.ai](https://roboticus.ai).
 
+### Linux Packages (rpm / deb / apk / Arch)
+
+Native packages are attached to each [release](https://github.com/robot-accomplice/ghola/releases) and install `ghola` to `/usr/bin`:
+
+```bash
+# Fedora / RHEL / openSUSE
+sudo dnf install ./ghola_<version>_linux_amd64.rpm
+
+# Debian / Ubuntu
+sudo apt install ./ghola_<version>_linux_amd64.deb
+
+# Alpine
+sudo apk add --allow-untrusted ghola_<version>_linux_amd64.apk
+
+# Arch
+sudo pacman -U ghola_<version>_linux_amd64.pkg.tar.zst
+```
+
+Replace `<version>` with the release version (e.g. `0.4.0`) and `amd64` with `arm64` on ARM hosts.
+
 ### Build from Source
 
 ```bash
