@@ -97,8 +97,16 @@ type HARPost struct {
 
 // WriteHAR exports the request/response pair as a HAR 1.2 JSON file.
 func WriteHAR(path string, opts *config.Options, req *fasthttp.Request, rsp *fasthttp.Response, start time.Time, elapsed time.Duration) error {
-	reqHeaders := collectHeaders(func(visit func(key, value []byte)) { req.Header.VisitAll(visit) })
-	rspHeaders := collectHeaders(func(visit func(key, value []byte)) { rsp.Header.VisitAll(visit) })
+	reqHeaders := collectHeaders(func(visit func(key, value []byte)) {
+		for k, v := range req.Header.All() {
+			visit(k, v)
+		}
+	})
+	rspHeaders := collectHeaders(func(visit func(key, value []byte)) {
+		for k, v := range rsp.Header.All() {
+			visit(k, v)
+		}
+	})
 
 	queryString := parseQueryString(string(req.URI().QueryString()))
 

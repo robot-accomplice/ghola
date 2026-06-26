@@ -137,11 +137,11 @@ func (j *Jar) AbsorbResponse(rawURL string, rsp *fasthttp.Response) {
 	}
 
 	headers := make(http.Header)
-	rsp.Header.VisitAll(func(key, value []byte) {
+	for key, value := range rsp.Header.All() {
 		if strings.EqualFold(string(key), "Set-Cookie") {
 			headers.Add("Set-Cookie", string(value))
 		}
-	})
+	}
 	for _, cookie := range (&http.Response{Header: headers}).Cookies() {
 		domain := cookie.Domain
 		if domain == "" {
