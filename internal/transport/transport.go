@@ -118,11 +118,11 @@ func (t *tlsClientTransport) Do(ctx context.Context, req *fasthttp.Request, rsp 
 
 	headerOrder := make([]string, 0, 16)
 	httpReq.Header = make(fhttp.Header)
-	req.Header.VisitAll(func(key, value []byte) {
+	for key, value := range req.Header.All() {
 		headerName := string(key)
 		httpReq.Header.Set(headerName, string(value))
 		headerOrder = append(headerOrder, strings.ToLower(headerName))
-	})
+	}
 	if len(headerOrder) > 0 {
 		httpReq.Header[fhttp.HeaderOrderKey] = headerOrder
 		httpReq.Header[fhttp.PHeaderOrderKey] = []string{":method", ":authority", ":scheme", ":path"}

@@ -144,9 +144,9 @@ func Handler(do client.Doer) fasthttp.RequestHandler {
 		defer fasthttp.ReleaseResponse(rsp)
 
 		rspHeaders := make(map[string]string)
-		rsp.Header.VisitAll(func(key, value []byte) {
+		for key, value := range rsp.Header.All() {
 			rspHeaders[string(key)] = string(value)
-		})
+		}
 
 		out, err := json.Marshal(Response{
 			StatusCode: rsp.StatusCode(),
