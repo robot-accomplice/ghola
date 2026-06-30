@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"bytes"
 	"context"
 	"net"
 	"testing"
@@ -214,5 +215,44 @@ func TestSimpleTransport_DoWithDeadline(t *testing.T) {
 	}
 	if rsp.StatusCode() != 204 {
 		t.Errorf("status = %d, want 204", rsp.StatusCode())
+	}
+}
+
+func TestSimpleTransport_StreamWritesBodyToSink(t *testing.T) {
+	ln := fasthttputil.NewInmemoryListener()
+	srv := &fasthttp.Server{Handler: func(ctx *fasthttp.RequestCtx) {
+		ctx.SetStatusCode(200)
+		ctx.Response.Header.Set("Accept-Ranges", "bytes")
+		ctx.SetBodyString("streamed-body")
+	}}
+	go srv.Serve(ln) //nolint:errcheck
+	defer ln.Close()
+
+	tr := &simpleTransport{
+		client: &fasthttp.Client{
+			StreamResponseBody: true,
+			Dial:               func(addr string) (net.Conn, error) { return ln.Dial() },
+		},
+		name: "fasthttp",
+	}
+
+	req := fasthttp.AcquireRequest()
+	defer fasthttp.ReleaseRequest(req)
+	req.SetRequestURI("http://test/")
+	req.Header.SetMethod("GET")
+
+	var buf bytes.Buffer
+	meta, err := tr.Stream(context.Background(), req, &buf)
+	if err != nil {
+		t.Fatalf("Stream error: %v", err)
+	}
+	if meta.StatusCode != 200 {
+		t.Errorf("status = %d, want 200", meta.StatusCode)
+	}
+	if !meta.AcceptRanges {
+		t.Error("AcceptRanges = false, want true")
+	}
+	if buf.String() != "streamed-body" {
+		t.Errorf("sink = %q, want streamed-body", buf.String())
 	}
 }

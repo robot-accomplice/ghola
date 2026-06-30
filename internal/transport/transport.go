@@ -17,10 +17,38 @@ import (
 	"github.com/valyala/fasthttp/fasthttpproxy"
 )
 
+// StreamMeta carries the response status line and the headers the download
+// orchestrator needs, without materializing the body.
+type StreamMeta struct {
+	StatusCode    int
+	ContentLength int64 // -1 when unknown
+	AcceptRanges  bool
+	LastModified  string
+	Disposition   string // Content-Disposition
+}
+
 // Transport performs a request using the selected runtime backend.
 type Transport interface {
 	Do(ctx context.Context, req *fasthttp.Request, rsp *fasthttp.Response) error
+	// Stream sends req and copies the response body to sink without buffering
+	// it in memory. It does NOT follow redirects; callers handle 3xx via the
+	// returned StreamMeta. The caller owns sink.
+	Stream(ctx context.Context, req *fasthttp.Request, sink io.Writer) (StreamMeta, error)
 	Name() string
+}
+
+func metaFromResponseHeader(h *fasthttp.ResponseHeader) StreamMeta {
+	cl := int64(-1)
+	if n := h.ContentLength(); n >= 0 {
+		cl = int64(n)
+	}
+	return StreamMeta{
+		StatusCode:    h.StatusCode(),
+		ContentLength: cl,
+		AcceptRanges:  bytes.EqualFold(h.Peek("Accept-Ranges"), []byte("bytes")),
+		LastModified:  string(h.Peek("Last-Modified")),
+		Disposition:   string(h.Peek("Content-Disposition")),
+	}
 }
 
 type simpleTransport struct {
@@ -43,7 +71,8 @@ func New(opts *config.Options, selectedProxy string) (Transport, error) {
 	}
 
 	client := &fasthttp.Client{
-		ReadBufferSize: opts.Resilience.BufferSize,
+		ReadBufferSize:     opts.Resilience.BufferSize,
+		StreamResponseBody: true,
 	}
 	if selectedProxy != "" {
 		proxyURL, err := url.Parse(selectedProxy)
@@ -110,6 +139,27 @@ func (t *simpleTransport) Name() string {
 	return t.name
 }
 
+func (t *simpleTransport) Stream(ctx context.Context, req *fasthttp.Request, sink io.Writer) (StreamMeta, error) {
+	rsp := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseResponse(rsp)
+	rsp.StreamBody = true
+
+	var err error
+	if deadline, ok := ctx.Deadline(); ok {
+		err = t.client.DoDeadline(req, rsp, deadline)
+	} else {
+		err = t.client.Do(req, rsp)
+	}
+	if err != nil {
+		return StreamMeta{}, err
+	}
+	meta := metaFromResponseHeader(&rsp.Header)
+	if err := rsp.BodyWriteTo(sink); err != nil {
+		return meta, err
+	}
+	return meta, nil
+}
+
 func (t *tlsClientTransport) Do(ctx context.Context, req *fasthttp.Request, rsp *fasthttp.Response) error {
 	httpReq, err := fhttp.NewRequestWithContext(ctx, string(req.Header.Method()), req.URI().String(), bytes.NewReader(req.Body()))
 	if err != nil {
@@ -154,4 +204,33 @@ func (t *tlsClientTransport) Do(ctx context.Context, req *fasthttp.Request, rsp 
 
 func (t *tlsClientTransport) Name() string {
 	return t.name
+}
+
+func (t *tlsClientTransport) Stream(ctx context.Context, req *fasthttp.Request, sink io.Writer) (StreamMeta, error) {
+	httpReq, err := fhttp.NewRequestWithContext(ctx, string(req.Header.Method()), req.URI().String(), bytes.NewReader(req.Body()))
+	if err != nil {
+		return StreamMeta{}, err
+	}
+	httpReq.Header = make(fhttp.Header)
+	for key, value := range req.Header.All() {
+		httpReq.Header.Set(string(key), string(value))
+	}
+
+	httpResp, err := t.client.Do(httpReq)
+	if err != nil {
+		return StreamMeta{}, err
+	}
+	defer httpResp.Body.Close()
+
+	meta := StreamMeta{
+		StatusCode:    httpResp.StatusCode,
+		ContentLength: httpResp.ContentLength, // -1 when unknown, per net/http
+		AcceptRanges:  strings.EqualFold(httpResp.Header.Get("Accept-Ranges"), "bytes"),
+		LastModified:  httpResp.Header.Get("Last-Modified"),
+		Disposition:   httpResp.Header.Get("Content-Disposition"),
+	}
+	if _, err := io.Copy(sink, httpResp.Body); err != nil {
+		return meta, err
+	}
+	return meta, nil
 }
