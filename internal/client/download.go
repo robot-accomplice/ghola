@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/robot-accomplice/ghola/internal/config"
 	"github.com/robot-accomplice/ghola/internal/profile"
@@ -53,16 +54,112 @@ func splitRanges(size int64, parts int) []byteRange {
 
 // Download fetches opts.URL and streams it to opts.Output.File with bounded
 // memory. Routing (when to call this vs. FetchURL) is decided by
-// config.ShouldStream in the CLI entry point.
+// config.ShouldStream in the CLI entry point. When concurrency > 1 and the
+// server supports Range requests, the download is split into parallel segments.
 func Download(ctx context.Context, opts *config.Options, stream Streamer) error {
 	if stream == nil {
 		stream = DefaultStreamer
 	}
-	finalURL, err := resolveTarget(ctx, opts, stream)
+	finalURL, meta, err := probe(ctx, opts, stream)
 	if err != nil {
 		return err
 	}
+	if canSegment(opts, meta) {
+		return downloadSegmented(ctx, opts, stream, finalURL, meta.ContentLength)
+	}
 	return downloadSingle(ctx, opts, stream, finalURL)
+}
+
+// probe resolves redirects and returns the final URL and its StreamMeta
+// (Content-Length, Accept-Ranges) via a HEAD request, falling back to a
+// ranged GET when HEAD is unsupported.
+func probe(ctx context.Context, opts *config.Options, stream Streamer) (string, gholatransport.StreamMeta, error) {
+	finalURL, err := resolveTarget(ctx, opts, stream)
+	if err != nil {
+		return "", gholatransport.StreamMeta{}, err
+	}
+	req := fasthttp.AcquireRequest()
+	buildDownloadRequest(req, opts, finalURL, fasthttp.MethodHead, "")
+	meta, err := stream(ctx, opts, req, io.Discard)
+	fasthttp.ReleaseRequest(req)
+	if err != nil {
+		return "", gholatransport.StreamMeta{}, err
+	}
+	if meta.ContentLength < 0 || (meta.StatusCode != 200 && meta.StatusCode != 0) {
+		// HEAD unsupported or no length: probe with a 1-byte ranged GET.
+		req2 := fasthttp.AcquireRequest()
+		buildDownloadRequest(req2, opts, finalURL, fasthttp.MethodGet, "")
+		req2.Header.Set("Range", "bytes=0-0")
+		m2, err := stream(ctx, opts, req2, io.Discard)
+		fasthttp.ReleaseRequest(req2)
+		if err == nil && m2.AcceptRanges {
+			meta = m2
+		}
+	}
+	return finalURL, meta, nil
+}
+
+// canSegment reports whether a segmented (parallel Range) download applies.
+func canSegment(opts *config.Options, meta gholatransport.StreamMeta) bool {
+	return opts.Concurrency > 1 &&
+		opts.Output.File != "" &&
+		meta.AcceptRanges &&
+		meta.ContentLength >= config.DefaultSegmentMinBytes &&
+		!opts.Stealth.Compressed && // wired in Task 9; field exists by then
+		opts.Output.ContinueAt == "" // wired in Task 5; resume forces single-stream
+}
+
+func downloadSegmented(ctx context.Context, opts *config.Options, stream Streamer, url string, size int64) error {
+	f, err := os.OpenFile(opts.Output.File, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return fmt.Errorf("create output file: %w", err)
+	}
+	defer f.Close()
+	if err := f.Truncate(size); err != nil {
+		return fmt.Errorf("preallocate output file: %w", err)
+	}
+
+	ranges := splitRanges(size, opts.Concurrency)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	errs := make(chan error, len(ranges))
+	var wg sync.WaitGroup
+	for _, r := range ranges {
+		wg.Add(1)
+		go func(r byteRange) {
+			defer wg.Done()
+			errs <- fetchSegment(ctx, opts, stream, url, f, r)
+		}(r)
+	}
+	wg.Wait()
+	close(errs)
+
+	for e := range errs {
+		if e != nil {
+			cancel()
+			return fmt.Errorf("download segment: %w", e)
+		}
+	}
+	return nil
+}
+
+// fetchSegment fetches one byte range and writes it at its offset in f.
+func fetchSegment(ctx context.Context, opts *config.Options, stream Streamer, url string, f *os.File, r byteRange) error {
+	req := fasthttp.AcquireRequest()
+	defer fasthttp.ReleaseRequest(req)
+	buildDownloadRequest(req, opts, url, fasthttp.MethodGet, "")
+	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", r.start, r.end))
+
+	w := io.NewOffsetWriter(f, r.start)
+	meta, err := stream(ctx, opts, req, w)
+	if err != nil {
+		return err
+	}
+	if meta.StatusCode != fasthttp.StatusPartialContent && meta.StatusCode != 200 {
+		return fmt.Errorf("unexpected status %d for range %d-%d", meta.StatusCode, r.start, r.end)
+	}
+	return nil
 }
 
 // resolveTarget follows redirects with a HEAD request and returns the final

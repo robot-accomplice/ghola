@@ -35,16 +35,17 @@ func (e ExitCode) Int() int {
 
 // OutputOptions controls how HTTP responses are rendered.
 type OutputOptions struct {
-	File     string
-	Verbose  bool
-	Fail     bool
-	Include  bool
-	Silent   bool
-	Snoop    bool
-	WgetMode bool
-	JQ       string
-	Timing   bool
-	HAR      string
+	File       string
+	Verbose    bool
+	Fail       bool
+	Include    bool
+	Silent     bool
+	Snoop      bool
+	WgetMode   bool
+	JQ         string
+	Timing     bool
+	HAR        string
+	ContinueAt string // wired in Task 5; resume forces single-stream when set
 }
 
 // StealthOptions controls browser impersonation and identity features.
@@ -61,6 +62,7 @@ type StealthOptions struct {
 	CookieJar      string
 	Cookies        []string
 	ProfileList    bool
+	Compressed     bool // wired in Task 9; true disables segmentation
 }
 
 // ResilienceOptions controls retry, timeout, redirect, and buffer behavior.

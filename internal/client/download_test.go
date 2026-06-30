@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/robot-accomplice/ghola/internal/config"
@@ -132,4 +133,71 @@ func parseTestRange(t *testing.T, rng string, size int) (int, int) {
 		end = size - 1
 	}
 	return start, end
+}
+
+// countingBlobServer is blobServer plus an atomic counter of Range requests.
+func countingBlobServer(t *testing.T, data []byte, rangeHits *int64) Streamer {
+	t.Helper()
+	ln := fasthttputil.NewInmemoryListener()
+	srv := &fasthttp.Server{Handler: func(ctx *fasthttp.RequestCtx) {
+		ctx.Response.Header.Set("Accept-Ranges", "bytes")
+		rng := string(ctx.Request.Header.Peek("Range"))
+		if rng == "" {
+			ctx.SetStatusCode(200)
+			ctx.Response.Header.SetContentLength(len(data))
+			if !ctx.IsHead() {
+				ctx.SetBody(data)
+			}
+			return
+		}
+		atomic.AddInt64(rangeHits, 1)
+		start, end := parseTestRange(t, rng, len(data))
+		ctx.SetStatusCode(206)
+		ctx.Response.Header.Set("Content-Range", "bytes "+itoa(start)+"-"+itoa(end)+"/"+itoa(len(data)))
+		ctx.SetBody(data[start : end+1])
+	}}
+	go srv.Serve(ln) //nolint:errcheck
+	t.Cleanup(func() { ln.Close() })
+	c := &fasthttp.Client{StreamResponseBody: true, Dial: func(addr string) (net.Conn, error) { return ln.Dial() }}
+	return func(ctx context.Context, opts *config.Options, req *fasthttp.Request, sink io.Writer) (gholatransport.StreamMeta, error) {
+		rsp := fasthttp.AcquireResponse()
+		defer fasthttp.ReleaseResponse(rsp)
+		rsp.StreamBody = true
+		if err := c.Do(req, rsp); err != nil {
+			return gholatransport.StreamMeta{}, err
+		}
+		meta := gholatransport.StreamMeta{
+			StatusCode:    rsp.Header.StatusCode(),
+			ContentLength: int64(rsp.Header.ContentLength()),
+			AcceptRanges:  bytes.EqualFold(rsp.Header.Peek("Accept-Ranges"), []byte("bytes")),
+		}
+		if err := rsp.BodyWriteTo(sink); err != nil {
+			return meta, err
+		}
+		return meta, nil
+	}
+}
+
+func TestDownload_SegmentedReconstructsFile(t *testing.T) {
+	data := bytes.Repeat([]byte("SEG"), 500000) // 1.5 MB
+	var rangeHits int64
+	streamer := countingBlobServer(t, data, &rangeHits)
+
+	dir := t.TempDir()
+	out := filepath.Join(dir, "seg.bin")
+	opts := &config.Options{
+		URL: "http://test/seg.bin", Method: "GET", Concurrency: 8,
+		Output:  config.OutputOptions{File: out},
+		Stealth: config.StealthOptions{Agent: "ghola-test"},
+	}
+	if err := Download(context.Background(), opts, streamer); err != nil {
+		t.Fatalf("Download error: %v", err)
+	}
+	got, _ := os.ReadFile(out)
+	if sha256.Sum256(got) != sha256.Sum256(data) {
+		t.Fatalf("segmented checksum mismatch (got %d, want %d)", len(got), len(data))
+	}
+	if hits := atomic.LoadInt64(&rangeHits); hits < 2 {
+		t.Fatalf("expected multiple Range requests, got %d", hits)
+	}
 }
