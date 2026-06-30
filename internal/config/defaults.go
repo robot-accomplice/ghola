@@ -23,4 +23,6 @@ const (
 	DefaultConcurrency = 1
 	// DefaultContentType is the default Content-Type header value.
 	DefaultContentType = "Content-Type: application/json"
+	// DefaultCopyBufferSize is the io.Copy chunk size for streaming downloads.
+	DefaultCopyBufferSize = 256 * 1024
 )

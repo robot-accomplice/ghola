@@ -1,0 +1,109 @@
+package client
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"io"
+	"net"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+
+	"github.com/robot-accomplice/ghola/internal/config"
+	gholatransport "github.com/robot-accomplice/ghola/internal/transport"
+	"github.com/valyala/fasthttp"
+	"github.com/valyala/fasthttp/fasthttputil"
+)
+
+// blobServer serves `data`, honoring Range requests and advertising
+// Accept-Ranges: bytes. Returns a Streamer wired to it.
+func blobServer(t *testing.T, data []byte) Streamer {
+	t.Helper()
+	ln := fasthttputil.NewInmemoryListener()
+	srv := &fasthttp.Server{Handler: func(ctx *fasthttp.RequestCtx) {
+		ctx.Response.Header.Set("Accept-Ranges", "bytes")
+		rng := string(ctx.Request.Header.Peek("Range"))
+		if rng == "" {
+			ctx.SetStatusCode(200)
+			ctx.Response.Header.SetContentLength(len(data))
+			if !ctx.IsHead() {
+				ctx.SetBody(data)
+			}
+			return
+		}
+		start, end := parseTestRange(t, rng, len(data)) // bytes=start-end inclusive
+		ctx.SetStatusCode(206)
+		ctx.Response.Header.Set("Content-Range",
+			"bytes "+itoa(start)+"-"+itoa(end)+"/"+itoa(len(data)))
+		ctx.SetBody(data[start : end+1])
+	}}
+	go srv.Serve(ln) //nolint:errcheck
+	t.Cleanup(func() { ln.Close() })
+	c := &fasthttp.Client{StreamResponseBody: true, Dial: func(addr string) (net.Conn, error) { return ln.Dial() }}
+	return func(ctx context.Context, opts *config.Options, req *fasthttp.Request, sink io.Writer) (gholatransport.StreamMeta, error) {
+		rsp := fasthttp.AcquireResponse()
+		defer fasthttp.ReleaseResponse(rsp)
+		rsp.StreamBody = true
+		if err := c.Do(req, rsp); err != nil {
+			return gholatransport.StreamMeta{}, err
+		}
+		meta := gholatransport.StreamMeta{
+			StatusCode:    rsp.Header.StatusCode(),
+			ContentLength: int64(rsp.Header.ContentLength()),
+			AcceptRanges:  bytes.EqualFold(rsp.Header.Peek("Accept-Ranges"), []byte("bytes")),
+			LastModified:  string(rsp.Header.Peek("Last-Modified")),
+			Disposition:   string(rsp.Header.Peek("Content-Disposition")),
+		}
+		if err := rsp.BodyWriteTo(sink); err != nil {
+			return meta, err
+		}
+		return meta, nil
+	}
+}
+
+func TestDownload_SingleStreamWritesFullFile(t *testing.T) {
+	data := bytes.Repeat([]byte("ghola-"), 100000) // 600 KB
+	streamer := blobServer(t, data)
+
+	dir := t.TempDir()
+	out := filepath.Join(dir, "blob.bin")
+	opts := &config.Options{
+		URL:         "http://test/blob.bin",
+		Method:      "GET",
+		Concurrency: 1,
+		Output:      config.OutputOptions{File: out},
+		Stealth:     config.StealthOptions{Agent: "ghola-test"},
+	}
+
+	if err := Download(context.Background(), opts, streamer); err != nil {
+		t.Fatalf("Download error: %v", err)
+	}
+	got, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("read output: %v", err)
+	}
+	if sha256.Sum256(got) != sha256.Sum256(data) {
+		t.Fatalf("downloaded file checksum mismatch (got %d bytes, want %d)", len(got), len(data))
+	}
+}
+
+func itoa(n int) string { return strconv.Itoa(n) }
+
+func parseTestRange(t *testing.T, rng string, size int) (int, int) {
+	t.Helper()
+	// rng like "bytes=START-END" or "bytes=START-"
+	spec := strings.TrimPrefix(rng, "bytes=")
+	parts := strings.SplitN(spec, "-", 2)
+	start, _ := strconv.Atoi(parts[0])
+	end := size - 1
+	if len(parts) == 2 && parts[1] != "" {
+		end, _ = strconv.Atoi(parts[1])
+	}
+	if end > size-1 {
+		end = size - 1
+	}
+	return start, end
+}

@@ -21,10 +21,10 @@ import (
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	os.Exit(execute(ctx, os.Args[1:], nil, os.Stdout))
+	os.Exit(execute(ctx, os.Args[1:], nil, nil, os.Stdout))
 }
 
-func execute(ctx context.Context, args []string, do client.Doer, w *os.File) int {
+func execute(ctx context.Context, args []string, do client.Doer, stream client.Streamer, w *os.File) int {
 	opts, done, err := config.ParseFlags(args)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -66,6 +66,16 @@ func execute(ctx context.Context, args []string, do client.Doer, w *os.File) int
 			return config.ReadFileFailed.Int()
 		}
 		opts.Data = string(b)
+	}
+
+	if config.ShouldStream(opts) {
+		if err := client.Download(ctx, opts, stream); err != nil {
+			if !opts.Output.Silent {
+				fmt.Fprintf(os.Stderr, "Failed: %s\n", err)
+			}
+			return config.WriteFileFailed.Int()
+		}
+		return config.NoError.Int()
 	}
 
 	if opts.Concurrency > 1 {

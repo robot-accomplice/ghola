@@ -252,3 +252,17 @@ func inferWgetFilename(opts *Options) {
 		opts.Output.File = "index.html"
 	}
 }
+
+// ShouldStream reports whether a request should take the streaming download
+// path (bounded memory, written to a file) instead of the buffered pipeline.
+// The buffered path is required when the whole body must be in memory: JSON
+// extraction (--jq), snoop, and HAR export.
+func ShouldStream(opts *Options) bool {
+	if opts.Output.File == "" {
+		return false
+	}
+	if opts.Output.Snoop || opts.Output.JQ != "" || opts.Output.HAR != "" {
+		return false
+	}
+	return opts.Method == fasthttp.MethodGet || opts.Method == "GET"
+}

@@ -373,3 +373,23 @@ func TestParseFlags_DefaultBackoff(t *testing.T) {
 		t.Errorf("default Backoff = %d, want 1000", opts.Resilience.Backoff)
 	}
 }
+
+func TestShouldStream(t *testing.T) {
+	cases := []struct {
+		name string
+		opts *Options
+		want bool
+	}{
+		{"file get", &Options{Method: "GET", Output: OutputOptions{File: "x"}}, true},
+		{"stdout", &Options{Method: "GET"}, false},
+		{"jq forces buffer", &Options{Method: "GET", Output: OutputOptions{File: "x", JQ: ".a"}}, false},
+		{"snoop forces buffer", &Options{Method: "GET", Output: OutputOptions{File: "x", Snoop: true}}, false},
+		{"har forces buffer", &Options{Method: "GET", Output: OutputOptions{File: "x", HAR: "h.har"}}, false},
+		{"post not streamed", &Options{Method: "POST", Output: OutputOptions{File: "x"}}, false},
+	}
+	for _, tc := range cases {
+		if got := ShouldStream(tc.opts); got != tc.want {
+			t.Errorf("%s: ShouldStream = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
