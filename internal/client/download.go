@@ -92,7 +92,10 @@ func probe(ctx context.Context, opts *config.Options, stream Streamer) (string, 
 		req2.Header.Set("Range", "bytes=0-0")
 		m2, err := stream(ctx, opts, req2, io.Discard)
 		fasthttp.ReleaseRequest(req2)
-		if err == nil && m2.AcceptRanges {
+		if err != nil {
+			return "", gholatransport.StreamMeta{}, fmt.Errorf("probe: %w", err)
+		}
+		if m2.AcceptRanges {
 			meta = m2
 		}
 	}
@@ -129,7 +132,12 @@ func downloadSegmented(ctx context.Context, opts *config.Options, stream Streame
 		wg.Add(1)
 		go func(r byteRange) {
 			defer wg.Done()
-			errs <- fetchSegment(ctx, opts, stream, url, f, r)
+			if err := fetchSegment(ctx, opts, stream, url, f, r); err != nil {
+				cancel()
+				errs <- err
+				return
+			}
+			errs <- nil
 		}(r)
 	}
 	wg.Wait()
@@ -137,7 +145,6 @@ func downloadSegmented(ctx context.Context, opts *config.Options, stream Streame
 
 	for e := range errs {
 		if e != nil {
-			cancel()
 			return fmt.Errorf("download segment: %w", e)
 		}
 	}
