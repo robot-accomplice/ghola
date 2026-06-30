@@ -1765,16 +1765,97 @@ In `internal/client/download.go`, build a shared limiter in `Download` and pass 
 
 Update the resume/range branches in `downloadSingle` to use the wrapped `sink`. Update all call sites and the segmented goroutine closure to pass `limiter`.
 
-- [ ] **Step 7: Run the new tests + full suite**
+- [ ] **Step 7: Add a minimal progress writer**
 
-Run: `go test ./internal/client/ -run 'TestRateLimited|TestParseRate' -v && go build ./... && go test ./...`
+Add to `internal/client/ratelimit.go` a throttled progress reporter that
+counts bytes and prints a single rewritten stderr line (suppressed when
+`silent`). It wraps the sink just like the rate limiter.
+
+```go
+// progressWriter counts bytes through it and prints a throttled, single-line
+// progress report to w (stderr). total is -1 when unknown. Safe for the
+// single-stream path; for segmented downloads pass the shared instance so the
+// aggregate count is reported (Write is mutex-guarded).
+type progressWriter struct {
+	mu      sync.Mutex
+	dst     io.Writer
+	w       io.Writer // progress output (stderr)
+	total   int64
+	written int64
+	start   time.Time
+	last    time.Time
+}
+
+func newProgressWriter(dst, w io.Writer, total int64) *progressWriter {
+	now := time.Now()
+	return &progressWriter{dst: dst, w: w, total: total, start: now, last: now}
+}
+
+func (p *progressWriter) Write(b []byte) (int, error) {
+	n, err := p.dst.Write(b)
+	p.mu.Lock()
+	p.written += int64(n)
+	now := time.Now()
+	if now.Sub(p.last) >= 200*time.Millisecond || (p.total > 0 && p.written >= p.total) {
+		p.last = now
+		secs := now.Sub(p.start).Seconds()
+		var rate float64
+		if secs > 0 {
+			rate = float64(p.written) / secs
+		}
+		if p.total > 0 {
+			fmt.Fprintf(p.w, "\r%6.1f%%  %d/%d bytes  %.1f MB/s   ",
+				100*float64(p.written)/float64(p.total), p.written, p.total, rate/1e6)
+		} else {
+			fmt.Fprintf(p.w, "\r%d bytes  %.1f MB/s   ", p.written, rate/1e6)
+		}
+	}
+	p.mu.Unlock()
+	return n, err
+}
+
+// done prints a trailing newline to finish the progress line.
+func (p *progressWriter) done() { fmt.Fprintln(p.w) }
+```
+
+In `download.go` `Download`, build a shared `*progressWriter` to stderr when
+`!opts.Output.Silent`, thread it alongside `limiter`, and wrap each sink
+**outermost** (progress counts post-decode plain bytes for single-stream; for
+segments it counts written bytes). Call `p.done()` after the download
+completes. Sink nesting order for single-stream: `f` → rate-limit → gzip →
+progress is incorrect (progress must see the bytes actually landing on disk).
+Correct order: `progress(ratelimit(f))` as the file sink, then gzip wraps that
+so plain decoded bytes are counted. For segments (no gzip): `progress` and
+`ratelimit` share one instance each across goroutines; wrap each offset writer
+as `ratelimit` then register byte counts into the shared progress via its
+mutex-guarded `Write`.
+
+Write a quick test asserting the counter reaches total:
+
+```go
+func TestProgressWriter_CountsAll(t *testing.T) {
+	var sink, prog bytes.Buffer
+	pw := newProgressWriter(&sink, &prog, 10)
+	if _, err := pw.Write(make([]byte, 10)); err != nil {
+		t.Fatal(err)
+	}
+	pw.done()
+	if pw.written != 10 || sink.Len() != 10 {
+		t.Fatalf("written=%d sink=%d, want 10/10", pw.written, sink.Len())
+	}
+}
+```
+
+- [ ] **Step 8: Run the new tests + full suite**
+
+Run: `go test ./internal/client/ -run 'TestRateLimited|TestParseRate|TestProgressWriter' -v && go build ./... && go test ./...`
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
 git add internal/client/ratelimit.go internal/client/ratelimit_test.go internal/client/download.go internal/config/config.go
-git commit -m "feat: --limit-rate aggregate rate limiting for downloads"
+git commit -m "feat: --limit-rate rate limiting and download progress meter"
 ```
 
 ---
