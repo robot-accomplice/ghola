@@ -92,6 +92,31 @@ func TestDownload_SingleStreamWritesFullFile(t *testing.T) {
 
 func itoa(n int) string { return strconv.Itoa(n) }
 
+func TestSplitRanges(t *testing.T) {
+	cases := []struct {
+		size  int64
+		parts int
+		want  []byteRange
+	}{
+		{10, 1, []byteRange{{0, 9}}},
+		{10, 2, []byteRange{{0, 4}, {5, 9}}},
+		{10, 3, []byteRange{{0, 3}, {4, 7}, {8, 9}}}, // remainder on last
+		{2, 5, []byteRange{{0, 0}, {1, 1}}},          // more parts than bytes -> clamp
+		{0, 3, nil},                                  // empty
+	}
+	for _, tc := range cases {
+		got := splitRanges(tc.size, tc.parts)
+		if len(got) != len(tc.want) {
+			t.Fatalf("size=%d parts=%d: got %v, want %v", tc.size, tc.parts, got, tc.want)
+		}
+		for i := range got {
+			if got[i] != tc.want[i] {
+				t.Fatalf("size=%d parts=%d idx %d: got %v, want %v", tc.size, tc.parts, i, got[i], tc.want[i])
+			}
+		}
+	}
+}
+
 func parseTestRange(t *testing.T, rng string, size int) (int, int) {
 	t.Helper()
 	// rng like "bytes=START-END" or "bytes=START-"

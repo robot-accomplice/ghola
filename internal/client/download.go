@@ -16,6 +16,40 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
+// byteRange is an inclusive [start, end] byte range for a Range request.
+type byteRange struct {
+	start int64
+	end   int64
+}
+
+// splitRanges divides size bytes into at most `parts` contiguous inclusive
+// ranges. When parts exceeds size, it clamps to one range per byte. Returns
+// nil for size <= 0.
+func splitRanges(size int64, parts int) []byteRange {
+	if size <= 0 || parts <= 0 {
+		return nil
+	}
+	if int64(parts) > size {
+		parts = int(size)
+	}
+	// Use ceiling division to distribute bytes as evenly as possible
+	chunk := (size + int64(parts) - 1) / int64(parts)
+	ranges := make([]byteRange, 0, parts)
+	var start int64
+	for i := 0; i < parts; i++ {
+		end := start + chunk - 1
+		if end >= size {
+			end = size - 1
+		}
+		ranges = append(ranges, byteRange{start: start, end: end})
+		start = end + 1
+		if start >= size {
+			break
+		}
+	}
+	return ranges
+}
+
 // Download fetches opts.URL and streams it to opts.Output.File with bounded
 // memory. Routing (when to call this vs. FetchURL) is decided by
 // config.ShouldStream in the CLI entry point.
