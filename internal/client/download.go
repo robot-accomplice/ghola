@@ -35,22 +35,19 @@ func Download(ctx context.Context, opts *config.Options, stream Streamer) error 
 // status; the body (if any) is discarded.
 func resolveTarget(ctx context.Context, opts *config.Options, stream Streamer) (string, error) {
 	target := opts.URL
-	for hops := 0; hops <= opts.Resilience.MaxRedirs; hops++ {
-		req := fasthttp.AcquireRequest()
-		buildDownloadRequest(req, opts, target, fasthttp.MethodHead, "")
-		meta, err := stream(ctx, opts, req, io.Discard)
-		fasthttp.ReleaseRequest(req)
-		if err != nil {
-			return "", err
-		}
-		if !isRedirectStatus(meta.StatusCode) {
-			return target, nil
-		}
-		// HEAD redirect: re-fetch with GET semantics handled in downloadSingle.
-		// Location is not in StreamMeta; fall through to a GET-based resolve.
-		return resolveTargetViaGet(ctx, opts, stream, target)
+	req := fasthttp.AcquireRequest()
+	buildDownloadRequest(req, opts, target, fasthttp.MethodHead, "")
+	meta, err := stream(ctx, opts, req, io.Discard)
+	fasthttp.ReleaseRequest(req)
+	if err != nil {
+		return "", err
 	}
-	return target, nil
+	if !isRedirectStatus(meta.StatusCode) {
+		return target, nil
+	}
+	// HEAD redirect: re-fetch with GET semantics handled in downloadSingle.
+	// Location is not in StreamMeta; fall through to a GET-based resolve.
+	return resolveTargetViaGet(ctx, opts, stream, target)
 }
 
 // resolveTargetViaGet resolves redirects when HEAD returns 3xx by issuing a
@@ -61,7 +58,7 @@ func resolveTargetViaGet(ctx context.Context, opts *config.Options, stream Strea
 		req := fasthttp.AcquireRequest()
 		buildDownloadRequest(req, opts, target, fasthttp.MethodGet, "")
 		req.Header.Set("Range", "bytes=0-0")
-		loc, status, err := streamLocation(ctx, opts, stream, req)
+		loc, status, err := streamLocation(ctx, opts, req)
 		fasthttp.ReleaseRequest(req)
 		if err != nil {
 			return "", err
@@ -83,7 +80,7 @@ func resolveTargetViaGet(ctx context.Context, opts *config.Options, stream Strea
 // call via DefaultDoer-style access is avoided; instead it relies on the
 // Streamer plus a header sink. Since StreamMeta omits Location, we capture it
 // through a one-shot buffered fetch.
-func streamLocation(ctx context.Context, opts *config.Options, stream Streamer, req *fasthttp.Request) (string, int, error) {
+func streamLocation(ctx context.Context, opts *config.Options, req *fasthttp.Request) (string, int, error) {
 	// Use FetchURL's transport directly for redirect resolution: a HEAD/probe
 	// body is tiny, so a buffered fetch is acceptable here.
 	rsp := fasthttp.AcquireResponse()

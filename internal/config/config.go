@@ -264,5 +264,5 @@ func ShouldStream(opts *Options) bool {
 	if opts.Output.Snoop || opts.Output.JQ != "" || opts.Output.HAR != "" {
 		return false
 	}
-	return opts.Method == fasthttp.MethodGet || opts.Method == "GET"
+	return opts.Method == fasthttp.MethodGet
 }
