@@ -102,6 +102,7 @@ func TestSplitRanges(t *testing.T) {
 		{10, 2, []byteRange{{0, 4}, {5, 9}}},
 		{10, 3, []byteRange{{0, 3}, {4, 7}, {8, 9}}}, // remainder on last
 		{2, 5, []byteRange{{0, 0}, {1, 1}}},          // more parts than bytes -> clamp
+		{5, 4, []byteRange{{0, 1}, {2, 3}, {4, 4}}},  // ceiling early-break: 3 < 4 parts
 		{0, 3, nil},                                  // empty
 	}
 	for _, tc := range cases {

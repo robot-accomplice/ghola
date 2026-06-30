@@ -23,8 +23,9 @@ type byteRange struct {
 }
 
 // splitRanges divides size bytes into at most `parts` contiguous inclusive
-// ranges. When parts exceeds size, it clamps to one range per byte. Returns
-// nil for size <= 0.
+// ranges. When parts exceeds size, it clamps to one range per byte. May return
+// fewer than `parts` segments if bytes are exhausted before all iterations.
+// Returns nil for size <= 0.
 func splitRanges(size int64, parts int) []byteRange {
 	if size <= 0 || parts <= 0 {
 		return nil
@@ -32,7 +33,7 @@ func splitRanges(size int64, parts int) []byteRange {
 	if int64(parts) > size {
 		parts = int(size)
 	}
-	// Use ceiling division to distribute bytes as evenly as possible
+	// Ceiling division makes earlier segments larger; loop breaks when start >= size.
 	chunk := (size + int64(parts) - 1) / int64(parts)
 	ranges := make([]byteRange, 0, parts)
 	var start int64
