@@ -146,6 +146,10 @@ func (s *fetchState) prepareRequest(req *fasthttp.Request, opts *config.Options,
 		applyGhostSign(req, effectiveURL)
 	}
 
+	if opts.Stealth.Compressed {
+		req.Header.Set("Accept-Encoding", "gzip")
+	}
+
 	if opts.User != "" {
 		auth := base64.StdEncoding.EncodeToString([]byte(opts.User))
 		req.Header.Set("Authorization", "Basic "+auth)

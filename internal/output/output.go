@@ -30,6 +30,13 @@ func ProcessResponse(w io.Writer, opts *config.Options, req *fasthttp.Request, r
 
 	body := rsp.Body()
 
+	// Decode gzip when --compressed was requested and the server honoured it.
+	if opts.Stealth.Compressed && bytes.EqualFold(rsp.Header.Peek("Content-Encoding"), []byte("gzip")) {
+		if decoded, err := rsp.BodyGunzip(); err == nil {
+			body = decoded
+		}
+	}
+
 	// Apply JSON extraction if --jq is set.
 	if opts.Output.JQ != "" {
 		result := gjson.GetBytes(body, opts.Output.JQ)

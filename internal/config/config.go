@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"path"
+	"strconv"
 
 	"github.com/robot-accomplice/ghola/internal/profile"
 	flag "github.com/spf13/pflag"
@@ -35,16 +36,22 @@ func (e ExitCode) Int() int {
 
 // OutputOptions controls how HTTP responses are rendered.
 type OutputOptions struct {
-	File     string
-	Verbose  bool
-	Fail     bool
-	Include  bool
-	Silent   bool
-	Snoop    bool
-	WgetMode bool
-	JQ       string
-	Timing   bool
-	HAR      string
+	File       string
+	Verbose    bool
+	Fail       bool
+	Include    bool
+	Silent     bool
+	Snoop      bool
+	WgetMode   bool
+	JQ         string
+	Timing     bool
+	HAR        string
+	ContinueAt   string // wired in Task 5; resume forces single-stream when set
+	Range        string // explicit byte range passthrough (e.g. "0-1023")
+	RemoteName   bool   // -O: save as URL basename
+	RemoteHeader bool   // -J: use Content-Disposition filename
+	RemoteTime   bool   // -R: set mtime from Last-Modified
+	LimitRate    string // --limit-rate: aggregate bytes/sec cap (e.g. "500k", "2M")
 }
 
 // StealthOptions controls browser impersonation and identity features.
@@ -61,6 +68,11 @@ type StealthOptions struct {
 	CookieJar      string
 	Cookies        []string
 	ProfileList    bool
+	Compressed     bool // wired in Task 9; true disables segmentation
+	Insecure       bool
+	CACert         string
+	ClientCert     string
+	ClientKey      string
 }
 
 // ResilienceOptions controls retry, timeout, redirect, and buffer behavior.
@@ -85,15 +97,18 @@ type ProxyOptions struct {
 
 // Options holds every user-configurable setting parsed from CLI flags.
 type Options struct {
-	URL         string
-	Method      string
-	Data        string
-	Headers     []string
-	Transfer    string
-	User        string
-	Concurrency int
-	Chain       string
-	Serve       bool
+	URL           string
+	Method        string
+	Data          string
+	DataBinary    string
+	DataURLEncode []string
+	Form          []string
+	Headers       []string
+	Transfer      string
+	User          string
+	Concurrency   int
+	Chain         string
+	Serve         bool
 
 	Output     OutputOptions
 	Stealth    StealthOptions
@@ -118,6 +133,9 @@ func ParseFlags(args []string) (*Options, bool, error) {
 	fs.BoolVarP(&help, "help", "h", false, "help")
 	fs.BoolVarP(&version, "version", "V", false, "version")
 	fs.StringVarP(&opts.Data, "data", "d", "", "HTTP POST data")
+	fs.StringArrayVarP(&opts.Form, "form", "F", nil, "Specify multipart form data (name=value or name=@file)")
+	fs.StringVar(&opts.DataBinary, "data-binary", "", "HTTP POST binary data (no munging); @file reads verbatim")
+	fs.StringArrayVar(&opts.DataURLEncode, "data-urlencode", nil, "URL-encode and POST the given data")
 	fs.BoolVarP(&opts.Output.Fail, "fail", "f", false, "Exit non-zero on non-2xx and suppress body output")
 	fs.BoolVarP(&opts.Output.Include, "include", "i", false, "Include protocol response headers")
 	fs.StringVarP(&opts.Output.File, "output", "o", "", "Write to file instead of stdout")
@@ -159,12 +177,25 @@ func ParseFlags(args []string) (*Options, bool, error) {
 	fs.StringVar(&opts.Output.JQ, "jq", "", "Extract a JSON path from the response body (gjson syntax)")
 	fs.BoolVar(&opts.Output.Timing, "timing", false, "Show response timing information")
 	fs.StringVar(&opts.Output.HAR, "har", "", "Export request/response as HAR 1.2 to a file")
+	fs.StringVarP(&opts.Output.ContinueAt, "continue-at", "C", "", "Resume a partial download at OFFSET, or '-' for auto")
+	fs.StringVar(&opts.Output.Range, "range", "", "Request only a byte RANGE (e.g. 0-1023)")
+	fs.BoolVarP(&opts.Output.RemoteName, "remote-name", "O", false, "Write output to a file named like the remote file")
+	fs.BoolVarP(&opts.Output.RemoteHeader, "remote-header-name", "J", false, "Use Content-Disposition filename for -O")
+	fs.BoolVarP(&opts.Output.RemoteTime, "remote-time", "R", false, "Set the local file timestamp to the remote one")
+	fs.StringVar(&opts.Output.LimitRate, "limit-rate", "", "Limit transfer rate (e.g. 500k, 2M, 1g)")
+	fs.BoolVar(&opts.Stealth.Compressed, "compressed", false, "Request a gzip-compressed response and decode it")
+	fs.BoolVarP(&opts.Stealth.Insecure, "insecure", "k", false, "Allow insecure server connections (skip TLS verification)")
+	fs.StringVar(&opts.Stealth.CACert, "cacert", "", "CA certificate file to verify the peer")
+	fs.StringVar(&opts.Stealth.ClientCert, "cert", "", "Client certificate file")
+	fs.StringVar(&opts.Stealth.ClientKey, "key", "", "Private key file for the client certificate")
 
 	fs.Usage = func() {
 		fmt.Print(banner)
 		fmt.Printf("ghola version %s\n", Version)
 		fmt.Println("Usage: ghola [options...] <url>")
 		fs.PrintDefaults()
+		fmt.Println("\nNote: ghola's -c (--chain), -G (--ghost), and -b (--backoff) differ")
+		fmt.Println("from curl's -c/-G/-b. Resume is -C/--continue-at.")
 	}
 
 	if err := fs.Parse(args); err != nil {
@@ -211,17 +242,46 @@ func ParseFlags(args []string) (*Options, bool, error) {
 	if opts.ProxyCfg.Proxy != "" && opts.ProxyCfg.File != "" {
 		return nil, false, fmt.Errorf("--proxy and --proxy-file cannot be used together")
 	}
+	if opts.Output.ContinueAt != "" && opts.Output.Range != "" {
+		return nil, false, fmt.Errorf("--continue-at and --range cannot be used together")
+	}
+	if opts.Stealth.Compressed && opts.Output.ContinueAt != "" {
+		return nil, false, fmt.Errorf("--compressed cannot be combined with --continue-at (byte ranges apply to the compressed stream)")
+	}
+	if opts.Stealth.Compressed && opts.Output.Range != "" {
+		return nil, false, fmt.Errorf("--compressed cannot be combined with --range (byte ranges apply to the compressed stream)")
+	}
+	if opts.Output.ContinueAt != "" && opts.Output.ContinueAt != "-" {
+		if _, err := strconv.ParseInt(opts.Output.ContinueAt, 10, 64); err != nil {
+			return nil, false, fmt.Errorf("invalid --continue-at value %q (want an integer offset or '-')", opts.Output.ContinueAt)
+		}
+	}
+	if opts.Output.LimitRate != "" {
+		if _, err := ParseRate(opts.Output.LimitRate); err != nil {
+			return nil, false, fmt.Errorf("invalid --limit-rate %q: %w", opts.Output.LimitRate, err)
+		}
+	}
 	if opts.Stealth.Referer != "none" && opts.Stealth.Referer != "auto" {
 		if _, err := url.ParseRequestURI(opts.Stealth.Referer); err != nil {
 			return nil, false, fmt.Errorf("invalid --referer value %q", opts.Stealth.Referer)
 		}
 	}
 
-	if opts.Data != "" && !fs.Changed("request") {
+	if len(opts.Form) > 0 && (opts.Data != "" || opts.DataBinary != "") {
+		return nil, false, fmt.Errorf("--form cannot be combined with -d/--data-binary")
+	}
+	if len(opts.Form) > 0 && len(opts.DataURLEncode) > 0 {
+		return nil, false, fmt.Errorf("--form cannot be combined with --data-urlencode")
+	}
+
+	if (opts.Data != "" || opts.DataBinary != "" || len(opts.Form) > 0 || len(opts.DataURLEncode) > 0) && !fs.Changed("request") {
 		opts.Method = fasthttp.MethodPost
 	}
 
 	if opts.Output.WgetMode && opts.Output.File == "" {
+		inferWgetFilename(opts)
+	}
+	if opts.Output.RemoteName && opts.Output.File == "" {
 		inferWgetFilename(opts)
 	}
 
@@ -251,4 +311,18 @@ func inferWgetFilename(opts *Options) {
 	if opts.Output.File == "." || opts.Output.File == "/" {
 		opts.Output.File = "index.html"
 	}
+}
+
+// ShouldStream reports whether a request should take the streaming download
+// path (bounded memory, written to a file) instead of the buffered pipeline.
+// The buffered path is required when the whole body must be in memory: JSON
+// extraction (--jq), snoop, and HAR export.
+func ShouldStream(opts *Options) bool {
+	if opts.Output.File == "" {
+		return false
+	}
+	if opts.Output.Snoop || opts.Output.JQ != "" || opts.Output.HAR != "" {
+		return false
+	}
+	return opts.Method == fasthttp.MethodGet
 }

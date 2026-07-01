@@ -1,8 +1,10 @@
 package transport
 
 import (
+	"bytes"
 	"context"
 	"net"
+	"os"
 	"testing"
 	"time"
 
@@ -214,5 +216,89 @@ func TestSimpleTransport_DoWithDeadline(t *testing.T) {
 	}
 	if rsp.StatusCode() != 204 {
 		t.Errorf("status = %d, want 204", rsp.StatusCode())
+	}
+}
+
+func TestBuildTLSConfig_Insecure(t *testing.T) {
+	cfg, err := buildTLSConfig(&config.Options{Stealth: config.StealthOptions{Insecure: true}})
+	if err != nil {
+		t.Fatalf("buildTLSConfig error: %v", err)
+	}
+	if cfg == nil || !cfg.InsecureSkipVerify {
+		t.Fatal("expected InsecureSkipVerify true")
+	}
+}
+
+func TestBuildTLSConfig_None(t *testing.T) {
+	cfg, err := buildTLSConfig(&config.Options{})
+	if err != nil {
+		t.Fatalf("buildTLSConfig error: %v", err)
+	}
+	if cfg != nil {
+		t.Fatalf("expected nil tls.Config when no TLS flags set, got %+v", cfg)
+	}
+}
+
+func TestBuildTLSConfig_CertRequiresKey(t *testing.T) {
+	cfg, err := buildTLSConfig(&config.Options{Stealth: config.StealthOptions{ClientCert: "somecert.pem"}})
+	if err == nil {
+		t.Fatal("expected error when --cert is set without --key")
+	}
+	if cfg != nil {
+		t.Fatalf("expected nil config on error, got %+v", cfg)
+	}
+}
+
+func TestBuildTLSConfig_BadCACert(t *testing.T) {
+	tmpdir := t.TempDir()
+	tmpfile := tmpdir + "/bad.pem"
+	if err := os.WriteFile(tmpfile, []byte("not a valid pem"), 0o644); err != nil {
+		t.Fatalf("WriteFile error: %v", err)
+	}
+	cfg, err := buildTLSConfig(&config.Options{Stealth: config.StealthOptions{CACert: tmpfile}})
+	if err == nil {
+		t.Fatal("expected error for invalid CA cert")
+	}
+	if cfg != nil {
+		t.Fatalf("expected nil config on error, got %+v", cfg)
+	}
+}
+
+func TestSimpleTransport_StreamWritesBodyToSink(t *testing.T) {
+	ln := fasthttputil.NewInmemoryListener()
+	srv := &fasthttp.Server{Handler: func(ctx *fasthttp.RequestCtx) {
+		ctx.SetStatusCode(200)
+		ctx.Response.Header.Set("Accept-Ranges", "bytes")
+		ctx.SetBodyString("streamed-body")
+	}}
+	go srv.Serve(ln) //nolint:errcheck
+	defer ln.Close()
+
+	tr := &simpleTransport{
+		client: &fasthttp.Client{
+			StreamResponseBody: true,
+			Dial:               func(addr string) (net.Conn, error) { return ln.Dial() },
+		},
+		name: "fasthttp",
+	}
+
+	req := fasthttp.AcquireRequest()
+	defer fasthttp.ReleaseRequest(req)
+	req.SetRequestURI("http://test/")
+	req.Header.SetMethod("GET")
+
+	var buf bytes.Buffer
+	meta, err := tr.Stream(context.Background(), req, &buf)
+	if err != nil {
+		t.Fatalf("Stream error: %v", err)
+	}
+	if meta.StatusCode != 200 {
+		t.Errorf("status = %d, want 200", meta.StatusCode)
+	}
+	if !meta.AcceptRanges {
+		t.Error("AcceptRanges = false, want true")
+	}
+	if buf.String() != "streamed-body" {
+		t.Errorf("sink = %q, want streamed-body", buf.String())
 	}
 }
