@@ -491,8 +491,8 @@ func TestBuildDownloadRequest_HeaderOverride(t *testing.T) {
 	defer fasthttp.ReleaseRequest(req)
 
 	opts := &config.Options{
-		Stealth:  config.StealthOptions{Agent: "custom-agent"},
-		Headers:  []string{"User-Agent: my-custom-ua", "X-Foo: bar"},
+		Stealth: config.StealthOptions{Agent: "custom-agent"},
+		Headers: []string{"User-Agent: my-custom-ua", "X-Foo: bar"},
 	}
 	buildDownloadRequest(req, opts, "http://example.com/", fasthttp.MethodGet, "")
 	// The explicit User-Agent override wins.
