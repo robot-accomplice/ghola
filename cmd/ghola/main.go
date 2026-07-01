@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"slices"
 	"strings"
 	"time"
 
@@ -75,6 +76,11 @@ func execute(ctx context.Context, args []string, do client.Doer, stream client.S
 			fmt.Fprintf(os.Stderr, "form: %v\n", err)
 			return config.ReadFileFailed.Int()
 		}
+		// Strip any existing Content-Type header (default is application/json)
+		// so the multipart boundary header is the only one.
+		opts.Headers = slices.DeleteFunc(opts.Headers, func(h string) bool {
+			return strings.HasPrefix(strings.ToLower(strings.TrimSpace(h)), "content-type:")
+		})
 		opts.Headers = append(opts.Headers, "Content-Type: "+ct)
 		opts.Data = string(body)
 	} else if opts.DataBinary != "" {

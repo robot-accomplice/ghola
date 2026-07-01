@@ -262,6 +262,9 @@ func ParseFlags(args []string) (*Options, bool, error) {
 	if len(opts.Form) > 0 && (opts.Data != "" || opts.DataBinary != "") {
 		return nil, false, fmt.Errorf("--form cannot be combined with -d/--data-binary")
 	}
+	if len(opts.Form) > 0 && len(opts.DataURLEncode) > 0 {
+		return nil, false, fmt.Errorf("--form cannot be combined with --data-urlencode")
+	}
 
 	if (opts.Data != "" || opts.DataBinary != "" || len(opts.Form) > 0 || len(opts.DataURLEncode) > 0) && !fs.Changed("request") {
 		opts.Method = fasthttp.MethodPost
