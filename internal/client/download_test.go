@@ -245,6 +245,7 @@ func TestDispositionFilename(t *testing.T) {
 		`inline`:                                  "",
 		`attachment; filename="../../etc/passwd"`: "passwd", // path stripped
 		`attachment; filename="a/b/c.tar.gz"`:     "c.tar.gz",
+		`attachment; filename="/etc/shadow"`:      "shadow", // absolute path stripped
 	}
 	for in, want := range cases {
 		if got := dispositionFilename(in); got != want {
