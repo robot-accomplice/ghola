@@ -7,6 +7,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"strings"
@@ -40,23 +41,10 @@ type Transport interface {
 	Name() string
 }
 
-func metaFromResponseHeader(h *fasthttp.ResponseHeader) StreamMeta {
-	cl := int64(-1)
-	if n := h.ContentLength(); n >= 0 {
-		cl = int64(n)
-	}
-	return StreamMeta{
-		StatusCode:    h.StatusCode(),
-		ContentLength: cl,
-		AcceptRanges:  bytes.EqualFold(h.Peek("Accept-Ranges"), []byte("bytes")),
-		LastModified:  string(h.Peek("Last-Modified")),
-		Disposition:   string(h.Peek("Content-Disposition")),
-	}
-}
-
 type simpleTransport struct {
-	client *fasthttp.Client
-	name   string
+	client     *fasthttp.Client
+	httpClient *http.Client // used by Stream for true bounded-memory streaming
+	name       string
 }
 
 type tlsClientTransport struct {
@@ -110,9 +98,22 @@ func New(opts *config.Options, selectedProxy string) (Transport, error) {
 		return nil, err
 	}
 	client := &fasthttp.Client{
-		ReadBufferSize:     opts.Resilience.BufferSize,
-		StreamResponseBody: true,
-		TLSConfig:          tlsCfg,
+		ReadBufferSize: opts.Resilience.BufferSize,
+		TLSConfig:      tlsCfg,
+	}
+
+	// net/http client for the streaming download path. fasthttp's client-side
+	// StreamResponseBody does NOT stream responses with a known Content-Length
+	// (it reads the whole body into memory, then exposes a bytes.Reader), which
+	// caused the v0.6.0 large-download OOM. net/http streams resp.Body reliably
+	// regardless of Content-Length, so Stream uses it and io.Copy.
+	httpTransport := &http.Transport{
+		TLSClientConfig:   tlsCfg,
+		ForceAttemptHTTP2: true,
+		// Never auto-negotiate/transparently decompress: downloads must be
+		// byte-exact, and --compressed is handled explicitly by the caller.
+		DisableCompression: true,
+		Proxy:              http.ProxyFromEnvironment,
 	}
 	if selectedProxy != "" {
 		proxyURL, err := url.Parse(selectedProxy)
@@ -120,11 +121,19 @@ func New(opts *config.Options, selectedProxy string) (Transport, error) {
 			return nil, fmt.Errorf("parse proxy url: %w", err)
 		}
 		client.Dial = fasthttpproxy.FasthttpHTTPDialer(proxyURL.String())
+		httpTransport.Proxy = http.ProxyURL(proxyURL)
+	}
+	httpClient := &http.Client{
+		Transport: httpTransport,
+		// Do NOT follow redirects; the download orchestrator inspects 3xx and
+		// resolves the target itself (probe/resolveTarget).
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 	}
 
 	return &simpleTransport{
-		client: client,
-		name:   "fasthttp",
+		client:     client,
+		httpClient: httpClient,
+		name:       "fasthttp",
 	}, nil
 }
 
@@ -190,21 +199,44 @@ func (t *simpleTransport) Name() string {
 }
 
 func (t *simpleTransport) Stream(ctx context.Context, req *fasthttp.Request, sink io.Writer) (StreamMeta, error) {
-	rsp := fasthttp.AcquireResponse()
-	defer fasthttp.ReleaseResponse(rsp)
-	rsp.StreamBody = true
-
-	var err error
-	if deadline, ok := ctx.Deadline(); ok {
-		err = t.client.DoDeadline(req, rsp, deadline)
-	} else {
-		err = t.client.Do(req, rsp)
+	method := string(req.Header.Method())
+	var body io.Reader
+	if b := req.Body(); len(b) > 0 {
+		body = bytes.NewReader(b)
 	}
+	httpReq, err := http.NewRequestWithContext(ctx, method, req.URI().String(), body)
 	if err != nil {
 		return StreamMeta{}, err
 	}
-	meta := metaFromResponseHeader(&rsp.Header)
-	if err := rsp.BodyWriteTo(sink); err != nil {
+	for key, value := range req.Header.All() {
+		name := string(key)
+		val := string(value)
+		// Host must be set on the request struct, not the header map; skip
+		// Content-Length (net/http computes it from the body).
+		switch {
+		case strings.EqualFold(name, "Host"):
+			httpReq.Host = val
+		case strings.EqualFold(name, "Content-Length"):
+			// let net/http set it
+		default:
+			httpReq.Header.Add(name, val)
+		}
+	}
+
+	resp, err := t.httpClient.Do(httpReq)
+	if err != nil {
+		return StreamMeta{}, err
+	}
+	defer resp.Body.Close()
+
+	meta := StreamMeta{
+		StatusCode:    resp.StatusCode,
+		ContentLength: resp.ContentLength, // -1 when unknown, per net/http
+		AcceptRanges:  strings.EqualFold(resp.Header.Get("Accept-Ranges"), "bytes"),
+		LastModified:  resp.Header.Get("Last-Modified"),
+		Disposition:   resp.Header.Get("Content-Disposition"),
+	}
+	if _, err := io.Copy(sink, resp.Body); err != nil {
 		return meta, err
 	}
 	return meta, nil
