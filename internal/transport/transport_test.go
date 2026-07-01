@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"net"
+	"os"
 	"testing"
 	"time"
 
@@ -235,6 +236,31 @@ func TestBuildTLSConfig_None(t *testing.T) {
 	}
 	if cfg != nil {
 		t.Fatalf("expected nil tls.Config when no TLS flags set, got %+v", cfg)
+	}
+}
+
+func TestBuildTLSConfig_CertRequiresKey(t *testing.T) {
+	cfg, err := buildTLSConfig(&config.Options{Stealth: config.StealthOptions{ClientCert: "somecert.pem"}})
+	if err == nil {
+		t.Fatal("expected error when --cert is set without --key")
+	}
+	if cfg != nil {
+		t.Fatalf("expected nil config on error, got %+v", cfg)
+	}
+}
+
+func TestBuildTLSConfig_BadCACert(t *testing.T) {
+	tmpdir := t.TempDir()
+	tmpfile := tmpdir + "/bad.pem"
+	if err := os.WriteFile(tmpfile, []byte("not a valid pem"), 0o644); err != nil {
+		t.Fatalf("WriteFile error: %v", err)
+	}
+	cfg, err := buildTLSConfig(&config.Options{Stealth: config.StealthOptions{CACert: tmpfile}})
+	if err == nil {
+		t.Fatal("expected error for invalid CA cert")
+	}
+	if cfg != nil {
+		t.Fatalf("expected nil config on error, got %+v", cfg)
 	}
 }
 
