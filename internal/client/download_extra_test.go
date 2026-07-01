@@ -238,12 +238,14 @@ func TestStreamLocation_RealHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("streamLocation error: %v", err)
 	}
-	// The real fasthttp transport follows 302 internally or returns the location.
-	// We just need to confirm no error and a valid status was returned.
-	if status == 0 {
-		t.Errorf("got status 0, want a real HTTP status")
+	// /src redirects with 302; fasthttp's transport returns the redirect status
+	// directly rather than following to /dest, so the pinned value is 302.
+	if status != http.StatusFound {
+		t.Errorf("got status %d, want %d (http.StatusFound)", status, http.StatusFound)
 	}
-	_ = loc // location may be empty if transport followed redirect
+	// loc may be empty: fasthttp collapses the Location header rather than
+	// surfacing it when the redirect is handled at the transport layer.
+	_ = loc
 }
 
 // TestDefaultStreamer_RealHTTP exercises DefaultStreamer against a real server.
@@ -621,16 +623,16 @@ func TestDownload_JDispositionRename(t *testing.T) {
 	if opts.Output.File != "named.bin" {
 		t.Errorf("opts.Output.File = %q, want 'named.bin'", opts.Output.File)
 	}
-	got, err := os.ReadFile("named.bin")
-	if err == nil {
-		// File landed in cwd; clean up.
-		os.Remove("named.bin") //nolint:errcheck
-		if !bytes.Equal(got, data) {
-			t.Errorf("content mismatch")
-		}
+	// Read via the actual output path (not a hard-coded literal) so the content
+	// check is never silently skipped if the file lands elsewhere.
+	got, err := os.ReadFile(opts.Output.File)
+	if err != nil {
+		t.Fatalf("reading output file %q: %v", opts.Output.File, err)
 	}
-	// The file may land in cwd or dir depending on how the OS resolves it.
-	// Either way the rename happened (opts.Output.File changed).
+	defer os.Remove(opts.Output.File) //nolint:errcheck
+	if !bytes.Equal(got, data) {
+		t.Errorf("content mismatch: got %q, want %q", got, data)
+	}
 }
 
 // TestDownload_RemoteTime verifies -R (RemoteTime) sets the file mtime from
