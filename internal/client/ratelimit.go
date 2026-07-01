@@ -70,11 +70,19 @@ func newRateLimitedWriter(w io.Writer, rl *rateLimiter) io.Writer {
 }
 
 func (rw *rateLimitedWriter) Write(p []byte) (int, error) {
+	// Cap chunk to the bucket capacity so wait(n) is always satisfiable.
+	// Without this cap, any --limit-rate below rateLimitChunk (32 KB/s)
+	// would cause wait to loop forever because allowance is capped at
+	// bytesPerSec and can never reach n.
+	maxChunk := rateLimitChunk
+	if int64(maxChunk) > rw.rl.bytesPerSec {
+		maxChunk = int(rw.rl.bytesPerSec)
+	}
 	written := 0
 	for len(p) > 0 {
 		n := len(p)
-		if n > rateLimitChunk {
-			n = rateLimitChunk
+		if n > maxChunk {
+			n = maxChunk
 		}
 		rw.rl.wait(n)
 		m, err := rw.w.Write(p[:n])
@@ -91,6 +99,12 @@ func (rw *rateLimitedWriter) Write(p []byte) (int, error) {
 // single-line \r-terminated progress report to w (stderr). total is -1 when
 // the content length is unknown. Write is mutex-guarded so multiple segment
 // goroutines can share one instance for an aggregate count.
+//
+// NOT safe for concurrent direct Write calls: Write reads dst outside the
+// mutex, so two goroutines calling Write simultaneously would race on dst.
+// The concurrent/segmented download path must use progressTap instead, which
+// drives each segment's real sink independently and only touches the shared
+// counter under the mutex.
 type progressWriter struct {
 	mu      sync.Mutex
 	dst     io.Writer

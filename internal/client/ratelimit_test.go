@@ -6,6 +6,35 @@ import (
 	"time"
 )
 
+// TestRateLimitedWriter_LowRateDoesNotHang guards against the hang that occurs
+// when bytesPerSec < rateLimitChunk (32768): without the chunk-cap fix, wait(n)
+// can never satisfy allowance >= n and loops forever.
+func TestRateLimitedWriter_LowRateDoesNotHang(t *testing.T) {
+	const rate = 1000 // 1 KB/s — well below the 32 KB/s rateLimitChunk
+	rl := newRateLimiter(rate)
+	var sink bytes.Buffer
+	w := newRateLimitedWriter(&sink, rl)
+	payload := make([]byte, 3000) // 3 KB; takes ~3s at 1 KB/s
+
+	done := make(chan struct{})
+	go func() {
+		if _, err := w.Write(payload); err != nil {
+			t.Errorf("write: %v", err)
+		}
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// completed — verify byte count
+		if sink.Len() != len(payload) {
+			t.Errorf("wrote %d bytes, want %d", sink.Len(), len(payload))
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("Write hung: did not complete within 10s (bucket-cap fix missing?)")
+	}
+}
+
 func TestRateLimitedWriter_Throttles(t *testing.T) {
 	rl := newRateLimiter(100_000) // 100 KB/s
 	var sink bytes.Buffer
