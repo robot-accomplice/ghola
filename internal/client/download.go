@@ -4,6 +4,8 @@
 package client
 
 import (
+	"bufio"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
@@ -320,6 +322,9 @@ func downloadSingle(ctx context.Context, opts *config.Options, stream Streamer, 
 
 	// Sink nesting (innermost first): file → rate limit → progress.
 	// progress is outermost so it counts bytes after throttling (bytes on disk).
+	// When --compressed, gzipSink wraps the whole chain so that compressed bytes
+	// received from the network are decoded before reaching the file (and rate
+	// limiting / progress count plain bytes on disk).
 	var sink io.Writer = f
 	if limiter != nil {
 		sink = newRateLimitedWriter(sink, limiter)
@@ -329,7 +334,19 @@ func downloadSingle(ctx context.Context, opts *config.Options, stream Streamer, 
 		sink = progress
 	}
 
+	var flush func() error
+	if opts.Stealth.Compressed {
+		var gw io.Writer
+		gw, flush = gzipSink(sink)
+		sink = gw
+	}
+
 	meta, err := stream(ctx, opts, req, sink)
+	if flush != nil {
+		if ferr := flush(); ferr != nil && err == nil {
+			err = ferr
+		}
+	}
 	if err != nil {
 		return fmt.Errorf("download: %w", err)
 	}
@@ -380,6 +397,39 @@ func dispositionFilename(disposition string) string {
 	return name
 }
 
+// gzipSink returns a writer that transparently gunzips data written to it
+// before passing it to dst, plus a flush func to call after streaming
+// completes. It sniffs the gzip magic bytes (0x1f 0x8b): if the stream is NOT
+// gzip (e.g. the server ignored Accept-Encoding), bytes pass through
+// undecoded, so a non-compressing server never corrupts the output.
+func gzipSink(dst io.Writer) (io.Writer, func() error) {
+	pr, pw := io.Pipe()
+	done := make(chan error, 1)
+	go func() {
+		br := bufio.NewReader(pr)
+		magic, _ := br.Peek(2)
+		if len(magic) == 2 && magic[0] == 0x1f && magic[1] == 0x8b {
+			zr, err := gzip.NewReader(br)
+			if err != nil {
+				pr.CloseWithError(err)
+				done <- err
+				return
+			}
+			_, cerr := io.Copy(dst, zr)
+			zr.Close()
+			done <- cerr
+			return
+		}
+		// Not gzip: pass through verbatim.
+		_, cerr := io.Copy(dst, br)
+		done <- cerr
+	}()
+	return pw, func() error {
+		pw.Close()
+		return <-done
+	}
+}
+
 // buildDownloadRequest sets URI, method, body, headers, and the active
 // browser profile / ghost / auth identity, mirroring prepareRequest but for
 // the streaming path. It reuses the profile builder for header realism.
@@ -420,5 +470,8 @@ func buildDownloadRequest(req *fasthttp.Request, opts *config.Options, url, meth
 	}
 	if opts.Stealth.Ghost {
 		applyGhostSign(req, url)
+	}
+	if opts.Stealth.Compressed {
+		req.Header.Set("Accept-Encoding", "gzip")
 	}
 }

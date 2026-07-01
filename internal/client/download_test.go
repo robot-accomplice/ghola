@@ -2,6 +2,7 @@ package client
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"io"
@@ -275,5 +276,53 @@ func TestDownload_SegmentedReconstructsFile(t *testing.T) {
 	}
 	if hits := atomic.LoadInt64(&rangeHits); hits < 2 {
 		t.Fatalf("expected multiple Range requests, got %d", hits)
+	}
+}
+
+func TestDownload_CompressedGzip(t *testing.T) {
+	plain := bytes.Repeat([]byte("zip-me-"), 10000)
+	var gz bytes.Buffer
+	zw := gzip.NewWriter(&gz)
+	zw.Write(plain) //nolint:errcheck
+	zw.Close()      //nolint:errcheck
+	gzData := gz.Bytes()
+
+	ln := fasthttputil.NewInmemoryListener()
+	srv := &fasthttp.Server{Handler: func(ctx *fasthttp.RequestCtx) {
+		if !strings.Contains(string(ctx.Request.Header.Peek("Accept-Encoding")), "gzip") {
+			t.Error("Accept-Encoding gzip not sent")
+		}
+		ctx.SetStatusCode(200)
+		ctx.Response.Header.Set("Content-Encoding", "gzip")
+		ctx.SetBody(gzData)
+	}}
+	go srv.Serve(ln) //nolint:errcheck
+	defer ln.Close()
+	c := &fasthttp.Client{StreamResponseBody: true, Dial: func(addr string) (net.Conn, error) { return ln.Dial() }}
+	streamer := func(ctx context.Context, opts *config.Options, req *fasthttp.Request, sink io.Writer) (gholatransport.StreamMeta, error) {
+		rsp := fasthttp.AcquireResponse()
+		defer fasthttp.ReleaseResponse(rsp)
+		rsp.StreamBody = true
+		if err := c.Do(req, rsp); err != nil {
+			return gholatransport.StreamMeta{}, err
+		}
+		meta := gholatransport.StreamMeta{StatusCode: rsp.Header.StatusCode(), ContentLength: int64(rsp.Header.ContentLength())}
+		_ = rsp.BodyWriteTo(sink)
+		return meta, nil
+	}
+
+	dir := t.TempDir()
+	out := filepath.Join(dir, "z.txt")
+	opts := &config.Options{
+		URL: "http://test/z.txt", Method: "GET", Concurrency: 1,
+		Output:  config.OutputOptions{File: out},
+		Stealth: config.StealthOptions{Agent: "ghola-test", Compressed: true},
+	}
+	if err := Download(context.Background(), opts, streamer); err != nil {
+		t.Fatalf("Download error: %v", err)
+	}
+	got, _ := os.ReadFile(out)
+	if !bytes.Equal(got, plain) {
+		t.Fatalf("decoded body mismatch: got %d bytes, want %d", len(got), len(plain))
 	}
 }
