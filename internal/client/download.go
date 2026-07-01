@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -235,24 +236,66 @@ func streamLocation(ctx context.Context, opts *config.Options, req *fasthttp.Req
 }
 
 func downloadSingle(ctx context.Context, opts *config.Options, stream Streamer, url string) error {
-	f, err := os.OpenFile(opts.Output.File, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	flags := os.O_CREATE | os.O_WRONLY
+	var offset int64
+	rangeHeader := ""
+
+	switch {
+	case opts.Output.ContinueAt != "":
+		off, err := resumeOffset(opts)
+		if err != nil {
+			return err
+		}
+		offset = off
+		flags |= os.O_APPEND
+		rangeHeader = fmt.Sprintf("bytes=%d-", offset)
+	case opts.Output.Range != "":
+		rangeHeader = "bytes=" + strings.TrimPrefix(opts.Output.Range, "bytes=")
+		flags |= os.O_TRUNC
+	default:
+		flags |= os.O_TRUNC
+	}
+
+	f, err := os.OpenFile(opts.Output.File, flags, 0644)
 	if err != nil {
-		return fmt.Errorf("create output file: %w", err)
+		return fmt.Errorf("open output file: %w", err)
 	}
 	defer f.Close()
 
 	req := fasthttp.AcquireRequest()
 	defer fasthttp.ReleaseRequest(req)
 	buildDownloadRequest(req, opts, url, fasthttp.MethodGet, opts.Data)
+	if rangeHeader != "" {
+		req.Header.Set("Range", rangeHeader)
+	}
 
 	meta, err := stream(ctx, opts, req, f)
 	if err != nil {
 		return fmt.Errorf("download: %w", err)
 	}
+	if opts.Output.ContinueAt != "" && offset > 0 && meta.StatusCode == 200 {
+		return fmt.Errorf("download: server ignored resume Range (status 200); cannot continue at %d", offset)
+	}
 	if meta.StatusCode < 200 || meta.StatusCode >= 300 {
 		return fmt.Errorf("download: non-2xx status %d", meta.StatusCode)
 	}
 	return nil
+}
+
+// resumeOffset computes the resume byte offset: an explicit value, or the
+// current file size when --continue-at is "-".
+func resumeOffset(opts *config.Options) (int64, error) {
+	if opts.Output.ContinueAt != "-" {
+		return strconv.ParseInt(opts.Output.ContinueAt, 10, 64)
+	}
+	info, err := os.Stat(opts.Output.File)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil // nothing downloaded yet; start from the beginning
+		}
+		return 0, fmt.Errorf("stat for resume: %w", err)
+	}
+	return info.Size(), nil
 }
 
 // buildDownloadRequest sets URI, method, body, headers, and the active

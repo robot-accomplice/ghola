@@ -178,6 +178,66 @@ func countingBlobServer(t *testing.T, data []byte, rangeHits *int64) Streamer {
 	}
 }
 
+func TestDownload_ResumeRequestsRemainderOnly(t *testing.T) {
+	data := bytes.Repeat([]byte("RES"), 100000) // 300 KB
+	var gotStart int64 = -1
+	ln := fasthttputil.NewInmemoryListener()
+	srv := &fasthttp.Server{Handler: func(ctx *fasthttp.RequestCtx) {
+		ctx.Response.Header.Set("Accept-Ranges", "bytes")
+		rng := string(ctx.Request.Header.Peek("Range"))
+		if rng == "" {
+			ctx.SetStatusCode(200)
+			ctx.Response.Header.SetContentLength(len(data))
+			if !ctx.IsHead() {
+				ctx.SetBody(data)
+			}
+			return
+		}
+		start, end := parseTestRange(t, rng, len(data))
+		atomic.StoreInt64(&gotStart, int64(start))
+		ctx.SetStatusCode(206)
+		ctx.Response.Header.Set("Content-Range", "bytes "+itoa(start)+"-"+itoa(end)+"/"+itoa(len(data)))
+		ctx.SetBody(data[start : end+1])
+	}}
+	go srv.Serve(ln) //nolint:errcheck
+	defer ln.Close()
+	c := &fasthttp.Client{StreamResponseBody: true, Dial: func(addr string) (net.Conn, error) { return ln.Dial() }}
+	streamer := func(ctx context.Context, opts *config.Options, req *fasthttp.Request, sink io.Writer) (gholatransport.StreamMeta, error) {
+		rsp := fasthttp.AcquireResponse()
+		defer fasthttp.ReleaseResponse(rsp)
+		rsp.StreamBody = true
+		if err := c.Do(req, rsp); err != nil {
+			return gholatransport.StreamMeta{}, err
+		}
+		meta := gholatransport.StreamMeta{
+			StatusCode:    rsp.Header.StatusCode(),
+			ContentLength: int64(rsp.Header.ContentLength()),
+			AcceptRanges:  bytes.EqualFold(rsp.Header.Peek("Accept-Ranges"), []byte("bytes")),
+		}
+		_ = rsp.BodyWriteTo(sink)
+		return meta, nil
+	}
+
+	dir := t.TempDir()
+	out := filepath.Join(dir, "resume.bin")
+	os.WriteFile(out, data[:90000], 0644) //nolint:errcheck
+	opts := &config.Options{
+		URL: "http://test/resume.bin", Method: "GET", Concurrency: 1,
+		Output:  config.OutputOptions{File: out, ContinueAt: "-"},
+		Stealth: config.StealthOptions{Agent: "ghola-test"},
+	}
+	if err := Download(context.Background(), opts, streamer); err != nil {
+		t.Fatalf("Download error: %v", err)
+	}
+	if atomic.LoadInt64(&gotStart) != 90000 {
+		t.Fatalf("resume Range start = %d, want 90000", atomic.LoadInt64(&gotStart))
+	}
+	got, _ := os.ReadFile(out)
+	if sha256.Sum256(got) != sha256.Sum256(data) {
+		t.Fatalf("resumed checksum mismatch")
+	}
+}
+
 func TestDownload_SegmentedReconstructsFile(t *testing.T) {
 	data := bytes.Repeat([]byte("SEG"), 500000) // 1.5 MB
 	var rangeHits int64

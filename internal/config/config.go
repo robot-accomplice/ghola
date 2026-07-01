@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"path"
+	"strconv"
 
 	"github.com/robot-accomplice/ghola/internal/profile"
 	flag "github.com/spf13/pflag"
@@ -46,6 +47,7 @@ type OutputOptions struct {
 	Timing     bool
 	HAR        string
 	ContinueAt string // wired in Task 5; resume forces single-stream when set
+	Range      string // explicit byte range passthrough (e.g. "0-1023")
 }
 
 // StealthOptions controls browser impersonation and identity features.
@@ -161,6 +163,8 @@ func ParseFlags(args []string) (*Options, bool, error) {
 	fs.StringVar(&opts.Output.JQ, "jq", "", "Extract a JSON path from the response body (gjson syntax)")
 	fs.BoolVar(&opts.Output.Timing, "timing", false, "Show response timing information")
 	fs.StringVar(&opts.Output.HAR, "har", "", "Export request/response as HAR 1.2 to a file")
+	fs.StringVarP(&opts.Output.ContinueAt, "continue-at", "C", "", "Resume a partial download at OFFSET, or '-' for auto")
+	fs.StringVar(&opts.Output.Range, "range", "", "Request only a byte RANGE (e.g. 0-1023)")
 
 	fs.Usage = func() {
 		fmt.Print(banner)
@@ -212,6 +216,14 @@ func ParseFlags(args []string) (*Options, bool, error) {
 
 	if opts.ProxyCfg.Proxy != "" && opts.ProxyCfg.File != "" {
 		return nil, false, fmt.Errorf("--proxy and --proxy-file cannot be used together")
+	}
+	if opts.Output.ContinueAt != "" && opts.Output.Range != "" {
+		return nil, false, fmt.Errorf("--continue-at and --range cannot be used together")
+	}
+	if opts.Output.ContinueAt != "" && opts.Output.ContinueAt != "-" {
+		if _, err := strconv.ParseInt(opts.Output.ContinueAt, 10, 64); err != nil {
+			return nil, false, fmt.Errorf("invalid --continue-at value %q (want an integer offset or '-')", opts.Output.ContinueAt)
+		}
 	}
 	if opts.Stealth.Referer != "none" && opts.Stealth.Referer != "auto" {
 		if _, err := url.ParseRequestURI(opts.Stealth.Referer); err != nil {

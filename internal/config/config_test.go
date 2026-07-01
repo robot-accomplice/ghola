@@ -374,6 +374,50 @@ func TestParseFlags_DefaultBackoff(t *testing.T) {
 	}
 }
 
+func TestParseFlags_ContinueAt(t *testing.T) {
+	opts, _, err := ParseFlags([]string{"-C", "90000", "-o", "out.bin", "http://example.com/file"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if opts.Output.ContinueAt != "90000" {
+		t.Errorf("ContinueAt = %q, want 90000", opts.Output.ContinueAt)
+	}
+}
+
+func TestParseFlags_ContinueAtAuto(t *testing.T) {
+	opts, _, err := ParseFlags([]string{"-C", "-", "-o", "out.bin", "http://example.com/file"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if opts.Output.ContinueAt != "-" {
+		t.Errorf("ContinueAt = %q, want '-'", opts.Output.ContinueAt)
+	}
+}
+
+func TestParseFlags_ContinueAtInvalid(t *testing.T) {
+	_, _, err := ParseFlags([]string{"-C", "notanint", "-o", "out.bin", "http://example.com/file"})
+	if err == nil {
+		t.Fatal("expected error for non-integer --continue-at")
+	}
+}
+
+func TestParseFlags_Range(t *testing.T) {
+	opts, _, err := ParseFlags([]string{"--range", "0-1023", "-o", "out.bin", "http://example.com/file"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if opts.Output.Range != "0-1023" {
+		t.Errorf("Range = %q, want 0-1023", opts.Output.Range)
+	}
+}
+
+func TestParseFlags_ContinueAtAndRangeMutuallyExclusive(t *testing.T) {
+	_, _, err := ParseFlags([]string{"-C", "-", "--range", "0-1023", "-o", "out.bin", "http://example.com/file"})
+	if err == nil {
+		t.Fatal("expected error for --continue-at and --range together")
+	}
+}
+
 func TestShouldStream(t *testing.T) {
 	cases := []struct {
 		name string
