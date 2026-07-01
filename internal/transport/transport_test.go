@@ -3,7 +3,10 @@ package transport
 import (
 	"bytes"
 	"context"
+	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"testing"
 	"time"
@@ -265,26 +268,21 @@ func TestBuildTLSConfig_BadCACert(t *testing.T) {
 }
 
 func TestSimpleTransport_StreamWritesBodyToSink(t *testing.T) {
-	ln := fasthttputil.NewInmemoryListener()
-	srv := &fasthttp.Server{Handler: func(ctx *fasthttp.RequestCtx) {
-		ctx.SetStatusCode(200)
-		ctx.Response.Header.Set("Accept-Ranges", "bytes")
-		ctx.SetBodyString("streamed-body")
-	}}
-	go srv.Serve(ln) //nolint:errcheck
-	defer ln.Close()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Accept-Ranges", "bytes")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, "streamed-body")
+	}))
+	defer srv.Close()
 
-	tr := &simpleTransport{
-		client: &fasthttp.Client{
-			StreamResponseBody: true,
-			Dial:               func(addr string) (net.Conn, error) { return ln.Dial() },
-		},
-		name: "fasthttp",
+	tr, err := New(&config.Options{}, "")
+	if err != nil {
+		t.Fatalf("New: %v", err)
 	}
 
 	req := fasthttp.AcquireRequest()
 	defer fasthttp.ReleaseRequest(req)
-	req.SetRequestURI("http://test/")
+	req.SetRequestURI(srv.URL)
 	req.Header.SetMethod("GET")
 
 	var buf bytes.Buffer
@@ -300,5 +298,70 @@ func TestSimpleTransport_StreamWritesBodyToSink(t *testing.T) {
 	}
 	if buf.String() != "streamed-body" {
 		t.Errorf("sink = %q, want streamed-body", buf.String())
+	}
+}
+
+// TestSimpleTransport_StreamForwardsHeaders verifies Stream copies request
+// headers (including Range) from the fasthttp request to the net/http request,
+// and that a 206 + Last-Modified/Content-Disposition are surfaced in StreamMeta.
+func TestSimpleTransport_StreamForwardsHeaders(t *testing.T) {
+	var gotCustom, gotRange string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotCustom = r.Header.Get("X-Custom")
+		gotRange = r.Header.Get("Range")
+		w.Header().Set("Last-Modified", "Mon, 02 Jan 2006 15:04:05 GMT")
+		w.Header().Set("Content-Disposition", `attachment; filename="x.bin"`)
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = io.WriteString(w, "partial")
+	}))
+	defer srv.Close()
+
+	tr, err := New(&config.Options{}, "")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	req := fasthttp.AcquireRequest()
+	defer fasthttp.ReleaseRequest(req)
+	req.SetRequestURI(srv.URL)
+	req.Header.SetMethod("GET")
+	req.Header.Set("X-Custom", "value")
+	req.Header.Set("Range", "bytes=0-6")
+
+	var buf bytes.Buffer
+	meta, err := tr.Stream(context.Background(), req, &buf)
+	if err != nil {
+		t.Fatalf("Stream error: %v", err)
+	}
+	if gotCustom != "value" {
+		t.Errorf("server saw X-Custom = %q, want value", gotCustom)
+	}
+	if gotRange != "bytes=0-6" {
+		t.Errorf("server saw Range = %q, want bytes=0-6", gotRange)
+	}
+	if meta.StatusCode != http.StatusPartialContent {
+		t.Errorf("status = %d, want 206", meta.StatusCode)
+	}
+	if meta.LastModified == "" || meta.Disposition == "" {
+		t.Errorf("meta missing Last-Modified/Content-Disposition: %+v", meta)
+	}
+	if buf.String() != "partial" {
+		t.Errorf("sink = %q, want partial", buf.String())
+	}
+}
+
+// TestSimpleTransport_StreamConnectionError verifies Stream returns an error
+// (rather than panicking) when the server is unreachable.
+func TestSimpleTransport_StreamConnectionError(t *testing.T) {
+	tr, err := New(&config.Options{}, "")
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	req := fasthttp.AcquireRequest()
+	defer fasthttp.ReleaseRequest(req)
+	req.SetRequestURI("http://127.0.0.1:1/") // nothing listening on port 1
+	req.Header.SetMethod("GET")
+
+	if _, err := tr.Stream(context.Background(), req, io.Discard); err == nil {
+		t.Fatal("expected an error streaming from an unreachable server")
 	}
 }
