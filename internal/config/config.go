@@ -245,6 +245,12 @@ func ParseFlags(args []string) (*Options, bool, error) {
 	if opts.Output.ContinueAt != "" && opts.Output.Range != "" {
 		return nil, false, fmt.Errorf("--continue-at and --range cannot be used together")
 	}
+	if opts.Stealth.Compressed && opts.Output.ContinueAt != "" {
+		return nil, false, fmt.Errorf("--compressed cannot be combined with --continue-at (byte ranges apply to the compressed stream)")
+	}
+	if opts.Stealth.Compressed && opts.Output.Range != "" {
+		return nil, false, fmt.Errorf("--compressed cannot be combined with --range (byte ranges apply to the compressed stream)")
+	}
 	if opts.Output.ContinueAt != "" && opts.Output.ContinueAt != "-" {
 		if _, err := strconv.ParseInt(opts.Output.ContinueAt, 10, 64); err != nil {
 			return nil, false, fmt.Errorf("invalid --continue-at value %q (want an integer offset or '-')", opts.Output.ContinueAt)

@@ -421,6 +421,20 @@ func TestParseFlags_ContinueAtAndRangeMutuallyExclusive(t *testing.T) {
 	}
 }
 
+func TestParseFlags_CompressedWithContinueAtRejected(t *testing.T) {
+	_, _, err := ParseFlags([]string{"--compressed", "-C", "-", "-o", "out.bin", "http://example.com/file"})
+	if err == nil {
+		t.Fatal("expected error for --compressed and --continue-at together")
+	}
+}
+
+func TestParseFlags_CompressedWithRangeRejected(t *testing.T) {
+	_, _, err := ParseFlags([]string{"--compressed", "--range", "0-1023", "-o", "out.bin", "http://example.com/file"})
+	if err == nil {
+		t.Fatal("expected error for --compressed and --range together")
+	}
+}
+
 func TestParseFlags_RemoteName(t *testing.T) {
 	opts, done, err := ParseFlags([]string{"-O", "https://example.com/path/archive.tar.gz"})
 	if err != nil || done {
