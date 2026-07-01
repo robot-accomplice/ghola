@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"github.com/robot-accomplice/ghola/internal/bridge"
@@ -66,6 +67,29 @@ func execute(ctx context.Context, args []string, do client.Doer, stream client.S
 			return config.ReadFileFailed.Int()
 		}
 		opts.Data = string(b)
+	}
+
+	if len(opts.Form) > 0 {
+		ct, body, err := config.BuildFormBody(opts.Form)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "form: %v\n", err)
+			return config.ReadFileFailed.Int()
+		}
+		opts.Headers = append(opts.Headers, "Content-Type: "+ct)
+		opts.Data = string(body)
+	} else if opts.DataBinary != "" {
+		data := opts.DataBinary
+		if strings.HasPrefix(data, "@") {
+			b, err := os.ReadFile(data[1:])
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "read --data-binary file: %v\n", err)
+				return config.ReadFileFailed.Int()
+			}
+			data = string(b)
+		}
+		opts.Data = data
+	} else if len(opts.DataURLEncode) > 0 {
+		opts.Data = config.URLEncodeData(opts.DataURLEncode)
 	}
 
 	if config.ShouldStream(opts) {

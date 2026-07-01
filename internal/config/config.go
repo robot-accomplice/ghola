@@ -97,15 +97,18 @@ type ProxyOptions struct {
 
 // Options holds every user-configurable setting parsed from CLI flags.
 type Options struct {
-	URL         string
-	Method      string
-	Data        string
-	Headers     []string
-	Transfer    string
-	User        string
-	Concurrency int
-	Chain       string
-	Serve       bool
+	URL           string
+	Method        string
+	Data          string
+	DataBinary    string
+	DataURLEncode []string
+	Form          []string
+	Headers       []string
+	Transfer      string
+	User          string
+	Concurrency   int
+	Chain         string
+	Serve         bool
 
 	Output     OutputOptions
 	Stealth    StealthOptions
@@ -130,6 +133,9 @@ func ParseFlags(args []string) (*Options, bool, error) {
 	fs.BoolVarP(&help, "help", "h", false, "help")
 	fs.BoolVarP(&version, "version", "V", false, "version")
 	fs.StringVarP(&opts.Data, "data", "d", "", "HTTP POST data")
+	fs.StringArrayVarP(&opts.Form, "form", "F", nil, "Specify multipart form data (name=value or name=@file)")
+	fs.StringVar(&opts.DataBinary, "data-binary", "", "HTTP POST binary data (no munging); @file reads verbatim")
+	fs.StringArrayVar(&opts.DataURLEncode, "data-urlencode", nil, "URL-encode and POST the given data")
 	fs.BoolVarP(&opts.Output.Fail, "fail", "f", false, "Exit non-zero on non-2xx and suppress body output")
 	fs.BoolVarP(&opts.Output.Include, "include", "i", false, "Include protocol response headers")
 	fs.StringVarP(&opts.Output.File, "output", "o", "", "Write to file instead of stdout")
@@ -253,7 +259,11 @@ func ParseFlags(args []string) (*Options, bool, error) {
 		}
 	}
 
-	if opts.Data != "" && !fs.Changed("request") {
+	if len(opts.Form) > 0 && (opts.Data != "" || opts.DataBinary != "") {
+		return nil, false, fmt.Errorf("--form cannot be combined with -d/--data-binary")
+	}
+
+	if (opts.Data != "" || opts.DataBinary != "" || len(opts.Form) > 0 || len(opts.DataURLEncode) > 0) && !fs.Changed("request") {
 		opts.Method = fasthttp.MethodPost
 	}
 

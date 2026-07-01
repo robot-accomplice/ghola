@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -425,6 +426,26 @@ func TestParseFlags_RemoteName(t *testing.T) {
 	}
 	if opts.Output.File != "archive.tar.gz" {
 		t.Errorf("File = %q, want archive.tar.gz", opts.Output.File)
+	}
+}
+
+func TestURLEncodeData(t *testing.T) {
+	got := URLEncodeData([]string{"q=a b", "x=1+2"})
+	if got != "q=a+b&x=1%2B2" {
+		t.Errorf("URLEncodeData = %q", got)
+	}
+}
+
+func TestBuildFormBody_Fields(t *testing.T) {
+	ct, body, err := BuildFormBody([]string{"name=ghola", "kind=cli"})
+	if err != nil {
+		t.Fatalf("BuildFormBody error: %v", err)
+	}
+	if !strings.HasPrefix(ct, "multipart/form-data; boundary=") {
+		t.Errorf("content-type = %q", ct)
+	}
+	if !strings.Contains(string(body), `name="name"`) || !strings.Contains(string(body), "ghola") {
+		t.Errorf("body missing field: %s", body)
 	}
 }
 
