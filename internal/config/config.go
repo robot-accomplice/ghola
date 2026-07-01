@@ -46,8 +46,11 @@ type OutputOptions struct {
 	JQ         string
 	Timing     bool
 	HAR        string
-	ContinueAt string // wired in Task 5; resume forces single-stream when set
-	Range      string // explicit byte range passthrough (e.g. "0-1023")
+	ContinueAt   string // wired in Task 5; resume forces single-stream when set
+	Range        string // explicit byte range passthrough (e.g. "0-1023")
+	RemoteName   bool   // -O: save as URL basename
+	RemoteHeader bool   // -J: use Content-Disposition filename
+	RemoteTime   bool   // -R: set mtime from Last-Modified
 }
 
 // StealthOptions controls browser impersonation and identity features.
@@ -165,6 +168,9 @@ func ParseFlags(args []string) (*Options, bool, error) {
 	fs.StringVar(&opts.Output.HAR, "har", "", "Export request/response as HAR 1.2 to a file")
 	fs.StringVarP(&opts.Output.ContinueAt, "continue-at", "C", "", "Resume a partial download at OFFSET, or '-' for auto")
 	fs.StringVar(&opts.Output.Range, "range", "", "Request only a byte RANGE (e.g. 0-1023)")
+	fs.BoolVarP(&opts.Output.RemoteName, "remote-name", "O", false, "Write output to a file named like the remote file")
+	fs.BoolVarP(&opts.Output.RemoteHeader, "remote-header-name", "J", false, "Use Content-Disposition filename for -O")
+	fs.BoolVarP(&opts.Output.RemoteTime, "remote-time", "R", false, "Set the local file timestamp to the remote one")
 
 	fs.Usage = func() {
 		fmt.Print(banner)
@@ -236,6 +242,9 @@ func ParseFlags(args []string) (*Options, bool, error) {
 	}
 
 	if opts.Output.WgetMode && opts.Output.File == "" {
+		inferWgetFilename(opts)
+	}
+	if opts.Output.RemoteName && opts.Output.File == "" {
 		inferWgetFilename(opts)
 	}
 

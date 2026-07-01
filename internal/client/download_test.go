@@ -238,6 +238,21 @@ func TestDownload_ResumeRequestsRemainderOnly(t *testing.T) {
 	}
 }
 
+func TestDispositionFilename(t *testing.T) {
+	cases := map[string]string{
+		`attachment; filename="report.pdf"`:       "report.pdf",
+		`attachment; filename=data.bin`:           "data.bin",
+		`inline`:                                  "",
+		`attachment; filename="../../etc/passwd"`: "passwd", // path stripped
+		`attachment; filename="a/b/c.tar.gz"`:     "c.tar.gz",
+	}
+	for in, want := range cases {
+		if got := dispositionFilename(in); got != want {
+			t.Errorf("dispositionFilename(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestDownload_SegmentedReconstructsFile(t *testing.T) {
 	data := bytes.Repeat([]byte("SEG"), 500000) // 1.5 MB
 	var rangeHits int64

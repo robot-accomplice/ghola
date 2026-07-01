@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/robot-accomplice/ghola/internal/config"
 	"github.com/robot-accomplice/ghola/internal/profile"
@@ -65,10 +67,24 @@ func Download(ctx context.Context, opts *config.Options, stream Streamer) error 
 	if err != nil {
 		return err
 	}
-	if canSegment(opts, meta) {
-		return downloadSegmented(ctx, opts, stream, finalURL, meta.ContentLength)
+	if opts.Output.RemoteHeader {
+		if name := dispositionFilename(meta.Disposition); name != "" {
+			opts.Output.File = name
+		}
 	}
-	return downloadSingle(ctx, opts, stream, finalURL)
+	if canSegment(opts, meta) {
+		if err := downloadSegmented(ctx, opts, stream, finalURL, meta.ContentLength); err != nil {
+			return err
+		}
+	} else if err := downloadSingle(ctx, opts, stream, finalURL); err != nil {
+		return err
+	}
+	if opts.Output.RemoteTime && meta.LastModified != "" {
+		if ts, perr := time.Parse(time.RFC1123, meta.LastModified); perr == nil {
+			_ = os.Chtimes(opts.Output.File, ts, ts)
+		}
+	}
+	return nil
 }
 
 // probe resolves redirects and returns the final URL and its StreamMeta
@@ -296,6 +312,28 @@ func resumeOffset(opts *config.Options) (int64, error) {
 		return 0, fmt.Errorf("stat for resume: %w", err)
 	}
 	return info.Size(), nil
+}
+
+// dispositionFilename extracts a safe basename from a Content-Disposition
+// header value, or "" if none. Any directory components are stripped to
+// prevent path traversal.
+func dispositionFilename(disposition string) string {
+	const marker = "filename="
+	i := strings.Index(strings.ToLower(disposition), marker)
+	if i < 0 {
+		return ""
+	}
+	name := disposition[i+len(marker):]
+	if j := strings.IndexByte(name, ';'); j >= 0 {
+		name = name[:j]
+	}
+	name = strings.TrimSpace(name)
+	name = strings.Trim(name, `"`)
+	name = path.Base(name) // strip any directory components
+	if name == "." || name == "/" || name == "" {
+		return ""
+	}
+	return name
 }
 
 // buildDownloadRequest sets URI, method, body, headers, and the active

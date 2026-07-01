@@ -418,6 +418,16 @@ func TestParseFlags_ContinueAtAndRangeMutuallyExclusive(t *testing.T) {
 	}
 }
 
+func TestParseFlags_RemoteName(t *testing.T) {
+	opts, done, err := ParseFlags([]string{"-O", "https://example.com/path/archive.tar.gz"})
+	if err != nil || done {
+		t.Fatalf("ParseFlags err=%v done=%v", err, done)
+	}
+	if opts.Output.File != "archive.tar.gz" {
+		t.Errorf("File = %q, want archive.tar.gz", opts.Output.File)
+	}
+}
+
 func TestShouldStream(t *testing.T) {
 	cases := []struct {
 		name string
