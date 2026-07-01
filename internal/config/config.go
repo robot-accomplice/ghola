@@ -36,16 +36,16 @@ func (e ExitCode) Int() int {
 
 // OutputOptions controls how HTTP responses are rendered.
 type OutputOptions struct {
-	File       string
-	Verbose    bool
-	Fail       bool
-	Include    bool
-	Silent     bool
-	Snoop      bool
-	WgetMode   bool
-	JQ         string
-	Timing     bool
-	HAR        string
+	File         string
+	Verbose      bool
+	Fail         bool
+	Include      bool
+	Silent       bool
+	Snoop        bool
+	WgetMode     bool
+	JQ           string
+	Timing       bool
+	HAR          string
 	ContinueAt   string // wired in Task 5; resume forces single-stream when set
 	Range        string // explicit byte range passthrough (e.g. "0-1023")
 	RemoteName   bool   // -O: save as URL basename

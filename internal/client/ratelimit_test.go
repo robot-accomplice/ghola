@@ -70,7 +70,7 @@ func TestProgressWriter_CountsAll(t *testing.T) {
 // correctly increments the shared progressWriter's byte counter without
 // mutating its dst field.
 func TestProgressTap_CountsIntoSharedProgress(t *testing.T) {
-	var shared bytes.Buffer  // progress output
+	var shared bytes.Buffer     // progress output
 	var seg1, seg2 bytes.Buffer // per-segment sinks
 
 	// shared progress with io.Discard as initial dst (segments use taps)
