@@ -213,11 +213,6 @@ func TestExecute_StreamingDownloadSilentError(t *testing.T) {
 	}
 }
 
-// testStreamErr is a sentinel error for silent-error test.
-type testStreamErr struct{}
-
-func (e *testStreamErr) Error() string { return "test stream error" }
-
 // TestExecute_HAROutput verifies the HAR export path is exercised (no error
 // when --har is set and the request completes).
 func TestExecute_HAROutput(t *testing.T) {
