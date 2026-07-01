@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -521,9 +522,9 @@ func TestDownloadSegmented_SegmentError(t *testing.T) {
 			}
 			return
 		}
-		// Fail one range to trigger the error path.
-		reqCount++
-		if reqCount == 1 {
+		// Fail one range to trigger the error path. The handler runs
+		// concurrently for each segment request, so the counter must be atomic.
+		if atomic.AddInt64(&reqCount, 1) == 1 {
 			ctx.SetStatusCode(500)
 			return
 		}
