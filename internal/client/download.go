@@ -72,12 +72,33 @@ func Download(ctx context.Context, opts *config.Options, stream Streamer) error 
 			opts.Output.File = name
 		}
 	}
+
+	// Build shared limiter (aggregate cap across all segments).
+	var limiter *rateLimiter
+	if opts.Output.LimitRate != "" {
+		bps, perr := config.ParseRate(opts.Output.LimitRate)
+		if perr != nil {
+			return fmt.Errorf("parse --limit-rate: %w", perr)
+		}
+		limiter = newRateLimiter(bps)
+	}
+
+	// Build shared progress writer (suppressed under --silent).
+	var progress *progressWriter
+	if !opts.Output.Silent {
+		progress = newProgressWriter(io.Discard, os.Stderr, meta.ContentLength)
+	}
+
 	if canSegment(opts, meta) {
-		if err := downloadSegmented(ctx, opts, stream, finalURL, meta.ContentLength); err != nil {
+		if err := downloadSegmented(ctx, opts, stream, finalURL, meta.ContentLength, limiter, progress); err != nil {
 			return err
 		}
-	} else if err := downloadSingle(ctx, opts, stream, finalURL); err != nil {
+	} else if err := downloadSingle(ctx, opts, stream, finalURL, limiter, progress); err != nil {
 		return err
+	}
+
+	if progress != nil {
+		progress.done()
 	}
 	if opts.Output.RemoteTime && meta.LastModified != "" {
 		if ts, perr := time.Parse(time.RFC1123, meta.LastModified); perr == nil {
@@ -129,7 +150,7 @@ func canSegment(opts *config.Options, meta gholatransport.StreamMeta) bool {
 		opts.Output.ContinueAt == "" // wired in Task 5; resume forces single-stream
 }
 
-func downloadSegmented(ctx context.Context, opts *config.Options, stream Streamer, url string, size int64) error {
+func downloadSegmented(ctx context.Context, opts *config.Options, stream Streamer, url string, size int64, limiter *rateLimiter, progress *progressWriter) error {
 	f, err := os.OpenFile(opts.Output.File, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		return fmt.Errorf("create output file: %w", err)
@@ -149,7 +170,7 @@ func downloadSegmented(ctx context.Context, opts *config.Options, stream Streame
 		wg.Add(1)
 		go func(r byteRange) {
 			defer wg.Done()
-			if err := fetchSegment(ctx, opts, stream, url, f, r); err != nil {
+			if err := fetchSegment(ctx, opts, stream, url, f, r, limiter, progress); err != nil {
 				cancel()
 				errs <- err
 				return
@@ -169,13 +190,25 @@ func downloadSegmented(ctx context.Context, opts *config.Options, stream Streame
 }
 
 // fetchSegment fetches one byte range and writes it at its offset in f.
-func fetchSegment(ctx context.Context, opts *config.Options, stream Streamer, url string, f *os.File, r byteRange) error {
+func fetchSegment(ctx context.Context, opts *config.Options, stream Streamer, url string, f *os.File, r byteRange, limiter *rateLimiter, progress *progressWriter) error {
 	req := fasthttp.AcquireRequest()
 	defer fasthttp.ReleaseRequest(req)
 	buildDownloadRequest(req, opts, url, fasthttp.MethodGet, "")
 	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", r.start, r.end))
 
-	w := io.NewOffsetWriter(f, r.start)
+	// Sink nesting (innermost first): file offset writer → rate limit → progress.
+	// Each segment uses its own offset writer; limiter and progress are shared
+	// across goroutines (both are mutex-guarded). The segment progress tap
+	// forwards bytes to its local sink while counting into the shared progress.
+	var w io.Writer = io.NewOffsetWriter(f, r.start)
+	if limiter != nil {
+		w = newRateLimitedWriter(w, limiter)
+	}
+	if progress != nil {
+		// Wrap with a per-segment tap that forwards to this segment's sink and
+		// also counts into the aggregate progress (mutex-guarded in Write).
+		w = newProgressTap(w, progress)
+	}
 	meta, err := stream(ctx, opts, req, w)
 	if err != nil {
 		return err
@@ -251,7 +284,7 @@ func streamLocation(ctx context.Context, opts *config.Options, req *fasthttp.Req
 	return string(rsp.Header.Peek("Location")), rsp.Header.StatusCode(), nil
 }
 
-func downloadSingle(ctx context.Context, opts *config.Options, stream Streamer, url string) error {
+func downloadSingle(ctx context.Context, opts *config.Options, stream Streamer, url string, limiter *rateLimiter, progress *progressWriter) error {
 	flags := os.O_CREATE | os.O_WRONLY
 	var offset int64
 	rangeHeader := ""
@@ -285,7 +318,18 @@ func downloadSingle(ctx context.Context, opts *config.Options, stream Streamer, 
 		req.Header.Set("Range", rangeHeader)
 	}
 
-	meta, err := stream(ctx, opts, req, f)
+	// Sink nesting (innermost first): file → rate limit → progress.
+	// progress is outermost so it counts bytes after throttling (bytes on disk).
+	var sink io.Writer = f
+	if limiter != nil {
+		sink = newRateLimitedWriter(sink, limiter)
+	}
+	if progress != nil {
+		progress.dst = sink
+		sink = progress
+	}
+
+	meta, err := stream(ctx, opts, req, sink)
 	if err != nil {
 		return fmt.Errorf("download: %w", err)
 	}

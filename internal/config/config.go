@@ -51,6 +51,7 @@ type OutputOptions struct {
 	RemoteName   bool   // -O: save as URL basename
 	RemoteHeader bool   // -J: use Content-Disposition filename
 	RemoteTime   bool   // -R: set mtime from Last-Modified
+	LimitRate    string // --limit-rate: aggregate bytes/sec cap (e.g. "500k", "2M")
 }
 
 // StealthOptions controls browser impersonation and identity features.
@@ -171,6 +172,7 @@ func ParseFlags(args []string) (*Options, bool, error) {
 	fs.BoolVarP(&opts.Output.RemoteName, "remote-name", "O", false, "Write output to a file named like the remote file")
 	fs.BoolVarP(&opts.Output.RemoteHeader, "remote-header-name", "J", false, "Use Content-Disposition filename for -O")
 	fs.BoolVarP(&opts.Output.RemoteTime, "remote-time", "R", false, "Set the local file timestamp to the remote one")
+	fs.StringVar(&opts.Output.LimitRate, "limit-rate", "", "Limit transfer rate (e.g. 500k, 2M, 1g)")
 
 	fs.Usage = func() {
 		fmt.Print(banner)
@@ -229,6 +231,11 @@ func ParseFlags(args []string) (*Options, bool, error) {
 	if opts.Output.ContinueAt != "" && opts.Output.ContinueAt != "-" {
 		if _, err := strconv.ParseInt(opts.Output.ContinueAt, 10, 64); err != nil {
 			return nil, false, fmt.Errorf("invalid --continue-at value %q (want an integer offset or '-')", opts.Output.ContinueAt)
+		}
+	}
+	if opts.Output.LimitRate != "" {
+		if _, err := ParseRate(opts.Output.LimitRate); err != nil {
+			return nil, false, fmt.Errorf("invalid --limit-rate %q: %w", opts.Output.LimitRate, err)
 		}
 	}
 	if opts.Stealth.Referer != "none" && opts.Stealth.Referer != "auto" {
