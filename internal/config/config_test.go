@@ -1,6 +1,9 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -371,5 +374,143 @@ func TestParseFlags_DefaultBackoff(t *testing.T) {
 	}
 	if opts.Resilience.Backoff != 1000 {
 		t.Errorf("default Backoff = %d, want 1000", opts.Resilience.Backoff)
+	}
+}
+
+func TestParseFlags_ContinueAt(t *testing.T) {
+	opts, _, err := ParseFlags([]string{"-C", "90000", "-o", "out.bin", "http://example.com/file"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if opts.Output.ContinueAt != "90000" {
+		t.Errorf("ContinueAt = %q, want 90000", opts.Output.ContinueAt)
+	}
+}
+
+func TestParseFlags_ContinueAtAuto(t *testing.T) {
+	opts, _, err := ParseFlags([]string{"-C", "-", "-o", "out.bin", "http://example.com/file"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if opts.Output.ContinueAt != "-" {
+		t.Errorf("ContinueAt = %q, want '-'", opts.Output.ContinueAt)
+	}
+}
+
+func TestParseFlags_ContinueAtInvalid(t *testing.T) {
+	_, _, err := ParseFlags([]string{"-C", "notanint", "-o", "out.bin", "http://example.com/file"})
+	if err == nil {
+		t.Fatal("expected error for non-integer --continue-at")
+	}
+}
+
+func TestParseFlags_Range(t *testing.T) {
+	opts, _, err := ParseFlags([]string{"--range", "0-1023", "-o", "out.bin", "http://example.com/file"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if opts.Output.Range != "0-1023" {
+		t.Errorf("Range = %q, want 0-1023", opts.Output.Range)
+	}
+}
+
+func TestParseFlags_ContinueAtAndRangeMutuallyExclusive(t *testing.T) {
+	_, _, err := ParseFlags([]string{"-C", "-", "--range", "0-1023", "-o", "out.bin", "http://example.com/file"})
+	if err == nil {
+		t.Fatal("expected error for --continue-at and --range together")
+	}
+}
+
+func TestParseFlags_CompressedWithContinueAtRejected(t *testing.T) {
+	_, _, err := ParseFlags([]string{"--compressed", "-C", "-", "-o", "out.bin", "http://example.com/file"})
+	if err == nil {
+		t.Fatal("expected error for --compressed and --continue-at together")
+	}
+}
+
+func TestParseFlags_CompressedWithRangeRejected(t *testing.T) {
+	_, _, err := ParseFlags([]string{"--compressed", "--range", "0-1023", "-o", "out.bin", "http://example.com/file"})
+	if err == nil {
+		t.Fatal("expected error for --compressed and --range together")
+	}
+}
+
+func TestParseFlags_RemoteName(t *testing.T) {
+	opts, done, err := ParseFlags([]string{"-O", "https://example.com/path/archive.tar.gz"})
+	if err != nil || done {
+		t.Fatalf("ParseFlags err=%v done=%v", err, done)
+	}
+	if opts.Output.File != "archive.tar.gz" {
+		t.Errorf("File = %q, want archive.tar.gz", opts.Output.File)
+	}
+}
+
+func TestURLEncodeData(t *testing.T) {
+	got := URLEncodeData([]string{"q=a b", "x=1+2"})
+	if got != "q=a+b&x=1%2B2" {
+		t.Errorf("URLEncodeData = %q", got)
+	}
+}
+
+func TestBuildFormBody_Fields(t *testing.T) {
+	ct, body, err := BuildFormBody([]string{"name=ghola", "kind=cli"})
+	if err != nil {
+		t.Fatalf("BuildFormBody error: %v", err)
+	}
+	if !strings.HasPrefix(ct, "multipart/form-data; boundary=") {
+		t.Errorf("content-type = %q", ct)
+	}
+	if !strings.Contains(string(body), `name="name"`) || !strings.Contains(string(body), "ghola") {
+		t.Errorf("body missing field: %s", body)
+	}
+}
+
+func TestBuildFormBody_FileAttachment(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "hello.txt")
+	content := []byte("hello from file")
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatalf("write temp file: %v", err)
+	}
+	ct, body, err := BuildFormBody([]string{"upload=@" + path})
+	if err != nil {
+		t.Fatalf("BuildFormBody error: %v", err)
+	}
+	if !strings.HasPrefix(ct, "multipart/form-data; boundary=") {
+		t.Errorf("content-type = %q, want multipart/form-data prefix", ct)
+	}
+	bodyStr := string(body)
+	if !strings.Contains(bodyStr, `name="upload"`) {
+		t.Errorf("body missing filename Content-Disposition for field 'upload': %s", bodyStr)
+	}
+	if !strings.Contains(bodyStr, string(content)) {
+		t.Errorf("body missing file content %q: %s", content, bodyStr)
+	}
+}
+
+func TestBuildFormBody_MalformedEntry(t *testing.T) {
+	_, _, err := BuildFormBody([]string{"noequalsign"})
+	if err == nil {
+		t.Fatal("expected error for malformed entry without '='")
+	}
+}
+
+func TestShouldStream(t *testing.T) {
+	cases := []struct {
+		name string
+		opts *Options
+		want bool
+	}{
+		{"file get", &Options{Method: "GET", Output: OutputOptions{File: "x"}}, true},
+		{"stdout", &Options{Method: "GET"}, false},
+		{"jq forces buffer", &Options{Method: "GET", Output: OutputOptions{File: "x", JQ: ".a"}}, false},
+		{"snoop forces buffer", &Options{Method: "GET", Output: OutputOptions{File: "x", Snoop: true}}, false},
+		{"har forces buffer", &Options{Method: "GET", Output: OutputOptions{File: "x", HAR: "h.har"}}, false},
+		{"post not streamed", &Options{Method: "POST", Output: OutputOptions{File: "x"}}, false},
+	}
+	for _, tc := range cases {
+		if got := ShouldStream(tc.opts); got != tc.want {
+			t.Errorf("%s: ShouldStream = %v, want %v", tc.name, got, tc.want)
+		}
 	}
 }

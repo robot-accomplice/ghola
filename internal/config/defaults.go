@@ -23,4 +23,7 @@ const (
 	DefaultConcurrency = 1
 	// DefaultContentType is the default Content-Type header value.
 	DefaultContentType = "Content-Type: application/json"
+	// DefaultSegmentMinBytes is the minimum Content-Length for which a
+	// multi-connection (-n>1) download is split into Range segments.
+	DefaultSegmentMinBytes = 1 << 20 // 1 MiB
 )

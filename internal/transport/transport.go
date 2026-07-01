@@ -3,9 +3,12 @@ package transport
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"net/url"
+	"os"
 	"strings"
 
 	fhttp "github.com/bogdanfinn/fhttp"
@@ -17,10 +20,38 @@ import (
 	"github.com/valyala/fasthttp/fasthttpproxy"
 )
 
+// StreamMeta carries the response status line and the headers the download
+// orchestrator needs, without materializing the body.
+type StreamMeta struct {
+	StatusCode    int
+	ContentLength int64 // -1 when unknown
+	AcceptRanges  bool
+	LastModified  string
+	Disposition   string // Content-Disposition
+}
+
 // Transport performs a request using the selected runtime backend.
 type Transport interface {
 	Do(ctx context.Context, req *fasthttp.Request, rsp *fasthttp.Response) error
+	// Stream sends req and copies the response body to sink without buffering
+	// it in memory. It does NOT follow redirects; callers handle 3xx via the
+	// returned StreamMeta. The caller owns sink.
+	Stream(ctx context.Context, req *fasthttp.Request, sink io.Writer) (StreamMeta, error)
 	Name() string
+}
+
+func metaFromResponseHeader(h *fasthttp.ResponseHeader) StreamMeta {
+	cl := int64(-1)
+	if n := h.ContentLength(); n >= 0 {
+		cl = int64(n)
+	}
+	return StreamMeta{
+		StatusCode:    h.StatusCode(),
+		ContentLength: cl,
+		AcceptRanges:  bytes.EqualFold(h.Peek("Accept-Ranges"), []byte("bytes")),
+		LastModified:  string(h.Peek("Last-Modified")),
+		Disposition:   string(h.Peek("Content-Disposition")),
+	}
 }
 
 type simpleTransport struct {
@@ -33,6 +64,38 @@ type tlsClientTransport struct {
 	name   string
 }
 
+// buildTLSConfig assembles a *tls.Config from the TLS-related options, or
+// returns nil when none are set (use the transport default). -k disables
+// verification; --cacert pins a custom CA; --cert/--key add a client cert.
+func buildTLSConfig(opts *config.Options) (*tls.Config, error) {
+	if !opts.Stealth.Insecure && opts.Stealth.CACert == "" && opts.Stealth.ClientCert == "" {
+		return nil, nil
+	}
+	cfg := &tls.Config{InsecureSkipVerify: opts.Stealth.Insecure} //nolint:gosec // opt-in via -k
+	if opts.Stealth.CACert != "" {
+		pem, err := os.ReadFile(opts.Stealth.CACert)
+		if err != nil {
+			return nil, fmt.Errorf("read --cacert: %w", err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(pem) {
+			return nil, fmt.Errorf("--cacert %q contains no valid certificates", opts.Stealth.CACert)
+		}
+		cfg.RootCAs = pool
+	}
+	if opts.Stealth.ClientCert != "" {
+		if opts.Stealth.ClientKey == "" {
+			return nil, fmt.Errorf("--cert requires --key")
+		}
+		cert, err := tls.LoadX509KeyPair(opts.Stealth.ClientCert, opts.Stealth.ClientKey)
+		if err != nil {
+			return nil, fmt.Errorf("load client cert/key: %w", err)
+		}
+		cfg.Certificates = []tls.Certificate{cert}
+	}
+	return cfg, nil
+}
+
 // New constructs the current transport backend.
 func New(opts *config.Options, selectedProxy string) (Transport, error) {
 	if strings.TrimSpace(opts.Stealth.Impersonate) != "" {
@@ -42,8 +105,14 @@ func New(opts *config.Options, selectedProxy string) (Transport, error) {
 		return nil, fmt.Errorf("--http3 requires --impersonate with the pure-Go transport backend")
 	}
 
+	tlsCfg, err := buildTLSConfig(opts)
+	if err != nil {
+		return nil, err
+	}
 	client := &fasthttp.Client{
-		ReadBufferSize: opts.Resilience.BufferSize,
+		ReadBufferSize:     opts.Resilience.BufferSize,
+		StreamResponseBody: true,
+		TLSConfig:          tlsCfg,
 	}
 	if selectedProxy != "" {
 		proxyURL, err := url.Parse(selectedProxy)
@@ -73,10 +142,20 @@ func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transpor
 		return nil, fmt.Errorf("no tls-client profile mapping for %q", activeProfile.Name)
 	}
 
+	// Client certs and a custom CA are not supported on the impersonation
+	// backend (tls-client exposes no client-cert/CA-pool API in the vendored
+	// version); fail loud rather than silently ignoring them.
+	if opts.Stealth.ClientCert != "" || opts.Stealth.CACert != "" {
+		return nil, fmt.Errorf("--cert/--key/--cacert are not supported with --impersonate; use the default transport")
+	}
+
 	options := []tlsclient.HttpClientOption{
 		tlsclient.WithClientProfile(mappedProfile),
 		tlsclient.WithNotFollowRedirects(),
 		tlsclient.WithRandomTLSExtensionOrder(),
+	}
+	if opts.Stealth.Insecure {
+		options = append(options, tlsclient.WithInsecureSkipVerify())
 	}
 	if opts.Resilience.Timeout > 0 {
 		options = append(options, tlsclient.WithTimeoutMilliseconds(opts.Resilience.Timeout))
@@ -108,6 +187,27 @@ func (t *simpleTransport) Do(ctx context.Context, req *fasthttp.Request, rsp *fa
 
 func (t *simpleTransport) Name() string {
 	return t.name
+}
+
+func (t *simpleTransport) Stream(ctx context.Context, req *fasthttp.Request, sink io.Writer) (StreamMeta, error) {
+	rsp := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseResponse(rsp)
+	rsp.StreamBody = true
+
+	var err error
+	if deadline, ok := ctx.Deadline(); ok {
+		err = t.client.DoDeadline(req, rsp, deadline)
+	} else {
+		err = t.client.Do(req, rsp)
+	}
+	if err != nil {
+		return StreamMeta{}, err
+	}
+	meta := metaFromResponseHeader(&rsp.Header)
+	if err := rsp.BodyWriteTo(sink); err != nil {
+		return meta, err
+	}
+	return meta, nil
 }
 
 func (t *tlsClientTransport) Do(ctx context.Context, req *fasthttp.Request, rsp *fasthttp.Response) error {
@@ -154,4 +254,33 @@ func (t *tlsClientTransport) Do(ctx context.Context, req *fasthttp.Request, rsp 
 
 func (t *tlsClientTransport) Name() string {
 	return t.name
+}
+
+func (t *tlsClientTransport) Stream(ctx context.Context, req *fasthttp.Request, sink io.Writer) (StreamMeta, error) {
+	httpReq, err := fhttp.NewRequestWithContext(ctx, string(req.Header.Method()), req.URI().String(), bytes.NewReader(req.Body()))
+	if err != nil {
+		return StreamMeta{}, err
+	}
+	httpReq.Header = make(fhttp.Header)
+	for key, value := range req.Header.All() {
+		httpReq.Header.Set(string(key), string(value))
+	}
+
+	httpResp, err := t.client.Do(httpReq)
+	if err != nil {
+		return StreamMeta{}, err
+	}
+	defer httpResp.Body.Close()
+
+	meta := StreamMeta{
+		StatusCode:    httpResp.StatusCode,
+		ContentLength: httpResp.ContentLength, // -1 when unknown, per net/http
+		AcceptRanges:  strings.EqualFold(httpResp.Header.Get("Accept-Ranges"), "bytes"),
+		LastModified:  httpResp.Header.Get("Last-Modified"),
+		Disposition:   httpResp.Header.Get("Content-Disposition"),
+	}
+	if _, err := io.Copy(sink, httpResp.Body); err != nil {
+		return meta, err
+	}
+	return meta, nil
 }
