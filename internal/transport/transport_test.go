@@ -218,6 +218,26 @@ func TestSimpleTransport_DoWithDeadline(t *testing.T) {
 	}
 }
 
+func TestBuildTLSConfig_Insecure(t *testing.T) {
+	cfg, err := buildTLSConfig(&config.Options{Stealth: config.StealthOptions{Insecure: true}})
+	if err != nil {
+		t.Fatalf("buildTLSConfig error: %v", err)
+	}
+	if cfg == nil || !cfg.InsecureSkipVerify {
+		t.Fatal("expected InsecureSkipVerify true")
+	}
+}
+
+func TestBuildTLSConfig_None(t *testing.T) {
+	cfg, err := buildTLSConfig(&config.Options{})
+	if err != nil {
+		t.Fatalf("buildTLSConfig error: %v", err)
+	}
+	if cfg != nil {
+		t.Fatalf("expected nil tls.Config when no TLS flags set, got %+v", cfg)
+	}
+}
+
 func TestSimpleTransport_StreamWritesBodyToSink(t *testing.T) {
 	ln := fasthttputil.NewInmemoryListener()
 	srv := &fasthttp.Server{Handler: func(ctx *fasthttp.RequestCtx) {

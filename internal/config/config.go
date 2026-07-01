@@ -69,6 +69,10 @@ type StealthOptions struct {
 	Cookies        []string
 	ProfileList    bool
 	Compressed     bool // wired in Task 9; true disables segmentation
+	Insecure       bool
+	CACert         string
+	ClientCert     string
+	ClientKey      string
 }
 
 // ResilienceOptions controls retry, timeout, redirect, and buffer behavior.
@@ -173,6 +177,10 @@ func ParseFlags(args []string) (*Options, bool, error) {
 	fs.BoolVarP(&opts.Output.RemoteHeader, "remote-header-name", "J", false, "Use Content-Disposition filename for -O")
 	fs.BoolVarP(&opts.Output.RemoteTime, "remote-time", "R", false, "Set the local file timestamp to the remote one")
 	fs.StringVar(&opts.Output.LimitRate, "limit-rate", "", "Limit transfer rate (e.g. 500k, 2M, 1g)")
+	fs.BoolVarP(&opts.Stealth.Insecure, "insecure", "k", false, "Allow insecure server connections (skip TLS verification)")
+	fs.StringVar(&opts.Stealth.CACert, "cacert", "", "CA certificate file to verify the peer")
+	fs.StringVar(&opts.Stealth.ClientCert, "cert", "", "Client certificate file")
+	fs.StringVar(&opts.Stealth.ClientKey, "key", "", "Private key file for the client certificate")
 
 	fs.Usage = func() {
 		fmt.Print(banner)

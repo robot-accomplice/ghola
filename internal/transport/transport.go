@@ -3,9 +3,12 @@ package transport
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"net/url"
+	"os"
 	"strings"
 
 	fhttp "github.com/bogdanfinn/fhttp"
@@ -61,6 +64,38 @@ type tlsClientTransport struct {
 	name   string
 }
 
+// buildTLSConfig assembles a *tls.Config from the TLS-related options, or
+// returns nil when none are set (use the transport default). -k disables
+// verification; --cacert pins a custom CA; --cert/--key add a client cert.
+func buildTLSConfig(opts *config.Options) (*tls.Config, error) {
+	if !opts.Stealth.Insecure && opts.Stealth.CACert == "" && opts.Stealth.ClientCert == "" {
+		return nil, nil
+	}
+	cfg := &tls.Config{InsecureSkipVerify: opts.Stealth.Insecure} //nolint:gosec // opt-in via -k
+	if opts.Stealth.CACert != "" {
+		pem, err := os.ReadFile(opts.Stealth.CACert)
+		if err != nil {
+			return nil, fmt.Errorf("read --cacert: %w", err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(pem) {
+			return nil, fmt.Errorf("--cacert %q contains no valid certificates", opts.Stealth.CACert)
+		}
+		cfg.RootCAs = pool
+	}
+	if opts.Stealth.ClientCert != "" {
+		if opts.Stealth.ClientKey == "" {
+			return nil, fmt.Errorf("--cert requires --key")
+		}
+		cert, err := tls.LoadX509KeyPair(opts.Stealth.ClientCert, opts.Stealth.ClientKey)
+		if err != nil {
+			return nil, fmt.Errorf("load client cert/key: %w", err)
+		}
+		cfg.Certificates = []tls.Certificate{cert}
+	}
+	return cfg, nil
+}
+
 // New constructs the current transport backend.
 func New(opts *config.Options, selectedProxy string) (Transport, error) {
 	if strings.TrimSpace(opts.Stealth.Impersonate) != "" {
@@ -70,9 +105,14 @@ func New(opts *config.Options, selectedProxy string) (Transport, error) {
 		return nil, fmt.Errorf("--http3 requires --impersonate with the pure-Go transport backend")
 	}
 
+	tlsCfg, err := buildTLSConfig(opts)
+	if err != nil {
+		return nil, err
+	}
 	client := &fasthttp.Client{
 		ReadBufferSize:     opts.Resilience.BufferSize,
 		StreamResponseBody: true,
+		TLSConfig:          tlsCfg,
 	}
 	if selectedProxy != "" {
 		proxyURL, err := url.Parse(selectedProxy)
@@ -102,10 +142,20 @@ func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transpor
 		return nil, fmt.Errorf("no tls-client profile mapping for %q", activeProfile.Name)
 	}
 
+	// Client certs and a custom CA are not supported on the impersonation
+	// backend (tls-client exposes no client-cert/CA-pool API in the vendored
+	// version); fail loud rather than silently ignoring them.
+	if opts.Stealth.ClientCert != "" || opts.Stealth.CACert != "" {
+		return nil, fmt.Errorf("--cert/--key/--cacert are not supported with --impersonate; use the default transport")
+	}
+
 	options := []tlsclient.HttpClientOption{
 		tlsclient.WithClientProfile(mappedProfile),
 		tlsclient.WithNotFollowRedirects(),
 		tlsclient.WithRandomTLSExtensionOrder(),
+	}
+	if opts.Stealth.Insecure {
+		options = append(options, tlsclient.WithInsecureSkipVerify())
 	}
 	if opts.Resilience.Timeout > 0 {
 		options = append(options, tlsclient.WithTimeoutMilliseconds(opts.Resilience.Timeout))
