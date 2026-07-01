@@ -326,3 +326,46 @@ func TestDownload_CompressedGzip(t *testing.T) {
 		t.Fatalf("decoded body mismatch: got %d bytes, want %d", len(got), len(plain))
 	}
 }
+
+func TestDownload_CompressedPassthrough(t *testing.T) {
+	// When --compressed is set but the server ignores Accept-Encoding and returns
+	// a plain (uncompressed) body with no Content-Encoding header, gzipSink must
+	// sniff the non-gzip magic bytes and pass the body through verbatim.
+	plain := bytes.Repeat([]byte("plain-"), 5000)
+
+	ln := fasthttputil.NewInmemoryListener()
+	srv := &fasthttp.Server{Handler: func(ctx *fasthttp.RequestCtx) {
+		ctx.SetStatusCode(200)
+		// Deliberately no Content-Encoding header — server ignores Accept-Encoding.
+		ctx.SetBody(plain)
+	}}
+	go srv.Serve(ln) //nolint:errcheck
+	defer ln.Close()
+	c := &fasthttp.Client{StreamResponseBody: true, Dial: func(addr string) (net.Conn, error) { return ln.Dial() }}
+	streamer := func(ctx context.Context, opts *config.Options, req *fasthttp.Request, sink io.Writer) (gholatransport.StreamMeta, error) {
+		rsp := fasthttp.AcquireResponse()
+		defer fasthttp.ReleaseResponse(rsp)
+		rsp.StreamBody = true
+		if err := c.Do(req, rsp); err != nil {
+			return gholatransport.StreamMeta{}, err
+		}
+		meta := gholatransport.StreamMeta{StatusCode: rsp.Header.StatusCode(), ContentLength: int64(rsp.Header.ContentLength())}
+		_ = rsp.BodyWriteTo(sink)
+		return meta, nil
+	}
+
+	dir := t.TempDir()
+	out := filepath.Join(dir, "plain.bin")
+	opts := &config.Options{
+		URL: "http://test/plain.bin", Method: "GET", Concurrency: 1,
+		Output:  config.OutputOptions{File: out},
+		Stealth: config.StealthOptions{Agent: "ghola-test", Compressed: true},
+	}
+	if err := Download(context.Background(), opts, streamer); err != nil {
+		t.Fatalf("Download error: %v", err)
+	}
+	got, _ := os.ReadFile(out)
+	if !bytes.Equal(got, plain) {
+		t.Fatalf("passthrough body mismatch: got %d bytes, want %d", len(got), len(plain))
+	}
+}

@@ -411,7 +411,7 @@ func gzipSink(dst io.Writer) (io.Writer, func() error) {
 		if len(magic) == 2 && magic[0] == 0x1f && magic[1] == 0x8b {
 			zr, err := gzip.NewReader(br)
 			if err != nil {
-				pr.CloseWithError(err)
+				pw.CloseWithError(err)
 				done <- err
 				return
 			}
