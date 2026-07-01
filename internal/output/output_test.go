@@ -2,6 +2,7 @@ package output
 
 import (
 	"bytes"
+	"compress/gzip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,6 +30,39 @@ func TestProcessResponse_Stdout(t *testing.T) {
 	}
 	if !strings.Contains(buf.String(), "hello world") {
 		t.Errorf("output = %q, want to contain 'hello world'", buf.String())
+	}
+}
+
+// TestProcessResponse_CompressedGzip covers the --compressed gunzip branch:
+// when the server responds Content-Encoding: gzip, the buffered path must
+// decode the body before writing it out.
+func TestProcessResponse_CompressedGzip(t *testing.T) {
+	req := fasthttp.AcquireRequest()
+	rsp := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseRequest(req)
+	defer fasthttp.ReleaseResponse(rsp)
+
+	plain := []byte("decoded-body-content")
+	var gz bytes.Buffer
+	zw := gzip.NewWriter(&gz)
+	if _, err := zw.Write(plain); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	rsp.Header.SetStatusCode(200)
+	rsp.Header.Set("Content-Encoding", "gzip")
+	rsp.SetBody(gz.Bytes())
+
+	var buf bytes.Buffer
+	opts := &config.Options{Stealth: config.StealthOptions{Compressed: true}}
+	if err := ProcessResponse(&buf, opts, req, rsp, 0); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !strings.Contains(buf.String(), "decoded-body-content") {
+		t.Errorf("output = %q, want decoded plaintext", buf.String())
 	}
 }
 
