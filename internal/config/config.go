@@ -194,6 +194,8 @@ func ParseFlags(args []string) (*Options, bool, error) {
 		fmt.Printf("ghola version %s\n", Version)
 		fmt.Println("Usage: ghola [options...] <url>")
 		fs.PrintDefaults()
+		fmt.Println("\nNote: ghola's -c (--chain), -G (--ghost), and -b (--backoff) differ")
+		fmt.Println("from curl's -c/-G/-b. Resume is -C/--continue-at.")
 	}
 
 	if err := fs.Parse(args); err != nil {
