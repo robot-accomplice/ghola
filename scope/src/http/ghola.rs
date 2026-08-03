@@ -1,5 +1,5 @@
 use super::{HttpClient, Request, Response};
-use anyhow::{bail, Context};
+use anyhow::{Context, bail};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -81,8 +81,7 @@ impl HttpClient for GholaHttpClient {
             .await
             .context("failed to reach ghola sidecar")?;
 
-        let bridge_resp: BridgeResponse =
-            resp.json().await.context("invalid sidecar response")?;
+        let bridge_resp: BridgeResponse = resp.json().await.context("invalid sidecar response")?;
 
         if !bridge_resp.error.is_empty() {
             bail!("sidecar error: {}", bridge_resp.error);
