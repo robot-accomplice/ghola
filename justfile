@@ -83,7 +83,7 @@ scope-fmt-check:
 # ── CI Emulation ─────────────────────────────────────────────────────────────
 
 # Emulate the full GitHub Actions CI pipeline locally
-ci-test: _ci-lint _ci-test _ci-build _ci-security
+ci-test: _ci-lint _ci-test _ci-build _ci-security _ci-scope
     @echo ""
     @echo "========================================="
     @echo "  CI-TEST: ALL JOBS PASSED"
@@ -113,10 +113,17 @@ _ci-security:
     @echo "── CI: security ──"
     @just vulncheck
 
+# [CI] Scope job — rustfmt + clippy + tests for the scope/ Rust subproject
+_ci-scope:
+    @echo "── CI: scope (rust) ──"
+    @just scope-fmt-check
+    @just scope-lint
+    @just scope-test
+
 # ── Convenience ──────────────────────────────────────────────────────────────
 
-# Run all checks for both Go and Rust
-check-all: ci-test scope-lint scope-fmt-check scope-test
+# Alias for ci-test, which now covers both Go and Rust
+check-all: ci-test
     @echo "All Go + Rust checks passed."
 
 # Clean build artifacts

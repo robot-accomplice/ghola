@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
@@ -44,7 +44,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
@@ -75,7 +75,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
@@ -86,13 +86,12 @@ jobs:
         run: go build -ldflags "-s -w" -o /dev/null ./cmd/ghola
 
   security:
-    name: Security (advisory)
+    name: Security
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
 
@@ -101,3 +100,24 @@ jobs:
 
       - name: Run govulncheck
         run: govulncheck ./...
+
+  scope:
+    name: Scope (Rust)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Pinned to a commit SHA, not the `1.97.1` ref -- in this action the
+      # toolchain names are branches, which are mutable and force-pushable.
+      - uses: dtolnay/rust-toolchain@46511b1c83438f0dd37c02d843619ece5a4abb5b # 1.97.1
+        with:
+          components: clippy, rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --manifest-path scope/Cargo.toml --check
+
+      - name: Clippy
+        run: cargo clippy --manifest-path scope/Cargo.toml -- -D warnings
+
+      - name: Test
+        run: cargo test --manifest-path scope/Cargo.toml

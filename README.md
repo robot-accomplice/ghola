@@ -1,3 +1,8 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/ghola-dark.svg">
+  <img alt="" width="64" height="64" src="docs/assets/ghola-light.svg">
+</picture>
+
 # Ghola
 
 [![CI](https://github.com/robot-accomplice/ghola/actions/workflows/ci.yml/badge.svg)](https://github.com/robot-accomplice/ghola/actions/workflows/ci.yml)
