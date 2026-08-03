@@ -107,7 +107,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: dtolnay/rust-toolchain@1.97.1
+      # Pinned to a commit SHA, not the `1.97.1` ref -- in this action the
+      # toolchain names are branches, which are mutable and force-pushable.
+      - uses: dtolnay/rust-toolchain@46511b1c83438f0dd37c02d843619ece5a4abb5b # 1.97.1
         with:
           components: clippy, rustfmt
 
