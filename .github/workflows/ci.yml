@@ -100,3 +100,22 @@ jobs:
 
       - name: Run govulncheck
         run: govulncheck ./...
+
+  scope:
+    name: Scope (Rust)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: dtolnay/rust-toolchain@1.97.1
+        with:
+          components: clippy, rustfmt
+
+      - name: Check formatting
+        run: cargo fmt --manifest-path scope/Cargo.toml --check
+
+      - name: Clippy
+        run: cargo clippy --manifest-path scope/Cargo.toml -- -D warnings
+
+      - name: Test
+        run: cargo test --manifest-path scope/Cargo.toml
