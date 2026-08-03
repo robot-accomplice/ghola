@@ -3,20 +3,12 @@ use serde::Deserialize;
 use std::path::PathBuf;
 
 /// Top-level scope configuration, loaded from `config.yaml`.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct Config {
     /// When true, scope routes HTTP requests through the ghola sidecar
     /// (127.0.0.1:18789) instead of using native reqwest.
     pub use_ghola_sidecar: bool,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            use_ghola_sidecar: false,
-        }
-    }
 }
 
 impl Config {

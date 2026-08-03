@@ -6,7 +6,11 @@ mod config;
 mod http;
 
 #[derive(Parser)]
-#[command(name = "scope", version, about = "Security reconnaissance and analysis tool")]
+#[command(
+    name = "scope",
+    version,
+    about = "Security reconnaissance and analysis tool"
+)]
 struct Cli {
     /// Enable stealth mode (drift + ghost signing via ghola sidecar)
     #[arg(long, global = true)]
