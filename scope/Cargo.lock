@@ -1142,6 +1142,7 @@ dependencies = [
 name = "scope"
 version = "0.1.0"
 dependencies = [
+ "anstream",
  "anyhow",
  "async-trait",
  "clap",

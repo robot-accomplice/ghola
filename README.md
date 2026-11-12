@@ -134,7 +134,7 @@ cd ghola
 go build -o ghola ./cmd/ghola
 ```
 
-Ghola now targets Go 1.26 for development and release builds.
+Ghola now targets Go 1.27 for development and release builds.
 
 ## Usage
 
