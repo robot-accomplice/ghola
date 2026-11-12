@@ -29,7 +29,7 @@ func main() {
 func execute(ctx context.Context, args []string, do client.Doer, stream client.Streamer, w *os.File) int {
 	opts, done, err := config.ParseFlags(args)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		reportArgError(os.Stderr, err, useColor(os.Stderr))
 		return config.BadFlag.Int()
 	}
 	if done {
