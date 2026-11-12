@@ -4,9 +4,12 @@ package config
 
 import (
 	"fmt"
+	"io"
 	"net/url"
+	"os"
 	"path"
 	"strconv"
+	"strings"
 
 	"github.com/robot-accomplice/ghola/internal/profile"
 	flag "github.com/spf13/pflag"
@@ -121,12 +124,40 @@ var Version = "dev"
 
 const banner = `Ghola - a high-performance, Go-based HTTP client designed as a tactical scout for blockchain forensic analysis and stealthy data acquisition.`
 
+// UsageError is an argument error. It carries the usage text so the CLI can
+// show the user how to type the command correctly.
+type UsageError struct {
+	Err   error
+	Usage string
+}
+
+func (e *UsageError) Error() string { return e.Err.Error() }
+func (e *UsageError) Unwrap() error { return e.Err }
+
+// writeUsage writes the usage text that --help prints.
+func writeUsage(w io.Writer, fs *flag.FlagSet) {
+	fmt.Fprint(w, banner)
+	fmt.Fprintf(w, "ghola version %s\n", Version)
+	fmt.Fprintln(w, "Usage: ghola [options...] <url>")
+	fmt.Fprint(w, fs.FlagUsages())
+	fmt.Fprintln(w, "\nNote: ghola's -c (--chain), -G (--ghost), and -b (--backoff) differ")
+	fmt.Fprintln(w, "from curl's -c/-G/-b. Resume is -C/--continue-at.")
+}
+
 // ParseFlags parses CLI arguments into an Options struct.
 // It returns the parsed options, a boolean indicating whether the program
 // should exit cleanly (e.g. --help was requested), and any validation error.
-func ParseFlags(args []string) (*Options, bool, error) {
-	opts := &Options{}
+// Every error it returns is a *UsageError.
+func ParseFlags(args []string) (opts *Options, done bool, err error) {
+	opts = &Options{}
 	fs := flag.NewFlagSet("ghola", flag.ContinueOnError)
+	defer func() {
+		if err != nil {
+			var usage strings.Builder
+			writeUsage(&usage, fs)
+			err = &UsageError{Err: err, Usage: usage.String()}
+		}
+	}()
 
 	var help bool
 	var version bool
@@ -189,14 +220,7 @@ func ParseFlags(args []string) (*Options, bool, error) {
 	fs.StringVar(&opts.Stealth.ClientCert, "cert", "", "Client certificate file")
 	fs.StringVar(&opts.Stealth.ClientKey, "key", "", "Private key file for the client certificate")
 
-	fs.Usage = func() {
-		fmt.Print(banner)
-		fmt.Printf("ghola version %s\n", Version)
-		fmt.Println("Usage: ghola [options...] <url>")
-		fs.PrintDefaults()
-		fmt.Println("\nNote: ghola's -c (--chain), -G (--ghost), and -b (--backoff) differ")
-		fmt.Println("from curl's -c/-G/-b. Resume is -C/--continue-at.")
-	}
+	fs.Usage = func() { writeUsage(os.Stdout, fs) }
 
 	if err := fs.Parse(args); err != nil {
 		return nil, false, err
