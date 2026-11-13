@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -91,12 +92,22 @@ func Download(ctx context.Context, opts *config.Options, stream Streamer) error 
 		progress = newProgressWriter(io.Discard, os.Stderr, meta.ContentLength)
 	}
 
-	if canSegment(opts, meta) {
-		if err := downloadSegmented(ctx, opts, stream, finalURL, meta.ContentLength, limiter, progress); err != nil {
+	segmented := canSegment(opts, meta)
+	if segmented {
+		err := downloadSegmented(ctx, opts, stream, finalURL, meta.ContentLength, limiter, progress)
+		switch {
+		case errors.Is(err, errRangeIgnored):
+			// The server advertised ranges but sent the full body. No byte
+			// was written; fetch the file as one stream instead.
+			segmented = false
+		case err != nil:
 			return err
 		}
-	} else if err := downloadSingle(ctx, opts, stream, finalURL, limiter, progress); err != nil {
-		return err
+	}
+	if !segmented {
+		if err := downloadSingle(ctx, opts, stream, finalURL, limiter, progress); err != nil {
+			return err
+		}
 	}
 
 	if progress != nil {
@@ -152,12 +163,20 @@ func canSegment(opts *config.Options, meta gholatransport.StreamMeta) bool {
 		opts.Output.ContinueAt == "" // wired in Task 5; resume forces single-stream
 }
 
-func downloadSegmented(ctx context.Context, opts *config.Options, stream Streamer, url string, size int64, limiter *rateLimiter, progress *progressWriter) error {
+// downloadSegmented fetches the file as parallel ranges. On any error it
+// removes the output file, so that a preallocated file of the full size
+// never looks like a finished download.
+func downloadSegmented(ctx context.Context, opts *config.Options, stream Streamer, url string, size int64, limiter *rateLimiter, progress *progressWriter) (err error) {
 	f, err := os.OpenFile(opts.Output.File, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
 		return fmt.Errorf("create output file: %w", err)
 	}
-	defer f.Close()
+	defer func() {
+		f.Close()
+		if err != nil {
+			os.Remove(opts.Output.File)
+		}
+	}()
 	if err := f.Truncate(size); err != nil {
 		return fmt.Errorf("preallocate output file: %w", err)
 	}
@@ -183,10 +202,19 @@ func downloadSegmented(ctx context.Context, opts *config.Options, stream Streame
 	wg.Wait()
 	close(errs)
 
+	// Report the first real cause. A segment that stopped only because another
+	// segment failed returns context.Canceled, which hides the cause.
+	var first error
 	for e := range errs {
-		if e != nil {
-			return fmt.Errorf("download segment: %w", e)
+		if e == nil {
+			continue
 		}
+		if first == nil || (errors.Is(first, context.Canceled) && !errors.Is(e, context.Canceled)) {
+			first = e
+		}
+	}
+	if first != nil {
+		return fmt.Errorf("download segment: %w", first)
 	}
 	return nil
 }
@@ -211,14 +239,9 @@ func fetchSegment(ctx context.Context, opts *config.Options, stream Streamer, ur
 		// also counts into the aggregate progress (mutex-guarded in Write).
 		w = newProgressTap(w, progress)
 	}
-	meta, err := stream(ctx, opts, req, w)
-	if err != nil {
-		return err
-	}
-	if meta.StatusCode != fasthttp.StatusPartialContent && meta.StatusCode != 200 {
-		return fmt.Errorf("unexpected status %d for range %d-%d", meta.StatusCode, r.start, r.end)
-	}
-	return nil
+	// Outermost: no byte reaches the file unless the server sent exactly r.
+	_, err := stream(ctx, opts, req, newCheckedSink(w, expectRange(r.start, r.end)))
+	return err
 }
 
 // resolveTarget follows redirects with a HEAD request and returns the final
@@ -341,17 +364,23 @@ func downloadSingle(ctx context.Context, opts *config.Options, stream Streamer, 
 		sink = gw
 	}
 
-	meta, err := stream(ctx, opts, req, sink)
+	// Outermost: a resume appends only a 206 that starts at the offset.
+	// Any other answer leaves the partial file unchanged.
+	check := func(gholatransport.StreamMeta) error { return nil }
+	if offset > 0 {
+		check = expectRange(offset, -1)
+	}
+	meta, err := stream(ctx, opts, req, newCheckedSink(sink, check))
 	if flush != nil {
 		if ferr := flush(); ferr != nil && err == nil {
 			err = ferr
 		}
 	}
+	if errors.Is(err, errRangeIgnored) {
+		return fmt.Errorf("download: server ignored resume Range (status 200); cannot continue at %d", offset)
+	}
 	if err != nil {
 		return fmt.Errorf("download: %w", err)
-	}
-	if opts.Output.ContinueAt != "" && offset > 0 && meta.StatusCode == 200 {
-		return fmt.Errorf("download: server ignored resume Range (status 200); cannot continue at %d", offset)
 	}
 	if meta.StatusCode < 200 || meta.StatusCode >= 300 {
 		return fmt.Errorf("download: non-2xx status %d", meta.StatusCode)
