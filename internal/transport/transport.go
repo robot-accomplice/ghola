@@ -29,6 +29,28 @@ type StreamMeta struct {
 	AcceptRanges  bool
 	LastModified  string
 	Disposition   string // Content-Disposition
+	ContentRange  string // Content-Range, "" when absent
+}
+
+// HeaderChecker is implemented by a sink that must see the response headers
+// before it accepts the first body byte. A download sink uses it to refuse a
+// response that does not match the requested byte range, so that no byte of
+// a wrong response reaches the file.
+type HeaderChecker interface {
+	CheckHeaders(meta StreamMeta) error
+}
+
+// CopyBody runs sink's HeaderChecker (when sink has one) and then copies body
+// to sink. When the check fails, CopyBody writes nothing and returns the
+// check error. Every Stream implementation calls it.
+func CopyBody(sink io.Writer, meta StreamMeta, body io.Reader) error {
+	if c, ok := sink.(HeaderChecker); ok {
+		if err := c.CheckHeaders(meta); err != nil {
+			return err
+		}
+	}
+	_, err := io.Copy(sink, body)
+	return err
 }
 
 // Transport performs a request using the selected runtime backend.
@@ -235,11 +257,9 @@ func (t *simpleTransport) Stream(ctx context.Context, req *fasthttp.Request, sin
 		AcceptRanges:  strings.EqualFold(resp.Header.Get("Accept-Ranges"), "bytes"),
 		LastModified:  resp.Header.Get("Last-Modified"),
 		Disposition:   resp.Header.Get("Content-Disposition"),
+		ContentRange:  resp.Header.Get("Content-Range"),
 	}
-	if _, err := io.Copy(sink, resp.Body); err != nil {
-		return meta, err
-	}
-	return meta, nil
+	return meta, CopyBody(sink, meta, resp.Body)
 }
 
 func (t *tlsClientTransport) Do(ctx context.Context, req *fasthttp.Request, rsp *fasthttp.Response) error {
@@ -310,9 +330,7 @@ func (t *tlsClientTransport) Stream(ctx context.Context, req *fasthttp.Request, 
 		AcceptRanges:  strings.EqualFold(httpResp.Header.Get("Accept-Ranges"), "bytes"),
 		LastModified:  httpResp.Header.Get("Last-Modified"),
 		Disposition:   httpResp.Header.Get("Content-Disposition"),
+		ContentRange:  httpResp.Header.Get("Content-Range"),
 	}
-	if _, err := io.Copy(sink, httpResp.Body); err != nil {
-		return meta, err
-	}
-	return meta, nil
+	return meta, CopyBody(sink, meta, httpResp.Body)
 }

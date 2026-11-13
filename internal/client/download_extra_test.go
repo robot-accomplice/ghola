@@ -98,8 +98,8 @@ func TestResolveTargetViaGet_FollowsRedirect(t *testing.T) {
 			return gholatransport.StreamMeta{StatusCode: fasthttp.StatusFound}, nil
 		}
 		// All other calls (final GET) — serve the real data.
-		_, err := sink.Write(finalData)
-		return gholatransport.StreamMeta{StatusCode: 200, ContentLength: int64(len(finalData))}, err
+		meta := gholatransport.StreamMeta{StatusCode: 200, ContentLength: int64(len(finalData))}
+		return meta, gholatransport.CopyBody(sink, meta, bytes.NewReader(finalData))
 	}
 
 	if err := Download(context.Background(), opts, testStream); err != nil {
@@ -239,13 +239,7 @@ func TestProbe_HEADUnsupportedFallback(t *testing.T) {
 		if err := c.Do(req, rsp); err != nil {
 			return gholatransport.StreamMeta{}, err
 		}
-		meta := gholatransport.StreamMeta{
-			StatusCode:    rsp.Header.StatusCode(),
-			ContentLength: int64(rsp.Header.ContentLength()),
-			AcceptRanges:  bytes.EqualFold(rsp.Header.Peek("Accept-Ranges"), []byte("bytes")),
-		}
-		_ = rsp.BodyWriteTo(sink)
-		return meta, nil
+		return deliverFasthttp(rsp, sink)
 	}
 
 	dir := t.TempDir()
@@ -454,13 +448,7 @@ func TestDownloadSegmented_SegmentError(t *testing.T) {
 		if err := c.Do(req, rsp); err != nil {
 			return gholatransport.StreamMeta{}, err
 		}
-		meta := gholatransport.StreamMeta{
-			StatusCode:    rsp.Header.StatusCode(),
-			ContentLength: int64(rsp.Header.ContentLength()),
-			AcceptRanges:  bytes.EqualFold(rsp.Header.Peek("Accept-Ranges"), []byte("bytes")),
-		}
-		_ = rsp.BodyWriteTo(sink)
-		return meta, nil
+		return deliverFasthttp(rsp, sink)
 	}
 
 	dir := t.TempDir()
@@ -504,14 +492,7 @@ func TestDownload_JDispositionRename(t *testing.T) {
 		if err := c.Do(req, rsp); err != nil {
 			return gholatransport.StreamMeta{}, err
 		}
-		meta := gholatransport.StreamMeta{
-			StatusCode:    rsp.Header.StatusCode(),
-			ContentLength: int64(rsp.Header.ContentLength()),
-			AcceptRanges:  bytes.EqualFold(rsp.Header.Peek("Accept-Ranges"), []byte("bytes")),
-			Disposition:   string(rsp.Header.Peek("Content-Disposition")),
-		}
-		_ = rsp.BodyWriteTo(sink)
-		return meta, nil
+		return deliverFasthttp(rsp, sink)
 	}
 
 	dir := t.TempDir()
@@ -571,14 +552,7 @@ func TestDownload_RemoteTime(t *testing.T) {
 		if err := c.Do(req, rsp); err != nil {
 			return gholatransport.StreamMeta{}, err
 		}
-		meta := gholatransport.StreamMeta{
-			StatusCode:    rsp.Header.StatusCode(),
-			ContentLength: int64(rsp.Header.ContentLength()),
-			AcceptRanges:  bytes.EqualFold(rsp.Header.Peek("Accept-Ranges"), []byte("bytes")),
-			LastModified:  string(rsp.Header.Peek("Last-Modified")),
-		}
-		_ = rsp.BodyWriteTo(sink)
-		return meta, nil
+		return deliverFasthttp(rsp, sink)
 	}
 
 	dir := t.TempDir()
