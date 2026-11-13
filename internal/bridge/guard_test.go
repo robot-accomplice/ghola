@@ -5,6 +5,7 @@ package bridge
 // and a foreign Host header (DNS rebinding), with no credential at all.
 
 import (
+	"encoding/json"
 	"net"
 	"os"
 	"path/filepath"
@@ -62,6 +63,28 @@ func TestGuard(t *testing.T) {
 				t.Fatalf("status = %d, want %d (body %s)", got, tc.wantStatus, ctx.Response.Body())
 			}
 		})
+	}
+}
+
+// A client from before token support (scope-bca 0.8.9) decodes every answer
+// into a struct whose headers field is a non-optional map, then shows the
+// error field. A refusal must decode that way, or the user sees only a parse
+// error and not the reason.
+func TestGuard_RefusalDecodesInOldClients(t *testing.T) {
+	var ctx fasthttp.RequestCtx
+	ctx.Request.Header.SetMethod("POST")
+	ctx.Request.Header.SetHost(testAddr)
+	Guard(func(*fasthttp.RequestCtx) {}, testAddr, testToken)(&ctx)
+
+	var raw map[string]any
+	if err := json.Unmarshal(ctx.Response.Body(), &raw); err != nil {
+		t.Fatalf("refusal body is not JSON: %v (%s)", err, ctx.Response.Body())
+	}
+	if _, ok := raw["headers"].(map[string]any); !ok {
+		t.Fatalf("headers = %v, want an object (a null breaks Rust clients)", raw["headers"])
+	}
+	if raw["error"] != "missing or wrong bridge token" {
+		t.Fatalf("error = %v, want the refusal reason", raw["error"])
 	}
 }
 

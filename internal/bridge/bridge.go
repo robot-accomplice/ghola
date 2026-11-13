@@ -166,9 +166,12 @@ func Handler(do client.Doer) fasthttp.RequestHandler {
 	}
 }
 
+// writeError writes a Response that carries msg. Headers is an empty map, not
+// null: clients that decode headers into a non-optional map (scope, scope-bca)
+// fail on null and then show a parse error instead of msg.
 func writeError(ctx *fasthttp.RequestCtx, msg string) {
 	ctx.SetContentType("application/json")
-	out, err := json.Marshal(Response{Error: msg})
+	out, err := json.Marshal(Response{Headers: map[string]string{}, Error: msg})
 	if err != nil {
 		ctx.SetBodyString(`{"error":"marshal failed"}`)
 		return
