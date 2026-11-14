@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 
 	"github.com/robot-accomplice/ghola/internal/client"
@@ -165,9 +166,12 @@ func Handler(do client.Doer) fasthttp.RequestHandler {
 	}
 }
 
+// writeError writes a Response that carries msg. Headers is an empty map, not
+// null: clients that decode headers into a non-optional map (scope, scope-bca)
+// fail on null and then show a parse error instead of msg.
 func writeError(ctx *fasthttp.RequestCtx, msg string) {
 	ctx.SetContentType("application/json")
-	out, err := json.Marshal(Response{Error: msg})
+	out, err := json.Marshal(Response{Headers: map[string]string{}, Error: msg})
 	if err != nil {
 		ctx.SetBodyString(`{"error":"marshal failed"}`)
 		return
@@ -183,8 +187,27 @@ func maxRedirs(n int) int {
 }
 
 // ListenAndServe starts the bridge server on the given address using the
-// real network transport.
+// real network transport. It writes a new token to TokenFile after it binds
+// the port, so a second bridge that fails to bind never replaces the token
+// of the bridge that runs. Clients must send "Authorization: Bearer <token>".
 func ListenAndServe(addr string) error {
-	fmt.Fprintf(os.Stderr, "ghola bridge listening on %s\n", addr)
-	return fasthttp.ListenAndServe(addr, Handler(nil))
+	ln, err := net.Listen("tcp4", addr)
+	if err != nil {
+		return err
+	}
+	token, err := newToken()
+	if err != nil {
+		ln.Close()
+		return fmt.Errorf("make bridge token: %w", err)
+	}
+	path, err := TokenFile()
+	if err == nil {
+		err = writeToken(path, token)
+	}
+	if err != nil {
+		ln.Close()
+		return fmt.Errorf("write bridge token: %w", err)
+	}
+	fmt.Fprintf(os.Stderr, "ghola bridge listening on %s (token in %s)\n", addr, path)
+	return fasthttp.Serve(ln, Guard(Handler(nil), addr, token))
 }

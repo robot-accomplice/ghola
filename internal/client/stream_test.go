@@ -29,17 +29,7 @@ func newStreamTestServer(handler fasthttp.RequestHandler) (*fasthttputil.Inmemor
 		if err := c.Do(req, rsp); err != nil {
 			return gholatransport.StreamMeta{}, err
 		}
-		meta := gholatransport.StreamMeta{
-			StatusCode:    rsp.Header.StatusCode(),
-			ContentLength: int64(rsp.Header.ContentLength()),
-			AcceptRanges:  bytes.EqualFold(rsp.Header.Peek("Accept-Ranges"), []byte("bytes")),
-			LastModified:  string(rsp.Header.Peek("Last-Modified")),
-			Disposition:   string(rsp.Header.Peek("Content-Disposition")),
-		}
-		if err := rsp.BodyWriteTo(sink); err != nil {
-			return meta, err
-		}
-		return meta, nil
+		return deliverFasthttp(rsp, sink)
 	}
 	return ln, streamer
 }
@@ -64,4 +54,19 @@ func TestStreamer_BasicGET(t *testing.T) {
 	if meta.StatusCode != 200 || buf.String() != "payload" {
 		t.Fatalf("got status=%d body=%q", meta.StatusCode, buf.String())
 	}
+}
+
+// deliverFasthttp turns a fake server's response into StreamMeta and hands
+// the body to sink through gholatransport.CopyBody, as the real transports
+// do. Fakes must use it so that download sinks see the headers first.
+func deliverFasthttp(rsp *fasthttp.Response, sink io.Writer) (gholatransport.StreamMeta, error) {
+	meta := gholatransport.StreamMeta{
+		StatusCode:    rsp.Header.StatusCode(),
+		ContentLength: int64(rsp.Header.ContentLength()),
+		AcceptRanges:  bytes.EqualFold(rsp.Header.Peek("Accept-Ranges"), []byte("bytes")),
+		LastModified:  string(rsp.Header.Peek("Last-Modified")),
+		Disposition:   string(rsp.Header.Peek("Content-Disposition")),
+		ContentRange:  string(rsp.Header.Peek("Content-Range")),
+	}
+	return meta, gholatransport.CopyBody(sink, meta, bytes.NewReader(rsp.Body()))
 }

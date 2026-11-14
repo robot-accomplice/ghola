@@ -57,11 +57,9 @@ func testStreamer(handler fasthttp.RequestHandler) (client.Streamer, func()) {
 			AcceptRanges:  bytes.EqualFold(rsp.Header.Peek("Accept-Ranges"), []byte("bytes")),
 			LastModified:  string(rsp.Header.Peek("Last-Modified")),
 			Disposition:   string(rsp.Header.Peek("Content-Disposition")),
+			ContentRange:  string(rsp.Header.Peek("Content-Range")),
 		}
-		if err := rsp.BodyWriteTo(sink); err != nil {
-			return meta, err
-		}
-		return meta, nil
+		return meta, gholatransport.CopyBody(sink, meta, bytes.NewReader(rsp.Body()))
 	}, func() { ln.Close() }
 }
 
