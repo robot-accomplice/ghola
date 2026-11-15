@@ -89,7 +89,16 @@ A user who pastes a curl command (for example from the browser's "Copy as cURL")
 **D3. One HTTP engine or two.** ghola has two transports: fasthttp (HTTP/1.1 only) and tls-client (fhttp, with HTTP/2, HTTP/3 and impersonation). Every feature in this plan must work on each transport that stays.
 - A. Move to one engine: the fhttp/tls-client stack for all requests. Use a plain Go TLS profile when impersonation is off.
 - B. Keep both, and test each feature on both.
-- **DECIDED by Jon, 2026-11-15: A, after a benchmark.** fasthttp cannot do HTTP/2 or HTTP/3, so parity with curl needs the second stack anyway. One engine halves the test matrix. The benchmark must show that the single engine meets the "Cost" criterion in section 1 for plain HTTP/1.1 downloads. If it does not, choose B.
+- **Benchmark result (2026-11-15, `test/bench/engines_test.go`, Windows, in-process server, median of 5):**
+  - ghola has **three** stacks, not two. Without `--impersonate`, `Do` (body to stdout) uses fasthttp, and `Stream` (download to a file) uses net/http. With `--impersonate`, both use tls-client (fhttp). The split explains H8 (`-u` only in the `Do` path) and part of M8 (`HTTP_PROXY` only in the net/http path).
+  - 256 MiB over HTTP: fasthttp 2.01 s (it buffers the whole body: the cause of M2), net/http 202 ms, tls-client 199 ms.
+  - 256 MiB over HTTPS: fasthttp 393 ms, net/http 360 ms, tls-client 391 ms (+8.6% compared with net/http; the samples overlap).
+  - 1 KiB requests: fasthttp 86 to 90 µs, net/http 114 µs, tls-client 128 to 136 µs. The difference is about 40 µs for each request, which is small compared with one network round trip.
+  - tls-client has no plain Go TLS profile. With one engine, a request without `--impersonate` would need a custom profile (utls `HelloGolang`), or it would carry a browser fingerprint.
+  - tls-client 1.15.1 supports a custom CA and client certificates (`TransportOptions.RootCAs`, `Certificates`). The comment in `internal/transport/transport.go` that says it does not is out of date.
+- C. Remove fasthttp only. Use net/http for all requests without impersonation, and fhttp/tls-client for `--impersonate`. fhttp is a fork of net/http, so one adapter serves both. A request without impersonation keeps the plain Go TLS fingerprint.
+- ~~DECIDED by Jon, 2026-11-15: A, after a benchmark.~~ Superseded below. The benchmark passed the 10% download test, but A needs a custom TLS profile to keep the plain Go fingerprint.
+- **DECIDED by Jon, 2026-11-15 (after the benchmark): C.** fasthttp goes. It is the only stack that buffers the body (M2), and it cannot do HTTP/2 or HTTP/3. net/http and fhttp share one request path, so a flag cannot again reach only one stack (the cause of H8 and part of M8). The parity harness and the unit tests run each feature with and without `--impersonate`.
 
 **D4. Default behaviour changes.** Some curl defaults are bad for users. For example, curl writes binary data to a terminal, and it does not follow redirects. ghola can choose better defaults, but every changed default breaks a pasted curl command.
 - A. The native command uses ghola's own defaults. The compatibility commands (`ghola curl`, `ghola wget`, `ghola aria2c`) use the defaults of the tool they copy.
@@ -144,6 +153,7 @@ These commands replace the old D2 options A and B. A pasted "Copy as cURL" comma
 ### Steps
 
 1. **Inventory.** Generate a list of every option of curl, wget, Wget2, aria2 and ghola v0.8.0 from each tool's help output. Do this with a script, not by hand (Rule 6). Map each option to one concept, for example "TLS minimum version" or "retry count".
+   **Status (2026-11-15):** the list is done, without the concept map. `scripts/flag_inventory.py` reads each tool's help output and writes `docs/cli/flag-inventory.csv`. It found 716 options: ghola 57, curl 8.22.0 274, Wget2 2.2.1 188, aria2 1.37.0 197. Together they have 636 different long names. Only 5 long names occur in all four tools (`--header`, `--help`, `--referer`, `--user-agent`, `--version`). 35 short letters mean different things in curl and wget, for example `-c` (`--cookie-jar` and `--continue`) and `-H` (`--header` and `--span-hosts`). One letter set cannot copy both tools, which supports the compatibility commands.
 2. **Measure use.** Count how often each option occurs in real commands: the "Copy as cURL" output of the browsers, the READMEs and scripts of public repos, and this repo's docs. The most frequent options get short letters (principle 6).
 3. **Decide defaults.** List each default where ghola can differ from curl: follow redirects, fail on HTTP errors, refuse binary output to a terminal, retry transient errors, decompress responses, and show progress only on a terminal. Jon decides each one.
 4. **Draft the spec.** Write `docs/cli-v1.md`: each subcommand, each option, its type, its unit, its default, and the curl, wget and aria2 equivalents.
@@ -249,7 +259,7 @@ Each item has a check. None of these changes a curl default (D4).
 1. **Size.** curl took more than 25 years to reach its feature set. This plan is very large. The phases let each part ship on its own. Phase 1 is useful even if later phases never start.
 2. **Compatibility commands drift from the native flags.** Build both on one option table (section 5A, step 7). The harness runs each compatibility scenario, and also the native command that `--show-native` prints.
 2a. **Users of v0 flags break.** The v0.9.x warnings and the `ghola curl` path reduce this. The bridge clients (scope, scope-bca) use JSON fields, not flags. Check that the new structure does not rename those fields, or tell the scope-bca session first.
-3. **Two transports.** If D3 is B, every feature needs tests on both transports.
+3. **Two transports.** D3 is C: net/http and fhttp stay. Every feature needs a test with and without `--impersonate`. One shared request path keeps the two in step.
 4. **Binary size.** BitTorrent, SSH and WARC add dependencies. Measure the binary size in CI. Set a limit with Jon before phase 3.
 5. **Security surface.** Each new protocol, the RPC interface and BitTorrent add attack paths. Each one needs its own adversarial review before release, as C1 showed.
 6. **Reference drift.** curl changes often. The pinned reference versions (phase 0, step 5) keep the parity claims honest.
@@ -263,7 +273,7 @@ Each item has a check. None of these changes a curl default (D4).
 
 ## 9. Order of work
 
-1. D1 to D5 are decided. Run the D3 benchmark early: the phase 1 fixes go into the engine that stays.
+1. D1 to D5 are decided. The D3 benchmark is done (D3 is C). Remove fasthttp first: the phase 1 fixes go into the shared net/http and fhttp request path.
 2. Phase 0: the harness. Phase 0B (the flag design) runs at the same time, because the design work does not change code.
 3. Phase 1: the audit fixes, in the v0 flags. Release them as v0.9.0, with the v0-flag warnings from section 5A, step 8.
 4. Build the new flag structure and the compatibility commands. Release them, with the exit-code change, as v1.0.0.
