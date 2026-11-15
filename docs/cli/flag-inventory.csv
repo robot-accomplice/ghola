@@ -1,0 +1,717 @@
+tool,version,short,long,arg,description,tags
+ghola,ghola version dev,,--accept-language,string,Override the profile default Accept-Language,
+ghola,ghola version dev,-b,--backoff,int,Base backoff time for retries (ms) (default 1000),
+ghola,ghola version dev,,--buffer-size,int,Read buffer size for large headers (default 4096),
+ghola,ghola version dev,,--cacert,string,CA certificate file to verify the peer,
+ghola,ghola version dev,,--cert,string,Client certificate file,
+ghola,ghola version dev,-c,--chain,string,"Chain-Aware Shortcut: Pre-fills RPC headers for [eth, base, solana]",
+ghola,ghola version dev,,--compressed,,Request a gzip-compressed response and decode it,
+ghola,ghola version dev,-n,--connections,int,Number of concurrent connections (default 1),
+ghola,ghola version dev,-C,--continue-at,string,"Resume a partial download at OFFSET, or '-' for auto",
+ghola,ghola version dev,,--cookie,strings,Seed request cookies as name=value,
+ghola,ghola version dev,,--cookie-jar,string,Persist cookies to a JSON jar file,
+ghola,ghola version dev,-d,--data,string,HTTP POST data,
+ghola,ghola version dev,,--data-binary,string,HTTP POST binary data (no munging); @file reads verbatim,
+ghola,ghola version dev,,--data-urlencode,stringArray,URL-encode and POST the given data,
+ghola,ghola version dev,-D,--drift,int,Temporal Drift (ms jitter),
+ghola,ghola version dev,-f,--fail,,Exit non-zero on non-2xx and suppress body output,
+ghola,ghola version dev,-F,--form,stringArray,Specify multipart form data (name=value or name=@file),
+ghola,ghola version dev,-G,--ghost,,Ghost Sign (unique identity hash),
+ghola,ghola version dev,,--har,string,Export request/response as HAR 1.2 to a file,
+ghola,ghola version dev,-H,--header,strings,Pass custom headers (default [Content-Type: application/json]),
+ghola,ghola version dev,-h,--help,,help,
+ghola,ghola version dev,,--http3,,Attempt HTTP/3 when supported by the active transport,
+ghola,ghola version dev,,--impersonate,string,"Use a browser-like request profile (chrome, firefox, safari, edge)",
+ghola,ghola version dev,-i,--include,,Include protocol response headers,
+ghola,ghola version dev,-k,--insecure,,Allow insecure server connections (skip TLS verification),
+ghola,ghola version dev,,--jq,string,Extract a JSON path from the response body (gjson syntax),
+ghola,ghola version dev,,--key,string,Private key file for the client certificate,
+ghola,ghola version dev,,--limit-rate,string,"Limit transfer rate (e.g. 500k, 2M, 1g)",
+ghola,ghola version dev,-L,--location,,Follow HTTP redirects,
+ghola,ghola version dev,,--max-redirs,int,Maximum number of redirects to follow (default 10),
+ghola,ghola version dev,-o,--output,string,Write to file instead of stdout,
+ghola,ghola version dev,,--profile-list,,List available browser-like profiles and exit,
+ghola,ghola version dev,,--proxy,string,Route traffic through an HTTP proxy URL,
+ghola,ghola version dev,,--proxy-auth,string,Proxy credentials in user:pass form,
+ghola,ghola version dev,,--proxy-check,,Check proxy health before use and evict dead proxies,
+ghola,ghola version dev,,--proxy-file,string,Load proxies from a newline-delimited file,
+ghola,ghola version dev,,--proxy-strategy,string,"Proxy selection strategy: sticky, random, round-robin (default ""sticky"")",
+ghola,ghola version dev,,--range,string,Request only a byte RANGE (e.g. 0-1023),
+ghola,ghola version dev,,--referer,string,"Referer behavior: none, auto, or an explicit URL (default ""none"")",
+ghola,ghola version dev,-J,--remote-header-name,,Use Content-Disposition filename for -O,
+ghola,ghola version dev,-O,--remote-name,,Write output to a file named like the remote file,
+ghola,ghola version dev,-R,--remote-time,,Set the local file timestamp to the remote one,
+ghola,ghola version dev,-X,--request,string,"HTTP request method (default ""GET"")",
+ghola,ghola version dev,-r,--retry,int,Number of retries on failure,
+ghola,ghola version dev,,--retry-http,,"Retry on retryable HTTP status codes (e.g. 429, 5xx)",
+ghola,ghola version dev,,--serve,,Run as local RPC bridge on 127.0.0.1:18789,
+ghola,ghola version dev,-s,--silent,,Silent mode,
+ghola,ghola version dev,-S,--snoop,,Snoop Mode: Pre-flight check of headers and security posture,
+ghola,ghola version dev,,--stealth-headers,,Generate coherent browser-like headers,
+ghola,ghola version dev,,--timeout,int,Request timeout in ms (0 disables),
+ghola,ghola version dev,,--timing,,Show response timing information,
+ghola,ghola version dev,-T,--upload-file,string,Transfer local FILE to destination,
+ghola,ghola version dev,-u,--user,string,Server user and password <user:password>,
+ghola,ghola version dev,-A,--user-agent,string,"Send User-Agent <name> (default ""ghola"")",
+ghola,ghola version dev,-v,--verbose,,verbose mode,
+ghola,ghola version dev,-V,--version,,version,
+ghola,ghola version dev,-w,--wget,,Enable wget-compatible output,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--abstract-unix-socket,path,Connect via abstract Unix domain socket,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--alt-svc,filename,Enable alt-svc with this cache file,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--anyauth,,Pick any authentication method,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-a,--append,,Append to target file when uploading,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--aws-sigv4,provider1[:prvdr2[:reg[:srv]]],AWS V4 signature auth,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--basic,,HTTP Basic Authentication,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--ca-native,,Load CA certs from the OS,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--cacert,file,CA certificate to verify peer against,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--capath,dir,CA directory to verify peer against,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-E,--cert,certificate[:password],Client certificate file and password,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--cert-status,,Verify server cert status OCSP-staple,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--cert-type,type,Certificate type (DER/PEM/ENG/PROV/P12),
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--ciphers,list,"TLS 1.2 (1.1, 1.0) ciphers to use",
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--compressed,,Request compressed response,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--compressed-ssh,,Enable SSH compression,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-K,--config,file,Read config from a file,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--connect-timeout,seconds,Maximum time allowed to connect,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--connect-to,HOST1:PORT1:HOST2:PORT2,Connect to host2 instead of host1,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-C,--continue-at,offset,Resumed transfer offset,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-b,--cookie,data|filename,Send cookies from string/load from file,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-c,--cookie-jar,filename,Save cookies to <filename> after operation,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--create-dirs,,Create necessary local directory hierarchy,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--create-file-mode,mode,File mode for created files,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--crlf,,Convert LF to CRLF in upload,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--crlfile,file,Certificate Revocation list,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--curves,list,(EC) TLS key exchange algorithms to request,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-d,--data,data,Post data,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--data-ascii,data,HTTP POST ASCII data,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--data-binary,data,HTTP POST binary data,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--data-raw,data,"HTTP POST data, '@' allowed",
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--data-urlencode,data,HTTP POST data URL encoded,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--delegation,LEVEL,GSS-API delegation permission,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--digest,,HTTP Digest Authentication,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-q,--disable,,Disable .curlrc,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--disable-eprt,,Inhibit using EPRT or LPRT,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--disable-epsv,,Inhibit using EPSV,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--disallow-username-in-url,,Disallow username in URL,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--dns-interface,interface,Interface to use for DNS requests,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--dns-ipv4-addr,address,IPv4 address to use for DNS requests,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--dns-ipv6-addr,address,IPv6 address to use for DNS requests,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--dns-servers,addresses,DNS server addrs to use,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--doh-cert-status,,Verify DoH server cert status OCSP-staple,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--doh-insecure,,Allow insecure DoH server connections,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--doh-url,URL,Resolve hostnames over DoH,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--dump-ca-embed,,Write the embedded CA bundle to standard output,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-D,--dump-header,filename,Write the received headers to <filename>,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--ech,config,Configure ECH,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--egd-file,file,EGD socket path for random data,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--engine,name,Crypto engine to use,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--etag-compare,file,Load ETag from file,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--etag-save,file,Parse incoming ETag and save to a file,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--expect100-timeout,seconds,How long to wait for 100-continue,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-f,--fail,,Fail fast with no output on HTTP errors,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--fail-early,,Fail on first transfer error,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--fail-with-body,,Fail on HTTP errors but save the body,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--false-start,,Enable TLS False Start,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--follow,,Follow redirects per spec,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-F,--form,name=content,Specify multipart MIME data,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--form-escape,,Escape form fields using backslash,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--form-string,name=string,Specify multipart MIME data,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--ftp-account,data,Account data string,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--ftp-alternative-to-user,command,String to replace USER [name],
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--ftp-create-dirs,,Create the remote dirs if not present,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--ftp-method,method,Control CWD usage,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--ftp-pasv,,Send PASV/EPSV instead of PORT,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-P,--ftp-port,address,Send PORT instead of PASV,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--ftp-pret,,Send PRET before PASV,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--ftp-skip-pasv-ip,,Skip the IP address for PASV,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--ftp-ssl-ccc,,Send CCC after authenticating,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--ftp-ssl-ccc-mode,active/passive,Set CCC mode,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--ftp-ssl-control,,"Require TLS for login, clear for transfer",
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-G,--get,,Put the post data in the URL and use GET,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-g,--globoff,,Disable URL globbing with {} and [],
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--happy-eyeballs-timeout-ms,ms,Time for IPv6 before IPv4,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--haproxy-clientip,ip,Set address in HAProxy PROXY,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--haproxy-protocol,,Send HAProxy PROXY protocol v1 header,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-I,--head,,Show document info only,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-H,--header,header/@file,Pass custom header(s) to server,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-h,--help,subject,Get help for commands,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--hostpubmd5,md5,Acceptable MD5 hash of host public key,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--hostpubsha256,sha256,Acceptable SHA256 hash of host public key,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--hsts,filename,Enable HSTS with this cache file,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--http0.9,,Allow HTTP/0.9 responses,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-0,--http1.0,,Use HTTP/1.0,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--http1.1,,Use HTTP/1.1,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--http2,,Use HTTP/2,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--http2-prior-knowledge,,Use HTTP/2 without HTTP/1.1 Upgrade,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--http3,,Use HTTP/3,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--http3-only,,Use HTTP/3 only,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--ignore-content-length,,Ignore the size of the remote resource,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-k,--insecure,,Allow insecure server connections,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--interface,name,Use network interface,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--ip-tos,string,Set IP Type of Service or Traffic Class,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--ipfs-gateway,URL,Gateway for IPFS,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-4,--ipv4,,Resolve names to IPv4 addresses,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-6,--ipv6,,Resolve names to IPv6 addresses,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--json,data,HTTP POST JSON,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-j,--junk-session-cookies,,Ignore session cookies read from file,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--keepalive-cnt,integer,Maximum number of keepalive probes,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--keepalive-time,seconds,Interval time for keepalive probes,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--key,key,Private key filename,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--key-type,type,Private key file type (DER/PEM/ENG),
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--knownhosts,file,Specify knownhosts path,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--krb,level,Enable Kerberos with security <level>,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--libcurl,file,Generate libcurl code for this command line,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--limit-rate,speed,Limit transfer speed to RATE,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-l,--list-only,,List only mode,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--local-port,range,Use a local port number within RANGE,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-L,--location,,Follow redirects,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--location-trusted,,"As --location, but send secrets to other hosts",
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--login-options,options,Server login options,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--mail-auth,address,Originator address of the original email,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--mail-from,address,Mail from this address,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--mail-rcpt,address,Mail to this address,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--mail-rcpt-allowfails,,Allow RCPT TO command to fail,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-M,--manual,,Display the full manual,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--max-filesize,bytes,Maximum file size to download,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--max-redirs,num,Maximum number of redirects allowed,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-m,--max-time,seconds,Maximum time allowed for transfer,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--metalink,,Process given URLs as metalink XML file,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--mptcp,,Enable Multipath TCP,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--negotiate,,Use HTTP Negotiate (SPNEGO) authentication,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-n,--netrc,,Must read .netrc for username and password,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--netrc-file,filename,Specify FILE for netrc,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--netrc-optional,,Use either .netrc or URL,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-:,--next,,Make next URL use separate options,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--no-alpn,,Disable the ALPN TLS extension,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-N,--no-buffer,,Disable buffering of the output stream,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--no-clobber,,Do not overwrite files that already exist,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--no-keepalive,,Disable TCP keepalive on the connection,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--no-npn,,Disable the NPN TLS extension,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--no-progress-meter,,Do not show the progress meter,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--no-sessionid,,Disable SSL session-ID reusing,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--noproxy,no-proxy-list,List of hosts which do not use proxy,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--ntlm,,HTTP NTLM authentication,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--ntlm-wb,,HTTP NTLM authentication with winbind,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--oauth2-bearer,token,OAuth 2 Bearer Token,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--out-null,,Discard response data into the void,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-o,--output,file,Write to file instead of stdout,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--output-dir,dir,Directory to save files in,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-Z,--parallel,,Perform transfers in parallel,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--parallel-immediate,,Do not wait for multiplexing,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--parallel-max,num,Maximum concurrency for parallel transfers,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--parallel-max-host,num,Maximum connections to a single host,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--pass,phrase,Passphrase for the private key,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--path-as-is,,Do not squash .. sequences in URL path,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--pinnedpubkey,hashes,Public key to verify peer against,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--post301,,Do not switch to GET after a 301 redirect,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--post302,,Do not switch to GET after a 302 redirect,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--post303,,Do not switch to GET after a 303 redirect,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--preproxy,[protocol://]host[:port],Use this proxy first,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-#,--progress-bar,,Display transfer progress as a bar,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--proto,protocols,Enable/disable PROTOCOLS,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--proto-default,protocol,Use PROTOCOL for any URL missing a scheme,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--proto-redir,protocols,Enable/disable PROTOCOLS on redirect,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-x,--proxy,[protocol://]host[:port],Use this proxy,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--proxy-anyauth,,Pick any proxy authentication method,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--proxy-basic,,Use Basic authentication on the proxy,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--proxy-ca-native,,Load CA certs from the OS to verify proxy,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--proxy-cacert,file,CA certificates to verify proxy against,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--proxy-capath,dir,CA directory to verify proxy against,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--proxy-cert,cert[:passwd],Set client certificate for proxy,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--proxy-cert-type,type,Client certificate type for HTTPS proxy,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--proxy-ciphers,list,"TLS 1.2 (1.1, 1.0) ciphers to use for proxy",
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--proxy-crlfile,file,Set a CRL list for proxy,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--proxy-digest,,Digest auth with the proxy,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--proxy-header,header/@file,Pass custom header(s) to proxy,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--proxy-http2,,Use HTTP/2 with HTTPS proxy,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--proxy-http3,,Use HTTP/3 with HTTPS proxy,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--proxy-insecure,,Skip HTTPS proxy cert verification,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--proxy-key,key,Private key for HTTPS proxy,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--proxy-key-type,type,Private key file type for proxy,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--proxy-negotiate,,HTTP Negotiate (SPNEGO) auth with the proxy,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--proxy-ntlm,,NTLM authentication with the proxy,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--proxy-pass,phrase,Passphrase for private key for HTTPS proxy,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--proxy-pinnedpubkey,hashes,FILE/HASHES public key to verify proxy with,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--proxy-service-name,name,SPNEGO proxy service name,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--proxy-ssl-allow-beast,,Allow this security flaw for HTTPS proxy,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--proxy-ssl-auto-client-cert,,Auto client certificate for proxy,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--proxy-tls13-ciphers,list,TLS 1.3 proxy cipher suites,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--proxy-tlsauthtype,type,TLS authentication type for HTTPS proxy,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--proxy-tlspassword,string,TLS password for HTTPS proxy,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--proxy-tlsuser,name,TLS username for HTTPS proxy,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--proxy-tlsv1,,TLSv1 for HTTPS proxy,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-U,--proxy-user,user:password,Proxy user and password,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--proxy1.0,host[:port],Use HTTP/1.0 proxy on given port,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-p,--proxytunnel,,HTTP proxy tunnel (using CONNECT),
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--pubkey,key,SSH Public key filename,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-Q,--quote,command,Send command(s) to server before transfer,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--random-file,file,File for reading random data from,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-r,--range,range,Retrieve only the bytes within RANGE,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--rate,max request rate,Request rate for serial transfers,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--raw,,Do HTTP raw; no transfer decoding,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-e,--referer,URL,Referrer URL,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-J,--remote-header-name,,Use the header-provided filename,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-O,--remote-name,,Write output to file named as remote file,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--remote-name-all,,Use the remote filename for all URLs,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-R,--remote-time,,Set remote file's time on local output,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--remove-on-error,,Remove output file on errors,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-X,--request,method,Specify request method to use,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--request-target,path,Specify the target for this request,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--resolve,"[+]host:port:addr[,addr]...",Resolve host+port to address,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--retry,num,Retry request if transient problems occur,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--retry-all-errors,,Retry all errors (with --retry),
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--retry-connrefused,,Retry on connection refused (with --retry),
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--retry-delay,seconds,Wait time between retries,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--retry-max-time,seconds,Retry only within this period,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--sasl-authzid,identity,Identity for SASL PLAIN authentication,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--sasl-ir,,Initial response in SASL authentication,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--service-name,name,SPNEGO service name,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-S,--show-error,,Show error even when -s is used,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-i,--show-headers,,Show response headers in output,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--sigalgs,list,TLS signature algorithms to use,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-s,--silent,,Silent mode,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--skip-existing,,Skip download if local file already exists,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--socks4,host[:port],SOCKS4 proxy on given host + port,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--socks4a,host[:port],SOCKS4a proxy on given host + port,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--socks5,host[:port],SOCKS5 proxy on given host + port,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--socks5-basic,,Username/password auth for SOCKS5 proxies,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--socks5-gssapi,,Enable GSS-API auth for SOCKS5 proxies,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--socks5-gssapi-nec,,Compatibility with NEC SOCKS5 server,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--socks5-gssapi-service,name,SOCKS5 proxy service name for GSS-API,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--socks5-hostname,host[:port],"SOCKS5 proxy, pass hostname to proxy",
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-Y,--speed-limit,speed,Stop transfers slower than this,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-y,--speed-time,seconds,Trigger 'speed-limit' abort after this time,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--ssl,,Try enabling TLS,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--ssl-allow-beast,,Allow security flaw to improve interop,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--ssl-auto-client-cert,,Use auto client certificate (Schannel),
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--ssl-no-revoke,,Disable cert revocation checks (Schannel),
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--ssl-reqd,,Require SSL/TLS,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--ssl-revoke-best-effort,,Ignore missing cert CRL dist points,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--ssl-sessions,filename,Load/save SSL session tickets from/to this file,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-2,--sslv2,,SSLv2,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-3,--sslv3,,SSLv3,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--stderr,file,Where to redirect stderr,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--styled-output,,Enable styled output for HTTP headers,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--suppress-connect-headers,,Suppress proxy CONNECT response headers,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--tcp-fastopen,,Use TCP Fast Open,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--tcp-nodelay,,Set TCP_NODELAY,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-t,--telnet-option,opt=val,Set telnet option,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--tftp-blksize,value,Set TFTP BLKSIZE option,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--tftp-no-options,,Do not send any TFTP options,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-z,--time-cond,time,Transfer based on a time condition,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--tls-earlydata,,Allow use of TLSv1.3 early data (0RTT),
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--tls-max,VERSION,Maximum allowed TLS version,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--tls13-ciphers,list,TLS 1.3 cipher suites to use,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--tlsauthtype,type,TLS authentication type,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--tlspassword,string,TLS password,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--tlsuser,name,TLS username,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-1,--tlsv1,,TLSv1.0 or greater,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--tlsv1.0,,TLSv1.0 or greater,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--tlsv1.1,,TLSv1.1 or greater,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--tlsv1.2,,TLSv1.2 or greater,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--tlsv1.3,,TLSv1.3 or greater,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--tr-encoding,,Request compressed transfer encoding,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--trace,file,Write a debug trace to FILE,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--trace-ascii,file,"Like --trace, but without hex output",
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--trace-config,string,Details to log in trace/verbose output,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--trace-ids,,Transfer + connection ids in verbose output,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--trace-time,,Add time stamps to trace/verbose output,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--unix-socket,path,Connect through this Unix domain socket,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-T,--upload-file,file,Transfer local FILE to destination,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--upload-flags,flags,IMAP upload behavior,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--url,url/file,URL(s) to work with,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--url-query,data,Add a URL query part,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-B,--use-ascii,,Use ASCII/text transfer,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-u,--user,user:password,Server user and password,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-A,--user-agent,name,Send User-Agent <name> to server,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--variable,[%]name=text/@file,Set variable,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-v,--verbose,,Make the operation more talkative,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-V,--version,,Show version number and quit,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--vlan-priority,priority,Set VLAN priority,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,-w,--write-out,format,Output FORMAT after completion,
+curl,curl 8.22.0 (Windows) libcurl/8.22.0 Schannel zlib/1.3.2 WinIDN WinLDAP,,--xattr,,Store metadata in extended file attributes,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-a,--append-output,,"File where messages are appended to, '-' for STDOUT",
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-b,--background,,"Go to background immediately after startup. If no output file is specified via the -o, output is redirected to wget-log",
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-B,--base,,Base for relative URLs read from input-file or from command line,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--config,,Path to initialization file (default: ~/.config/wget/wget2rc),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-d,--debug,,Print debugging messages.(default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-e,--execute,,"Wget compatibility option, not needed for Wget",
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--force-atom,,Treat input file as Atom Feed. (default: off) (NEW!),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--force-css,,Treat input file as CSS. (default: off) (NEW!),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-F,--force-html,,Treat input file as HTML. (default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--force-metalink,,Treat input file as Metalink. (default: off) (NEW!),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--force-rss,,Treat input file as RSS Feed. (default: off) (NEW!),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--force-sitemap,,Treat input file as Sitemap. (default: off) (NEW!),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--fsync-policy,,Use fsync() to wait for data being written to the physical layer. (default: off) (NEW!),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-h,--help,,Print this help.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--hyperlink,,Enable terminal hyperlink support,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--input-encoding,,Character encoding of the file contents read with --input-file. (default: local encoding),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-i,--input-file,,"File where URLs are read from, - for STDIN.",
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--local-db,,Read or load databases,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-o,--output-file,,"File where messages are printed to, '-' for STDOUT.",
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-q,--quiet,,Print no messages except debugging messages. (default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--stats-dns,,Print DNS stats. (default: off) Additional format supported: --stats-dns=[FORMAT:]FILE,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--stats-ocsp,,Print OCSP stats. (default: off) Additional format supported: --stats-ocsp=[FORMAT:]FILE,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--stats-server,,Print server stats. (default: off) Additional format supported: --stats-server=[FORMAT:]FILE,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--stats-site,,Print site stats. (default: off) Additional format supported: --stats-site=[FORMAT:]FILE,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--stats-tls,,Print TLS stats. (default: off) Additional format supported: --stats-tls=[FORMAT:]FILE,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--unlink,,Remove files before clobbering. (default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-v,--verbose,,Print more messages. (default: on),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-V,--version,,Display the version of Wget and exit.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-A,--accept,,Comma-separated list of file name suffixes or patterns.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--accept-regex,,Regex matching accepted URLs.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--ask-password,,Print prompt for password,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--backups,,Make backups instead of overwriting/increasing number. (default: 0),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--bind-address,,Bind to sockets to local address. (default: automatic),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--bind-interface,,Bind sockets to the input Network Interface. (default: automatic),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--body-data,,Data to be sent in a request.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--body-file,,File with data to be sent in a request.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--cache,,Enabled using of server cache. (default: on),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--chunk-size,,Download large files in multithreaded chunks. (default: 0 (=off)) Example: wget --chunk-size=1M,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--clobber,,Enable file clobbering. (default: on),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--connect-timeout,,Connect timeout in seconds.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--content-on-error,,Save response body even on error status. (default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-c,--continue,,Continue download for given files. (default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--convert-file-only,,Convert only filename part of embedded URLs. (default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-k,--convert-links,,Convert embedded URLs to local URLs. (default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--cut-file-get-vars,,Cut HTTP GET vars from file names. (default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--cut-url-get-vars,,Cut HTTP GET vars from URLs. (default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--delete-after,,Don't save downloaded files. (default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--dns-cache,,Caching of domain name lookups. (default: on),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--dns-cache-preload,,File to be used to preload the DNS cache. Format is like /etc/hosts (IP<whitespace>hostname).,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--dns-timeout,,DNS lookup timeout in seconds.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-D,--domains,,Comma-separated list of domains to follow.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--download-attr,,Recognize HTML5 download attributes. 'strippath' strips the path to be more secure.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-X,--exclude-directories,,Comma-separated list of directories NOT to download. Wildcards are allowed.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--exclude-domains,,Comma-separated list of domains NOT to follow.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--filter-mime-type,,Specify a list of mime types to be saved or ignored,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--filter-urls,,Apply the accept and reject filters on the URL before starting a download. (default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--follow-sitemaps,,Scan sitemaps found in robots.txt. (default: on),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--follow-tags,,"Scan additional tag/attributes for URLs, e.g. --follow-tags=""img/data-500px,img/data-hires",
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--force-progress,,Force progress bar. (default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--http2-request-window,,Max. number of parallel streams per HTTP/2 connection. (default: 30),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--if-modified-since,,Do not send If-Modified-Since header in -N mode.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--ignore-case,,Ignore case when matching files. (default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--ignore-length,,Ignore content-length header field (default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--ignore-tags,,"Ignore tag/attributes for URL scanning, e.g. --ignore-tags=""img,a/href",
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-I,--include-directories,,Comma-separated list of directories TO download. Wildcards are allowed.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-4,--inet4-only,,Use IPv4 connections only. (default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-6,--inet6-only,,Use IPv6 connections only. (default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--iri,,"Wget dummy option, you can't switch off international support",
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--keep-extension,,If file exists: Use pattern 'basename_N.ext' instead of 'filename.N'. (default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-l,--level,,Maximum recursion depth. (default: 5),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--local-encoding,,Character encoding of environment and filenames.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--max-redirect,,Max. number of redirections to follow. (default: 20),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--max-threads,,Max. concurrent download threads. (default: 5) (NEW!),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-m,--mirror,,Turn on mirroring options -r -N -l inf,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--netrc,,Load credentials from ~/.netrc if not given. (default: on),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-O,--output-document,,"File where downloaded content is written to, '-O'  for STDOUT.",
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-p,--page-requisites,,Download all necessary files to display a HTML page,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--parent,,Ascend above parent directory. (default: on),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--password,,Password for Authentication. (default: empty password),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--post-data,,Data to be sent in a POST request.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--post-file,,File with data to be sent in a POST request.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--prefer-family,,Prefer IPv4 or IPv6. (default: none),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--progress,,"Type of progress bar (bar, none). (default: none)",
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--proxy,,Enable support for *_proxy environment variables. (default: on),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--random-wait,,Wait 0.5 up to 1.5*<--wait> seconds between downloads (per thread). (default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--read-timeout,,Read and write timeout in seconds.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-r,--recursive,,Recursive download. (default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--regex-type,,Regular expression type. Possible types are posix or pcre. (default: posix),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-R,--reject,,Comma-separated list of file name suffixes or patterns.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--reject-regex,,Regex matching rejected URLs.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--remote-encoding,,Character encoding of remote files (if not specified in Content-Type HTTP header or in document itself),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--report-speed,,Output bandwidth as TYPE. TYPE can be bytes or bits. --progress MUST be used.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--restrict-file-names,,"unix, windows, nocontrol, ascii, lowercase, uppercase, none",
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--retry-on-http-error,,Specify a list of http statuses in which the download will be retried,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--robots,,Respect robots.txt standard for recursive downloads. (default: on),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--save-content-on,,Specify a list of response codes that requires it's response body to be saved on error status,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-S,--server-response,,Print the server response headers. (default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--show-progress,,Show Progress Bar (Deprecated alias for --force-progress) (default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-H,--span-hosts,,Span hosts that were not given on the command line. (default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--spider,,Enable web spider mode. (default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--start-pos,,"Start downloading at zero-based position, 0 = option disabled. (default: 0)",
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--strict-comments,,A dummy option. Parsing always works non-strict.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--tcp-fastopen,,Enable TCP Fast Open (TFO). (default: on),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-T,--timeout,,General network timeout in seconds.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-N,--timestamping,,Just retrieve younger files than the local ones. (default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-t,--tries,,Number of tries for each download. (default 20),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--trust-server-names,,On redirection use the server's filename. (default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--use-askpass,,Prompt for a user and password using the specified command.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--use-server-timestamps,,Set local file's timestamp to server's timestamp. (default: on),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--user,,Username for Authentication. (default: empty username),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-w,--wait,,Wait number of seconds between downloads (per thread). (default: 0),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--waitretry,,Wait up to number of seconds after error (per thread). (default: 10),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--xattr,,Save extended file attributes. (default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-E,--adjust-extension,,Append extension to saved file (.html or .css). (default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--auth-no-challenge,,send Basic HTTP Authentication before challenge,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-K,--backup-converted,,"When converting, keep the original file with a .orig suffix. (default: off)",
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--compression,,"Customize Accept-Encoding with identity, gzip, deflate, xz, lzma, br, bzip2, zstd, lzip and any combination of it no-compression means no Accept-Encoding",
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--content-disposition,,Take filename from Content-Disposition. (default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--cookie-suffixes,,Load public suffixes from file. They prevent 'supercookie' vulnerabilities. See https://publicsuffix.org/ for details.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--cookies,,Enable use of cookies. (default: on),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--default-http-port,,Set default port for HTTP. (default: 80),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--default-https-port,,Set default port for HTTPS. (default: 443),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--default-page,,Default file name. (default: index.html),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--header,,Insert input string as a HTTP header in all requests,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--html-extension,,Obsoleted by --adjust-extension,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--http-keep-alive,,Keep connection open for further requests. (default: on),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--http-password,,Password for HTTP Authentication. (default: empty password),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--http-proxy,,"Set HTTP proxy/proxies, overriding environment variables. Use comma to separate proxies.",
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--http-proxy-password,,Password for HTTP Proxy Authentication. (default: empty password),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--http-proxy-user,,Username for HTTP Proxy Authentication. (default: empty username),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--http-user,,Username for HTTP Authentication. (default: empty username),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--keep-session-cookies,,Also save session cookies. (default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--limit-rate,,"Limit rate of download per second, 0 = no limit. (default: 0)",
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--load-cookies,,Load cookies from file.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--metalink,,Follow a metalink file instead of storing it (default: on),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--method,,HTTP method to use for request.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--netrc-file,,Set file for login/password to use instead of ~/.netrc. (default: ~/.netrc),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-Q,--quota,,"Download quota, 0 = no quota. (default: 0)",
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--referer,,Include Referer: url in HTTP request. (default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--retry-connrefused,,"Consider ""connection refused"" a transient error. (default: off)",
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--save-cookies,,Save cookies to file.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--save-headers,,Save the response headers in front of the response data. (default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-U,--user-agent,,HTTP User Agent string. (default: wget),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--ca-certificate,,File with bundle of PEM CA certificates.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--ca-directory,,Directory with PEM CA certificates.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--certificate,,File with client certificate.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--certificate-type,,Certificate type: PEM or DER (known as ASN1). (default: PEM),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--check-certificate,,Check the server's certificate. (default: on),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--check-hostname,,Check the server's certificate's hostname. (default: on),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--crl-file,,File with PEM CRL certificates.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--dane,,Enable DANE certificate checking.(default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--egd-file,,File to be used as socket for random data from Entropy Gathering Daemon.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--hpkp,,Use HTTP Public Key Pinning (HPKP). (default: on),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--hpkp-file,,Set file for storing HPKP data (default: $XDG_DATA_HOME/wget/.wget-hpkp),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--hsts,,Use HTTP Strict Transport Security (HSTS). (default: on),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--hsts-file,,Set file for HSTS caching. (default: $XDG_DATA_HOME/wget/.wget-hsts),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--hsts-preload,,"Use HTTP Strict Transport Security (HSTS). [Not built with libhsts, so not functional]",
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--hsts-preload-file,,"Set name for the HSTS Preload file (DAFSA format). [Not built with libhsts, so not functional]",
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--http2,,Use HTTP/2 protocol if possible. (default: on),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--http2-only,,"Only use HTTP/2 protocol, error if server doesn't offer it. (default: off)",
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--https-enforce,,"Use secure HTTPS instead of HTTP. Legal types are 'hard', 'soft' and 'none'. If --https-only is enabled, this option has no effect. (default: none)",
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--https-only,,Do not follow non-secure URLs. (default: off).,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--https-proxy,,"Set HTTPS proxy/proxies, overriding environment variables. Use comma to separate proxies.",
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--ocsp,,Use OCSP server access to verify server's certificate. (default: on),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--ocsp-date,,Check if OCSP response date is too old. (default: on),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--ocsp-file,,Set file for OCSP chaching. (default: $XDG_DATA_HOME/wget/.wget-ocsp),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--ocsp-nonce,,Allow nonce checking when verifying OCSP response. (default: on),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--ocsp-server,,Set OCSP server address. (default: OCSP server given in certificate),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--ocsp-stapling,,Use OCSP stapling to verify the server's certificate. (default: on),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--private-key,,File with private key.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--private-key-type,,Type of the private key (PEM or DER). (default: PEM),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--random-file,,File to be used as source of random data.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--secure-protocol,,"Set protocol to be used (auto, SSLv3, TLSv1, TLSv1_1, TLSv1_2, TLS1_3, PFS). (default: auto). Or use GnuTLS priority strings, e.g. NORMAL:-VERS-SSL3.0:-RSA",
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--tls-false-start,,Enable TLS False Start (needs GnuTLS 3.5+). (default: on),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--tls-resume,,Enable TLS Session Resumption. (default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--tls-session-file,,Set file for TLS Session caching. (default: $XDG_DATA_HOME/wget/.wget-session),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--cut-dirs,,Skip creating given number of directory components. (default: 0),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--directories,,Create hierarchy of directories when retrieving recursively. (default: on),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-P,--directory-prefix,,Set directory prefix.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,-x,--force-directories,,Create hierarchy of directories when not retrieving recursively. (default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--host-directories,,Create host directories when retrieving recursively. (default: on),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--protocol-directories,,Force creating protocol directories. (default: off),
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--list-plugins,,Lists all the plugins in the plugin search paths.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--local-plugin,,Loads a plugin with a given path.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--plugin,,Load a plugin with a given name.,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--plugin-dirs,,"Specify alternative directories to look for plugins, separated by ','",
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--plugin-help,,Print help message for all loaded plugins,
+wget,GNU Wget2 2.2.1 - multithreaded metalink/file/website downloader,,--plugin-opt,,Forward an option to a loaded plugin. The option should be in format: <plugin_name>.<option>[=value],
+aria2,aria2 version 1.37.0,-v,--version,,Print the version number and exit.,#basic
+aria2,aria2 version 1.37.0,-h,--help,TAG|KEYWORD,"Print usage and exit. The help messages are classified with tags. A tag starts with ""#"". For example, type ""--help=#http"" to get the usage for the options tagged with ""#http"". If non-tag word is given, print the usage for the options whose name includes that word.","#basic, #help"
+aria2,aria2 version 1.37.0,-t,--timeout,SEC,Set timeout in seconds.,"#http, #ftp"
+aria2,aria2 version 1.37.0,,--connect-timeout,SEC,"Set the connect timeout in seconds to establish connection to HTTP/FTP/proxy server. After the connection is established, this option makes no effect and --timeout option is used instead.","#http, #ftp"
+aria2,aria2 version 1.37.0,-m,--max-tries,N,Set number of tries. 0 means unlimited.,"#http, #ftp"
+aria2,aria2 version 1.37.0,,--auto-save-interval,SEC,"Save a control file(*.aria2) every SEC seconds. If 0 is given, a control file is not saved during download. aria2 saves a control file when it stops regardless of the value.",#advanced
+aria2,aria2 version 1.37.0,-l,--log,LOG,"The file name of the log file. If '-' is specified, log is written to stdout.",#basic
+aria2,aria2 version 1.37.0,-d,--dir,DIR,The directory to store the downloaded file.,"#basic, #file"
+aria2,aria2 version 1.37.0,-o,--out,FILE,"The file name of the downloaded file. It is always relative to the directory given in -d option. When the -Z option is used, this option will be ignored.","#basic, #http, #ftp, #file"
+aria2,aria2 version 1.37.0,-s,--split,N,"Download a file using N connections. If more than N URIs are given, first N URIs are used and remaining URLs are used for backup. If less than N URIs are given, those URLs are used more than once so that N connections total are made simultaneously. The number of connections to the same host is restricted by the --max-connection-per-server option. See also the --min-split-size option.","#basic, #http, #ftp"
+aria2,aria2 version 1.37.0,-D,--daemon,true|false,"Run as daemon. The current working directory will be changed to ""/"" and standard input, standard output and standard error will be redirected to ""/dev/null"".",#advanced
+aria2,aria2 version 1.37.0,,--referer,REFERER,"Set an http referrrer (Referer). This affects all http/https downloads. If ""*"" is given, the download URI is also used as the referrer. This may be useful when used together with the -P option.",#http
+aria2,aria2 version 1.37.0,,--lowest-speed-limit,SPEED,"Close connection if download speed is lower than or equal to this value(bytes per sec). 0 means aria2 does not have a lowest speed limit. You can append K or M(1K = 1024, 1M = 1024K). This option does not affect BitTorrent downloads.","#http, #ftp"
+aria2,aria2 version 1.37.0,,--piece-length,LENGTH,Set a piece length for HTTP/FTP downloads. This is the boundary when aria2 splits a file. All splits occur at multiple of this length. This option will be ignored in BitTorrent downloads. It will be also ignored if Metalink file contains piece hashes.,"#advanced, #http, #ftp"
+aria2,aria2 version 1.37.0,,--max-overall-download-limit,SPEED,"Set max overall download speed in bytes/sec. 0 means unrestricted. You can append K or M(1K = 1024, 1M = 1024K). To limit the download speed per download, use --max-download-limit option.","#http, #ftp, #bittorrent"
+aria2,aria2 version 1.37.0,,--max-download-limit,SPEED,"Set max download speed per each download in bytes/sec. 0 means unrestricted. You can append K or M(1K = 1024, 1M = 1024K). To limit the overall download speed, use --max-overall-download-limit option.","#http, #ftp, #bittorrent"
+aria2,aria2 version 1.37.0,,--file-allocation,METHOD,"Specify file allocation method. 'none' doesn't pre-allocate file space. 'prealloc' pre-allocates file space before download begins. This may take some time depending on the size of the file. If you are using newer file systems such as ext4 (with extents support), btrfs, xfs or NTFS (MinGW build only), 'falloc' is your best choice. It allocates large(few GiB) files almost instantly. Don't use 'falloc' with legacy file systems such as ext3 and FAT32 because it takes almost the same time as 'prealloc' and it blocks aria2 entirely until allocation finishes. 'falloc' may not be available if your system doesn't have posix_fallocate() function. 'trunc' uses ftruncate() system call or platform-specific counterpart to truncate a file to a specified length.","#basic, #file"
+aria2,aria2 version 1.37.0,,--no-file-allocation-limit,SIZE,"No file allocation is made for files whose size is smaller than SIZE. You can append K or M(1K = 1024, 1M = 1024K).","#advanced, #file"
+aria2,aria2 version 1.37.0,,--allow-overwrite,true|false,Restart download from scratch if the corresponding control file doesn't exist.  See also --auto-file-renaming option.,"#advanced, #file"
+aria2,aria2 version 1.37.0,,--realtime-chunk-checksum,true|false,Validate chunk of data by calculating checksum while downloading a file if chunk checksums are provided.,"#metalink, #checksum"
+aria2,aria2 version 1.37.0,-V,--check-integrity,true|false,"Check file integrity by validating piece hashes or a hash of entire file. This option has effect only in BitTorrent, Metalink downloads with checksums or HTTP(S)/FTP downloads with --checksum option. If piece hashes are provided, this option can detect damaged portions of a file and re-download them. If a hash of entire file is provided, hash check is only done when file has been already download. This is determined by file length. If hash check fails, file is re-downloaded from scratch. If both piece hashes and a hash of entire file are provided, only piece hashes are used.","#basic, #metalink, #bittorrent, #file, #checksum"
+aria2,aria2 version 1.37.0,,--netrc-path,FILE,Specify the path to the netrc file.,
+aria2,aria2 version 1.37.0,-c,--continue,true|false,Continue downloading a partially downloaded file. Use this option to resume a download started by a web browser or another program which downloads files sequentially from the beginning. Currently this option is only applicable to http(s)/ftp downloads.,"#basic, #http, #ftp"
+aria2,aria2 version 1.37.0,-n,--no-netrc,true|false,Disables netrc support.,"#http, #ftp"
+aria2,aria2 version 1.37.0,-i,--input-file,FILE,"Downloads URIs found in FILE. You can specify multiple URIs for a single entity: separate URIs on a single line using the TAB character. Reads input from stdin when '-' is specified. Additionally, options can be specified after each line of URI. This optional line must start with one or more white spaces and have one option per single line. See INPUT FILE section of man page for details. See also --deferred-input option.",#basic
+aria2,aria2 version 1.37.0,,--deferred-input,true|false,"If true is given, aria2 does not read all URIs and options from file specified by -i option at startup, but it reads one by one when it needs later. This may reduce memory usage if input file contains a lot of URIs to download. If false is given, aria2 reads all URIs and options at startup.",#advanced
+aria2,aria2 version 1.37.0,-j,--max-concurrent-downloads,N,"Set maximum number of parallel downloads for every static (HTTP/FTP) URL, torrent and metalink. See also --split and --optimize-concurrent-downloads options.",#basic
+aria2,aria2 version 1.37.0,,--optimize-concurrent-downloads,true|false|A:B,"Optimizes the number of concurrent downloads according to the bandwidth available. aria2 uses the download speed observed in the previous downloads to adapt the number of downloads launched in parallel according to the rule N = A + B Log10(speed in Mbps). The coefficients A and B can be customized in the option arguments with A and B separated by a colon. The default values (A=5,B=25) lead to using typically 5 parallel downloads on 1Mbps networks and above 50 on 100Mbps networks. The number of parallel downloads remains constrained under the maximum defined by the max-concurrent-downloads parameter.",#advanced
+aria2,aria2 version 1.37.0,-Z,--force-sequential,true|false,"Fetch URIs in the command-line sequentially and download each URI in a separate session, like the usual command-line download utilities.",#basic
+aria2,aria2 version 1.37.0,,--auto-file-renaming,true|false,"Rename file name if the same file already exists. This option works only in http(s)/ftp download. The new file name has a dot and a number(1..9999) appended after the name, but before the file extension, if any.","#advanced, #file"
+aria2,aria2 version 1.37.0,-P,--parameterized-uri,true|false,"Enable parameterized URI support. You can specify set of parts: http://{sv1,sv2,sv3}/foo.iso Also you can specify numeric sequences with step counter: http://host/image[000-100:2].img A step counter can be omitted. If all URIs do not point to the same file, such as the second example above, -Z option is required.",#advanced
+aria2,aria2 version 1.37.0,,--allow-piece-length-change,true|false,"If false is given, aria2 aborts download when a piece length is different from one in a control file. If true is given, you can proceed but some download progress will be lost.",#advanced
+aria2,aria2 version 1.37.0,,--no-conf,true|false,Disable loading aria2.conf file.,#advanced
+aria2,aria2 version 1.37.0,,--conf-path,PATH,Change the configuration file path to PATH.,#advanced
+aria2,aria2 version 1.37.0,,--stop,SEC,"Stop application after SEC seconds has passed. If 0 is given, this feature is disabled.",#advanced
+aria2,aria2 version 1.37.0,-q,--quiet,true|false,Make aria2 quiet(no console output).,#advanced
+aria2,aria2 version 1.37.0,,--async-dns,true|false,Enable asynchronous DNS.,#advanced
+aria2,aria2 version 1.37.0,,--summary-interval,SEC,Set interval to output download progress summary. Setting 0 suppresses the output.,#advanced
+aria2,aria2 version 1.37.0,,--log-level,LEVEL,Set log level to output to file specified using --log option.,#advanced
+aria2,aria2 version 1.37.0,,--console-log-level,LEVEL,Set log level to output to console.,#advanced
+aria2,aria2 version 1.37.0,,--uri-selector,SELECTOR,"Specify URI selection algorithm. If 'inorder' is given, URI is tried in the order appeared in the URI list. If 'feedback' is given, aria2 uses download speed observed in the previous downloads and choose fastest server in the URI list. This also effectively skips dead mirrors. The observed download speed is a part of performance profile of servers mentioned in --server-stat-of and --server-stat-if options. If 'adaptive' is given, selects one of the best mirrors for the first and reserved connections. For supplementary ones, it returns mirrors which has not been tested yet, and if each of them has already been tested, returns mirrors which has to be tested again. Otherwise, it doesn't select anymore mirrors. Like 'feedback', it uses a performance profile of servers.","#http, #ftp"
+aria2,aria2 version 1.37.0,,--server-stat-timeout,SEC,Specifies timeout in seconds to invalidate performance profile of the servers since the last contact to them.,"#http, #ftp"
+aria2,aria2 version 1.37.0,,--server-stat-if,FILE,Specify the filename to load performance profile of the servers. The loaded data will be used in some URI selector such as 'feedback'. See also --uri-selector option,"#http, #ftp"
+aria2,aria2 version 1.37.0,,--server-stat-of,FILE,Specify the filename to which performance profile of the servers is saved. You can load saved data using --server-stat-if option.,"#http, #ftp"
+aria2,aria2 version 1.37.0,-R,--remote-time,true|false,"Retrieve timestamp of the remote file from the remote HTTP/FTP server and if it is available, apply it to the local file.","#http, #ftp"
+aria2,aria2 version 1.37.0,,--max-file-not-found,NUM,"If aria2 receives `file not found' status from the remote HTTP/FTP servers NUM times without getting a single byte, then force the download to fail. Specify 0 to disable this option. This options is effective only when using HTTP/FTP servers. The number of retry attempt is counted toward --max-tries, so it should be configured too.","#http, #ftp"
+aria2,aria2 version 1.37.0,,--event-poll,POLL,Specify the method for polling events.,#advanced
+aria2,aria2 version 1.37.0,,--enable-rpc,true|false,Enable JSON-RPC/XML-RPC server. It is strongly recommended to set secret authorization token using --rpc-secret option. See also --rpc-listen-port option.,#rpc
+aria2,aria2 version 1.37.0,,--rpc-listen-port,PORT,Specify a port number for JSON-RPC/XML-RPC server to listen to.,#rpc
+aria2,aria2 version 1.37.0,,--rpc-user,USER,Set JSON-RPC/XML-RPC user. This option will be deprecated in the future release. Migrate to --rpc-secret option as soon as possible.,"#rpc, #deprecated"
+aria2,aria2 version 1.37.0,,--rpc-passwd,PASSWD,Set JSON-RPC/XML-RPC password. This option will be deprecated in the future release. Migrate to --rpc-secret option as soon as possible.,"#rpc, #deprecated"
+aria2,aria2 version 1.37.0,,--rpc-max-request-size,SIZE,"Set max size of JSON-RPC/XML-RPC request. If aria2 detects the request is more than SIZE bytes, it drops connection.",#rpc
+aria2,aria2 version 1.37.0,,--rpc-listen-all,true|false,"Listen incoming JSON-RPC/XML-RPC requests on all network interfaces. If false is given, listen only on local loopback interface.",#rpc
+aria2,aria2 version 1.37.0,,--rpc-allow-origin-all,true|false,Add Access-Control-Allow-Origin header field with value '*' to the RPC response.,#rpc
+aria2,aria2 version 1.37.0,,--rpc-certificate,FILE,Use the certificate in FILE for RPC server. The certificate must be in PEM format. Use --rpc-private-key option to specify the private key. Use --rpc-secure option to enable encryption.,#rpc
+aria2,aria2 version 1.37.0,,--rpc-private-key,FILE,Use the private key in FILE for RPC server. The private key must be decrypted and in PEM format. Use --rpc-secure option to enable encryption. See also --rpc-certificate option.,#rpc
+aria2,aria2 version 1.37.0,,--rpc-secure,true|false,"RPC transport will be encrypted by SSL/TLS. The RPC clients must use https scheme to access the server. For WebSocket client, use wss scheme. Use --rpc-certificate and --rpc-private-key options to specify the server certificate and private key.",#rpc
+aria2,aria2 version 1.37.0,,--rpc-save-upload-metadata,true|false,"Save the uploaded torrent or metalink metadata in the directory specified by --dir option. The filename consists of SHA-1 hash hex string of metadata plus extension. For torrent, the extension is '.torrent'. For metalink, it is '.meta4'. If false is given to this option, the downloads added by aria2.addTorrent or aria2.addMetalink will not be saved by --save-session option.",#rpc
+aria2,aria2 version 1.37.0,,--dry-run,true|false,"If true is given, aria2 just checks whether the remote file is available and doesn't download data. This option has effect on HTTP/FTP download. BitTorrent downloads are canceled if true is specified.","#http, #ftp"
+aria2,aria2 version 1.37.0,,--reuse-uri,true|false,Reuse already used URIs if no unused URIs are left.,"#http, #ftp"
+aria2,aria2 version 1.37.0,,--on-download-start,COMMAND,"Set the command to be executed after download got started. aria2 passes 3 arguments to COMMAND: GID, the number of files and file path. See Event Hook in man page for more details.","#advanced, #hook"
+aria2,aria2 version 1.37.0,,--on-download-pause,COMMAND,Set the command to be executed after download was paused. See --on-download-start option for the requirement of COMMAND.,"#advanced, #hook"
+aria2,aria2 version 1.37.0,,--on-download-stop,COMMAND,"Set the command to be executed after download stopped. You can override the command to be executed for particular download result using --on-download-complete and --on-download-error. If they are specified, command specified in this option is not executed. See --on-download-start option for the requirement of COMMAND.","#advanced, #hook"
+aria2,aria2 version 1.37.0,,--on-download-complete,COMMAND,Set the command to be executed after download completed. See --on-download-start option for the requirement of COMMAND. See also --on-download-stop option.,"#advanced, #hook"
+aria2,aria2 version 1.37.0,,--on-download-error,COMMAND,Set the command to be executed after download aborted due to error. See --on-download-start option for the requirement of COMMAND. See also --on-download-stop option.,"#advanced, #hook"
+aria2,aria2 version 1.37.0,,--interface,INTERFACE,"Bind sockets to given interface. You can specify interface name, IP address and hostname.",#advanced
+aria2,aria2 version 1.37.0,,--multiple-interface,INTERFACES,"Comma separated list of interfaces to bind sockets to. Requests will be split among the interfaces to achieve link aggregation. You can specify interface name, IP address and hostname. If --interface is used, this option will be ignored.",#advanced
+aria2,aria2 version 1.37.0,,--disable-ipv6,true|false,Disable IPv6.,#advanced
+aria2,aria2 version 1.37.0,,--human-readable,true|false,"Print sizes and speed in human readable format (e.g., 1.2Ki, 3.4Mi) in the console readout.",#advanced
+aria2,aria2 version 1.37.0,,--remove-control-file,true|false,"Remove control file before download. Using with --allow-overwrite=true, download always starts from scratch. This will be useful for users behind proxy server which disables resume.",#advanced
+aria2,aria2 version 1.37.0,,--always-resume,true|false,"Always resume download. If true is given, aria2 always tries to resume download and if resume is not possible, aborts download. If false is given, when all given URIs do not support resume or aria2 encounters N URIs which does not support resume (N is the value specified using --max-resume-failure-tries option), aria2 downloads file from scratch. See --max-resume-failure-tries option.","#advanced, #http, #ftp"
+aria2,aria2 version 1.37.0,,--max-resume-failure-tries,N,"When used with --always-resume=false, aria2 downloads file from scratch when aria2 detects N number of URIs that does not support resume. If N is 0, aria2 downloads file from scratch when all given URIs do not support resume. See --always-resume option.","#advanced, #http, #ftp"
+aria2,aria2 version 1.37.0,,--save-session,FILE,Save error/unfinished downloads to FILE on exit. You can pass this output file to aria2c with -i option on restart. Please note that downloads added by aria2.addTorrent and aria2.addMetalink RPC method and whose metadata could not be saved as a file will not be saved. Downloads removed using aria2.remove and aria2.forceRemove will not be saved.,#advanced
+aria2,aria2 version 1.37.0,-x,--max-connection-per-server,NUM,The maximum number of connections to one server for each download.,"#basic, #http, #ftp"
+aria2,aria2 version 1.37.0,-k,--min-split-size,SIZE,"aria2 does not split less than 2*SIZE byte range. For example, let's consider downloading 20MiB file. If SIZE is 10M, aria2 can split file into 2 range [0-10MiB) and [10MiB-20MiB) and download it using 2 sources(if --split >= 2, of course). If SIZE is 15M, since 2*15M > 20MiB, aria2 does not split file and download it using 1 source. You can append K or M(1K = 1024, 1M = 1024K).","#basic, #http, #ftp"
+aria2,aria2 version 1.37.0,,--conditional-get,true|false,"Download file only when the local file is older than remote file. Currently, this function has many limitations. See man page for details.","#advanced, #http"
+aria2,aria2 version 1.37.0,,--enable-async-dns6,true|false,Enable IPv6 name resolution in asynchronous DNS resolver. This option will be ignored when --async-dns=false.,"#advanced, #deprecated"
+aria2,aria2 version 1.37.0,,--max-download-result,NUM,"Set maximum number of download result kept in memory. The download results are completed/error/ removed downloads. The download results are stored in FIFO queue and it can store at most NUM download results. When queue is full and new download result is created, oldest download result is removed from the front of the queue and new one is pushed to the back. Setting big number in this option may result high memory consumption after thousands of downloads. Specifying 0 means no download result is kept. Note that unfinished downloads are kept in memory regardless of this option value. See --keep-unfinished-download-result option.",#advanced
+aria2,aria2 version 1.37.0,,--retry-wait,SEC,"Set the seconds to wait between retries. With SEC > 0, aria2 will retry download when the HTTP server returns 503 response.","#http, #ftp"
+aria2,aria2 version 1.37.0,,--async-dns-server,"IPADDRESS[,...","Comma separated list of DNS server address used in asynchronous DNS resolver. Usually asynchronous DNS resolver reads DNS server addresses from /etc/resolv.conf. When this option is used, it uses DNS servers specified in this option instead of ones in /etc/resolv.conf. You can specify both IPv4 and IPv6 address. This option is useful when the system does not have /etc/resolv.conf and user does not have the permission to create it.",#advanced
+aria2,aria2 version 1.37.0,,--show-console-readout,true|false,Show console readout.,#advanced
+aria2,aria2 version 1.37.0,,--stream-piece-selector,SELECTOR,"Specify piece selection algorithm used in HTTP/FTP download. Piece means fixed length segment which is downloaded in parallel in segmented download. If 'default' is given, aria2 selects piece so that it reduces the number of establishing connection. This is reasonable default behaviour because establishing connection is an expensive operation. If 'inorder' is given, aria2 selects piece which has minimum index. Index=0 means first of the file. This will be useful to view movie while downloading it. --enable-http-pipelining option may be useful to reduce reconnection overhead. Please note that aria2 honors --min-split-size option, so it will be necessary to specify a reasonable value to --min-split-size option. If 'random' is given, aria2 selects piece randomly. Like 'inorder', --min-split-size option is honored. If 'geom' is given, at the beginning aria2 selects piece which has minimum index like 'inorder', but it exponentially increasingly keeps space from previously selected piece. This will reduce the number of establishing connection and at the same time it will download the beginning part of the file first. This will be useful to view movie while downloading it.","#http, #ftp"
+aria2,aria2 version 1.37.0,,--truncate-console-readout,true|false,Truncate console readout to fit in a single line.,#advanced
+aria2,aria2 version 1.37.0,,--pause,true|false,Pause download after added. This option is effective only when --enable-rpc=true is given.,"#advanced, #rpc"
+aria2,aria2 version 1.37.0,,--download-result,OPT,"This option changes the way ""Download Results"" is formatted. If OPT is 'default', print GID, status, average download speed and path/URI. If multiple files are involved, path/URI of first requested file is printed and remaining ones are omitted. If OPT is 'full', print GID, status, average download speed, percentage of progress and path/URI. The percentage of progress and path/URI are printed for each requested file in each row. If OPT is 'hide', ""Download Results"" is hidden.",#advanced
+aria2,aria2 version 1.37.0,,--hash-check-only,true|false,"If true is given, after hash check using --check-integrity option, abort download whether or not download is complete.","#advanced, #metalink, #bittorrent, #file, #checksum"
+aria2,aria2 version 1.37.0,,--checksum,TYPE=DIGEST,"Set checksum. TYPE is hash type. The supported hash type is listed in ""Hash Algorithms"" in ""aria2c -v"". DIGEST is hex digest. For example, setting sha-1 digest looks like this: sha-1=0192ba11326fe2298c8cb4de616f4d4140213838 This option applies only to HTTP(S)/FTP downloads.","#http, #ftp, #checksum"
+aria2,aria2 version 1.37.0,,--stop-with-process,PID,"Stop application when process PID is not running. This is useful if aria2 process is forked from a parent process. The parent process can fork aria2 with its own pid and when parent process exits for some reason, aria2 can detect it and shutdown itself.",#advanced
+aria2,aria2 version 1.37.0,,--enable-mmap,true|false,Map files into memory.,"#advanced, #experimental"
+aria2,aria2 version 1.37.0,,--force-save,true|false,Save download with --save-session option even if the download is completed or removed. This option also saves control file in that situations. This may be useful to save BitTorrent seeding which is recognized as completed state.,#advanced
+aria2,aria2 version 1.37.0,,--save-not-found,true|false,Save download with --save-session option even if the file was not found on the server. This option also saves control file in that situations.,#advanced
+aria2,aria2 version 1.37.0,,--disk-cache,SIZE,"Enable disk cache. If SIZE is 0, the disk cache is disabled. This feature caches the downloaded data in memory, which grows to at most SIZE bytes. The cache storage is created for aria2 instance and shared by all downloads. The one advantage of the disk cache is reduce the disk I/O because the data are written in larger unit and it is reordered by the offset of the file. If hash checking is involved and the data are cached in memory, we don't need to read them from the disk. SIZE can include K or M(1K = 1024, 1M = 1024K).",#advanced
+aria2,aria2 version 1.37.0,,--gid,GID,"Set GID manually. aria2 identifies each download by the ID called GID. The GID must be hex string of 16 characters, thus [0-9a-fA-F] are allowed and leading zeros must not be stripped. The GID all 0 is reserved and must not be used. The GID must be unique, otherwise error is reported and the download is not added. This option is useful when restoring the sessions saved using --save-session option. If this option is not used, new GID is generated by aria2.",#advanced
+aria2,aria2 version 1.37.0,,--save-session-interval,SEC,"Save error/unfinished downloads to a file specified by --save-session option every SEC seconds. If 0 is given, file will be saved only when aria2 exits.",#advanced
+aria2,aria2 version 1.37.0,,--enable-color,true|false,Enable color output for a terminal.,#advanced
+aria2,aria2 version 1.37.0,,--rpc-secret,TOKEN,Set RPC secret authorization token.,#rpc
+aria2,aria2 version 1.37.0,,--dscp,DSCP,"Set DSCP value in outgoing IP packets of BitTorrent traffic for QoS. This parameter sets only DSCP bits in TOS field of IP packets, not the whole field. If you take values from /usr/include/netinet/ip.h divide them by 4 (otherwise values would be incorrect, e.g. your CS1 class would turn into CS4). If you take commonly used values from RFC, network vendors' documentation, Wikipedia or any other source, use them as they are.",#advanced
+aria2,aria2 version 1.37.0,,--pause-metadata,true|false,Pause downloads created as a result of metadata download. There are 3 types of metadata downloads in aria2: (1) downloading .torrent file. (2) downloading torrent metadata using magnet link. (3) downloading metalink file. These metadata downloads will generate downloads using their metadata. This option pauses these subsequent downloads. This option is effective only when --enable-rpc=true is given.,"#advanced, #rpc"
+aria2,aria2 version 1.37.0,,--min-tls-version,VERSION,Specify minimum SSL/TLS version to enable.,#advanced
+aria2,aria2 version 1.37.0,,--socket-recv-buffer-size,SIZE,Set the maximum socket receive buffer in bytes. Specifying 0 will disable this option. This value will be set to socket file descriptor using SO_RCVBUF socket option with setsockopt() call.,#advanced
+aria2,aria2 version 1.37.0,,--max-mmap-limit,SIZE,"Set the maximum file size to enable mmap (see --enable-mmap option). The file size is determined by the sum of all files contained in one download. For example, if a download contains 5 files, then file size is the total size of those files. If file size is strictly greater than the size specified in this option, mmap will be disabled.",#advanced
+aria2,aria2 version 1.37.0,,--stderr,true|false,Redirect all console output that would be otherwise printed in stdout to stderr.,#advanced
+aria2,aria2 version 1.37.0,,--keep-unfinished-download-result,true|false,"Keep unfinished download results even if doing so exceeds --max-download-result. This is useful if all unfinished downloads must be saved in session file (see --save-session option). Please keep in mind that there is no upper bound to the number of unfinished download result to keep. If that is undesirable, turn this option off.",#advanced
+aria2,aria2 version 1.37.0,,--ftp-user,USER,Set FTP user. This affects all URLs.,"#basic, #ftp"
+aria2,aria2 version 1.37.0,,--ftp-passwd,PASSWD,Set FTP password. This affects all URLs.,"#basic, #ftp"
+aria2,aria2 version 1.37.0,,--ftp-type,TYPE,Set FTP transfer type.,#ftp
+aria2,aria2 version 1.37.0,-p,--ftp-pasv,true|false,"Use the passive mode in FTP. If false is given, the active mode will be used.",#ftp
+aria2,aria2 version 1.37.0,,--ftp-reuse-connection,true|false,Reuse connection in FTP.,#ftp
+aria2,aria2 version 1.37.0,,--ssh-host-key-md,TYPE=DIGEST,"Set checksum for SSH host public key. TYPE is hash type. The supported hash type is sha-1 or md5. DIGEST is hex digest. For example: sha-1=b030503d4de4539dc7885e6f0f5e256704edf4c3 This option can be used to validate server's public key when SFTP is used. If this option is not set, which is default, no validation takes place.",#ftp
+aria2,aria2 version 1.37.0,,--http-user,USER,Set HTTP user. This affects all URLs.,"#basic, #http"
+aria2,aria2 version 1.37.0,,--http-passwd,PASSWD,Set HTTP password. This affects all URLs.,"#basic, #http"
+aria2,aria2 version 1.37.0,-U,--user-agent,USER_AGENT,Set user agent for http(s) downloads.,#http
+aria2,aria2 version 1.37.0,,--load-cookies,FILE,Load Cookies from FILE using the Firefox3 format and Mozilla/Firefox(1.x/2.x)/Netscape format.,"#basic, #http, #cookie"
+aria2,aria2 version 1.37.0,,--save-cookies,FILE,"Save Cookies to FILE in Mozilla/Firefox(1.x/2.x)/ Netscape format. If FILE already exists, it is overwritten. Session Cookies are also saved and their expiry values are treated as 0.","#http, #cookie"
+aria2,aria2 version 1.37.0,,--enable-http-keep-alive,true|false,Enable HTTP/1.1 persistent connection.,#http
+aria2,aria2 version 1.37.0,,--enable-http-pipelining,true|false,Enable HTTP/1.1 pipelining.,#http
+aria2,aria2 version 1.37.0,,--header,HEADER,"Append HEADER to HTTP request header. You can use this option repeatedly to specify more than one header: aria2c --header=""X-A: b78"" --header=""X-B: 9J1"" http://host/file",#http
+aria2,aria2 version 1.37.0,,--certificate,FILE,Use the client certificate in FILE. The certificate must be in PEM format. You may use --private-key option to specify the private key.,"#http, #https"
+aria2,aria2 version 1.37.0,,--private-key,FILE,Use the private key in FILE. The private key must be decrypted and in PEM format. See also --certificate option.,"#http, #https"
+aria2,aria2 version 1.37.0,,--ca-certificate,FILE,Use the certificate authorities in FILE to verify the peers. The certificate file must be in PEM format and can contain multiple CA certificates. Use --check-certificate option to enable verification.,"#http, #https"
+aria2,aria2 version 1.37.0,,--check-certificate,true|false,Verify the peer using certificates specified in --ca-certificate option.,"#http, #https"
+aria2,aria2 version 1.37.0,,--use-head,true|false,Use HEAD method for the first request to the HTTP server.,#http
+aria2,aria2 version 1.37.0,,--http-auth-challenge,true|false,"Send HTTP authorization header only when it is requested by the server. If false is set, then authorization header is always sent to the server. There is an exception: if username and password are embedded in URI, authorization header is always sent to the server regardless of this option.",#http
+aria2,aria2 version 1.37.0,,--http-no-cache,true|false,"Send Cache-Control: no-cache and Pragma: no-cache header to avoid cached content.  If false is given, these headers are not sent and you can add Cache-Control header with a directive you like using --header option.",#http
+aria2,aria2 version 1.37.0,,--http-accept-gzip,true|false,"Send 'Accept-Encoding: deflate, gzip' request header and inflate response if remote server responds with 'Content-Encoding: gzip' or 'Content-Encoding: deflate'.",#http
+aria2,aria2 version 1.37.0,,--content-disposition-default-utf8,true|false,"Handle quoted string in Content-Disposition header as UTF-8 instead of ISO-8859-1, for example, the filename parameter, but not the extended version filename*.","#advanced, #http"
+aria2,aria2 version 1.37.0,,--no-want-digest-header,true|false,Whether to disable Want-Digest header when doing requests.,#http
+aria2,aria2 version 1.37.0,,--http-proxy,PROXY,"Use a proxy server for HTTP. To override a previously defined proxy, use """". See also the --all-proxy option. This affects all http downloads.",#http
+aria2,aria2 version 1.37.0,,--https-proxy,PROXY,"Use a proxy server for HTTPS. To override a previously defined proxy, use """". See also the --all-proxy option. This affects all https downloads.","#http, #https"
+aria2,aria2 version 1.37.0,,--ftp-proxy,PROXY,"Use a proxy server for FTP. To override a previously defined proxy, use """". See also the --all-proxy option. This affects all ftp downloads.",#ftp
+aria2,aria2 version 1.37.0,,--all-proxy,PROXY,"Use a proxy server for all protocols. To override a previously defined proxy, use """". You also can override this setting and specify a proxy server for a particular protocol using the --http-proxy, --https-proxy and --ftp-proxy options. This affects all downloads.","#http, #https, #ftp"
+aria2,aria2 version 1.37.0,,--no-proxy,DOMAINS,"Specify comma separated hostnames, domains or network address with or without CIDR block where proxy should not be used.","#http, #https, #ftp"
+aria2,aria2 version 1.37.0,,--proxy-method,METHOD,Set the method to use in proxy request.,"#http, #ftp"
+aria2,aria2 version 1.37.0,,--http-proxy-user,USER,Set user for --http-proxy.,#http
+aria2,aria2 version 1.37.0,,--http-proxy-passwd,PASSWD,Set password for --http-proxy.,#http
+aria2,aria2 version 1.37.0,,--https-proxy-user,USER,Set user for --https-proxy.,"#http, #https"
+aria2,aria2 version 1.37.0,,--https-proxy-passwd,PASSWD,Set password for --https-proxy.,"#http, #https"
+aria2,aria2 version 1.37.0,,--ftp-proxy-user,USER,Set user for --ftp-proxy.,#ftp
+aria2,aria2 version 1.37.0,,--ftp-proxy-passwd,PASSWD,Set password for --ftp-proxy.,#ftp
+aria2,aria2 version 1.37.0,,--all-proxy-user,USER,Set user for --all-proxy.,"#http, #https, #ftp"
+aria2,aria2 version 1.37.0,,--all-proxy-passwd,PASSWD,Set password for --all-proxy.,"#http, #https, #ftp"
+aria2,aria2 version 1.37.0,-S,--show-files,true|false,"Print file listing of .torrent, .meta4 and .metalink file and exit. More detailed information will be listed in case of torrent file.","#basic, #metalink, #bittorrent"
+aria2,aria2 version 1.37.0,,--max-overall-upload-limit,SPEED,"Set max overall upload speed in bytes/sec. 0 means unrestricted. You can append K or M(1K = 1024, 1M = 1024K). To limit the upload speed per torrent, use --max-upload-limit option.","#basic, #bittorrent"
+aria2,aria2 version 1.37.0,-u,--max-upload-limit,SPEED,"Set max upload speed per each torrent in bytes/sec. 0 means unrestricted. You can append K or M(1K = 1024, 1M = 1024K). To limit the overall upload speed, use --max-overall-upload-limit option.","#basic, #bittorrent"
+aria2,aria2 version 1.37.0,-T,--torrent-file,TORRENT_FILE,The path to the .torrent file.,"#basic, #bittorrent"
+aria2,aria2 version 1.37.0,,--listen-port,PORT...,"Set TCP port number for BitTorrent downloads. Multiple ports can be specified by using ',', for example: ""6881,6885"". You can also use '-' to specify a range: ""6881-6999"". ',' and '-' can be used together.","#basic, #bittorrent"
+aria2,aria2 version 1.37.0,,--follow-torrent,true|false|mem,"If true or mem is specified, when a file whose suffix is .torrent or content type is application/x-bittorrent is downloaded, aria2 parses it as a torrent file and downloads files mentioned in it. If mem is specified, a torrent file is not written to the disk, but is just kept in memory. If false is specified, the .torrent file is downloaded to the disk, but is not parsed as a torrent and its contents are not downloaded.",#bittorrent
+aria2,aria2 version 1.37.0,,--select-file,INDEX...,"Set file to download by specifying its index. You can find the file index using the --show-files option. Multiple indexes can be specified by using ',', for example: ""3,6"". You can also use '-' to specify a range: ""1-5"". ',' and '-' can be used together. When used with the -M option, index may vary depending on the query(see --metalink-* options).","#metalink, #bittorrent"
+aria2,aria2 version 1.37.0,,--seed-time,MINUTES,Specify seeding time in (fractional) minutes. Also see the --seed-ratio option.,#bittorrent
+aria2,aria2 version 1.37.0,,--seed-ratio,RATIO,"Specify share ratio. Seed completed torrents until share ratio reaches RATIO. You are strongly encouraged to specify equals or more than 1.0 here. Specify 0.0 if you intend to do seeding regardless of share ratio. If --seed-time option is specified along with this option, seeding ends when at least one of the conditions is satisfied.",#bittorrent
+aria2,aria2 version 1.37.0,,--peer-id-prefix,PEER_ID_PREFIX,"Specify the prefix of peer ID. The peer ID in BitTorrent is 20 byte length. If more than 20 bytes are specified, only first 20 bytes are used. If less than 20 bytes are specified, random byte data are added to make its length 20 bytes.",#bittorrent
+aria2,aria2 version 1.37.0,,--peer-agent,PEER_AGENT,Set client reported during Extended torrent handshakes,#bittorrent
+aria2,aria2 version 1.37.0,,--enable-peer-exchange,true|false,Enable Peer Exchange extension.,#bittorrent
+aria2,aria2 version 1.37.0,,--enable-dht,true|false,"Enable IPv4 DHT functionality. It also enables UDP tracker support. If a private flag is set in a torrent, aria2 doesn't use DHT for that download even if ``true`` is given.","#basic, #bittorrent"
+aria2,aria2 version 1.37.0,,--dht-listen-port,PORT...,"Set UDP listening port used by DHT(IPv4, IPv6) and UDP tracker. Multiple ports can be specified by using ',', for example: ""6881,6885"". You can also use '-' to specify a range: ""6881-6999"". ',' and '-' can be used together.","#basic, #bittorrent"
+aria2,aria2 version 1.37.0,,--dht-entry-point,HOST:PORT,Set host and port as an entry point to IPv4 DHT network.,#bittorrent
+aria2,aria2 version 1.37.0,,--dht-file-path,PATH,Change the IPv4 DHT routing table file to PATH.,#bittorrent
+aria2,aria2 version 1.37.0,,--enable-dht6,true|false,Enable IPv6 DHT functionality. Use --dht-listen-port option to specify port number to listen on. See also --dht-listen-addr6 option.,"#basic, #bittorrent"
+aria2,aria2 version 1.37.0,,--dht-listen-addr6,ADDR,Specify address to bind socket for IPv6 DHT. It should be a global unicast IPv6 address of the host.,"#basic, #bittorrent"
+aria2,aria2 version 1.37.0,,--dht-entry-point6,HOST:PORT,Set host and port as an entry point to IPv6 DHT network.,#bittorrent
+aria2,aria2 version 1.37.0,,--dht-file-path6,PATH,Change the IPv6 DHT routing table file to PATH.,#bittorrent
+aria2,aria2 version 1.37.0,,--bt-min-crypto-level,plain|arc4,"Set minimum level of encryption method. If several encryption methods are provided by a peer, aria2 chooses the lowest one which satisfies the given level.",#bittorrent
+aria2,aria2 version 1.37.0,,--bt-require-crypto,true|false,"If true is given, aria2 doesn't accept and establish connection with legacy BitTorrent handshake. Thus aria2 always uses Obfuscation handshake.",#bittorrent
+aria2,aria2 version 1.37.0,,--bt-request-peer-speed-limit,SPEED,"If the whole download speed of every torrent is lower than SPEED, aria2 temporarily increases the number of peers to try for more download speed. Configuring this option with your preferred download speed can increase your download speed in some cases. You can append K or M(1K = 1024, 1M = 1024K).",#bittorrent
+aria2,aria2 version 1.37.0,,--bt-max-open-files,NUM,Specify maximum number of files to open in multi-file BitTorrent/Metalink downloads globally.,#bittorrent
+aria2,aria2 version 1.37.0,,--bt-seed-unverified,true|false,Seed previously downloaded files without verifying piece hashes.,#bittorrent
+aria2,aria2 version 1.37.0,,--bt-hash-check-seed,true|false,"If true is given, after hash check using --check-integrity option and file is complete, continue to seed file. If you want to check file and download it only when it is damaged or incomplete, set this option to false. This option has effect only on BitTorrent download.","#bittorrent, #checksum"
+aria2,aria2 version 1.37.0,,--bt-max-peers,NUM,Specify the maximum number of peers per torrent. 0 means unlimited. See also --bt-request-peer-speed-limit option.,#bittorrent
+aria2,aria2 version 1.37.0,,--bt-external-ip,IPADDRESS,"Specify the external IP address to use in BitTorrent download and DHT. It may be sent to BitTorrent tracker. For DHT, this option should be set to report that local node is downloading a particular torrent. This is critical to use DHT in a private network. Although this function is named 'external', it can accept any kind of IP addresses.",#bittorrent
+aria2,aria2 version 1.37.0,-O,--index-out,INDEX=PATH,Set file path for file with index=INDEX. You can find the file index using the --show-files option. PATH is a relative path to the path specified in --dir option. You can use this option multiple times.,#bittorrent
+aria2,aria2 version 1.37.0,,--bt-tracker-interval,SEC,"Set the interval in seconds between tracker requests. This completely overrides interval value and aria2 just uses this value and ignores the min interval and interval value in the response of tracker. If 0 is set, aria2 determines interval based on the response of tracker and the download progress.",#bittorrent
+aria2,aria2 version 1.37.0,,--bt-stop-timeout,SEC,"Stop BitTorrent download if download speed is 0 in consecutive SEC seconds. If 0 is given, this feature is disabled.",#bittorrent
+aria2,aria2 version 1.37.0,,--bt-prioritize-piece,"head[=SIZE],tail[=SIZE","Try to download first and last pieces of each file first. This is useful for previewing files. The argument can contain 2 keywords:head and tail. To include both keywords, they must be separated by comma. These keywords can take one parameter, SIZE. For example, if head=SIZE is specified, pieces in the range of first SIZE bytes of each file get higher priority. tail=SIZE means the range of last SIZE bytes of each file. SIZE can include K or M(1K = 1024, 1M = 1024K). If SIZE is omitted, SIZE=1M is used.",#bittorrent
+aria2,aria2 version 1.37.0,,--bt-save-metadata,true|false,"Save metadata as .torrent file. This option has effect only when BitTorrent Magnet URI is used. The filename is hex encoded info hash with suffix .torrent. The directory to be saved is the same directory where download file is saved. If the same file already exists, metadata is not saved. See also --bt-metadata-only option.",#bittorrent
+aria2,aria2 version 1.37.0,,--bt-metadata-only,true|false,Download metadata only. The file(s) described in metadata will not be downloaded. This option has effect only when BitTorrent Magnet URI is used. See also --bt-save-metadata option.,#bittorrent
+aria2,aria2 version 1.37.0,,--bt-enable-lpd,true|false,Enable Local Peer Discovery.,#bittorrent
+aria2,aria2 version 1.37.0,,--bt-lpd-interface,INTERFACE,"Use given interface for Local Peer Discovery. If this option is not specified, the default interface is chosen. You can specify interface name and IP address.",#bittorrent
+aria2,aria2 version 1.37.0,,--bt-tracker-timeout,SEC,Set timeout in seconds.,#bittorrent
+aria2,aria2 version 1.37.0,,--bt-tracker-connect-timeout,SEC,"Set the connect timeout in seconds to establish connection to tracker. After the connection is established, this option makes no effect and --bt-tracker-timeout option is used instead.",#bittorrent
+aria2,aria2 version 1.37.0,,--dht-message-timeout,SEC,Set timeout in seconds.,#bittorrent
+aria2,aria2 version 1.37.0,,--on-bt-download-complete,COMMAND,"For BitTorrent, a command specified in --on-download-complete is called after download completed and seeding is over. On the other hand, this option sets the command to be executed after download completed but before seeding. See --on-download-start option for the requirement of COMMAND.","#advanced, #hook"
+aria2,aria2 version 1.37.0,,--bt-tracker,"URI[,...",Comma separated list of additional BitTorrent tracker's announce URI. These URIs are not affected by --bt-exclude-tracker option because they are added after URIs in --bt-exclude-tracker option are removed.,#bittorrent
+aria2,aria2 version 1.37.0,,--bt-exclude-tracker,"URI[,...","Comma separated list of BitTorrent tracker's announce URI to remove. You can use special value '*' which matches all URIs, thus removes all announce URIs. When specifying '*' in shell command-line, don't forget to escape or quote it. See also --bt-tracker option.",#bittorrent
+aria2,aria2 version 1.37.0,,--bt-remove-unselected-file,true|false,"Removes the unselected files when download is completed in BitTorrent. To select files, use --select-file option. If it is not used, all files are assumed to be selected. Please use this option with care because it will actually remove files from your disk.",#bittorrent
+aria2,aria2 version 1.37.0,,--bt-detach-seed-only,true|false,"Exclude seed only downloads when counting concurrent active downloads (See -j option). This means that if -j3 is given and this option is turned on and 3 downloads are active and one of those enters seed mode, then it is excluded from active download count (thus it becomes 2), and the next download waiting in queue gets started. But be aware that seeding item is still recognized as active download in RPC method.",#bittorrent
+aria2,aria2 version 1.37.0,,--bt-force-encryption,true|false,"Requires BitTorrent message payload encryption with arc4. This is a shorthand of --bt-require-crypto --bt-min-crypto-level=arc4. If true is given, deny legacy BitTorrent handshake and only use Obfuscation handshake and always encrypt message payload.",#bittorrent
+aria2,aria2 version 1.37.0,,--bt-enable-hook-after-hash-check,true|false,"Allow hook command invocation after hash check (see -V option) in BitTorrent download. By default, when hash check succeeds, the command given by --on-bt-download-complete is executed. To disable this action, give false to this option.",#bittorrent
+aria2,aria2 version 1.37.0,,--bt-load-saved-metadata,true|false,"Before getting torrent metadata from DHT when downloading with magnet link, first try to read file saved by --bt-save-metadata option. If it is successful, then skip downloading metadata from DHT.",#bittorrent
+aria2,aria2 version 1.37.0,-M,--metalink-file,METALINK_FILE,The file path to the .meta4 and .metalink file. Reads input from stdin when '-' is specified.,"#basic, #metalink"
+aria2,aria2 version 1.37.0,,--metalink-version,VERSION,The version of the file to download.,#metalink
+aria2,aria2 version 1.37.0,,--metalink-language,LANGUAGE,The language of the file to download.,#metalink
+aria2,aria2 version 1.37.0,,--metalink-os,OS,The operating system of the file to download.,#metalink
+aria2,aria2 version 1.37.0,,--metalink-location,"LOCATION[,...",The location of the preferred server. A comma-delimited list of locations is acceptable.,#metalink
+aria2,aria2 version 1.37.0,,--follow-metalink,true|false|mem,"If true or mem is specified, when a file whose suffix is .meta4 or .metalink, or content type of application/metalink4+xml or application/metalink+xml is downloaded, aria2 parses it as a metalink file and downloads files mentioned in it. If mem is specified, a metalink file is not written to the disk, but is just kept in memory. If false is specified, the .metalink file is downloaded to the disk, but is not parsed as a metalink file and its contents are not downloaded.",#metalink
+aria2,aria2 version 1.37.0,,--metalink-preferred-protocol,PROTO,Specify preferred protocol. Specify 'none' if you don't have any preferred protocol.,#metalink
+aria2,aria2 version 1.37.0,,--metalink-enable-unique-protocol,true|false,"If true is given and several protocols are available for a mirror in a metalink file, aria2 uses one of them. Use --metalink-preferred-protocol option to specify the preference of protocol.",#metalink
+aria2,aria2 version 1.37.0,,--metalink-base-uri,URI,"Specify base URI to resolve relative URI in metalink:url and metalink:metaurl element in a metalink file stored in local disk. If URI points to a directory, URI must end with '/'.",#metalink
