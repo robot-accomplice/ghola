@@ -101,6 +101,51 @@ jobs:
       - name: Run govulncheck
         run: govulncheck ./...
 
+  # Runs ghola, curl, wget and aria2 on the same jobs (test/parity). The job
+  # fails when ghola regresses, or when a known failure starts to pass and
+  # test/parity/known.go was not updated. Images are pinned, not -latest, so
+  # the reference tool versions change only in a deliberate change.
+  parity:
+    name: Parity (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2025]
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install reference tools (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends wget2 aria2
+
+      - name: Install reference tools (macOS)
+        if: runner.os == 'macOS'
+        run: brew install aria2 wget2 || brew install aria2 wget
+
+      - name: Install reference tools (Windows)
+        if: runner.os == 'Windows'
+        run: choco install -y --no-progress aria2 wget
+
+      - name: Run parity harness
+        env:
+          PARITY_OUT: ${{ runner.temp }}/parity-out
+        run: go test -tags parity -count=1 -timeout 20m -v ./test/parity/
+
+      - name: Upload parity records
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: parity-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/parity-out/results.json
+            ${{ runner.temp }}/parity-out/summary.md
+
   scope:
     name: Scope (Rust)
     runs-on: ubuntu-latest
