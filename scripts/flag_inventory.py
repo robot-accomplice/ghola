@@ -110,26 +110,34 @@ def wget_rows(version, text):
     return rows
 
 
+def aria_details(lines, desc_parts):
+    """Read the lines under one aria2 option. Return its tags."""
+    tags = ""
+    for line in lines:
+        s = line.strip()
+        if s.startswith("Tags:"):
+            tags = s[len("Tags:"):].strip()
+        elif s and not s.startswith(("Possible Values:", "Default:")) and not tags:
+            desc_parts.append(s)
+    return tags
+
+
 def aria_rows(version, text):
     raw = text.splitlines()
     rows, i = [], 0
     while i < len(raw):
         m = ARIA.match(raw[i])
+        i += 1
         if not m:
-            i += 1
             continue
         short, long_, arg, desc = m.groups()
         arg = (arg or "").lstrip("[").lstrip("=").rstrip("]")
-        desc_parts, tags = ([desc.strip()] if desc else []), ""
-        i += 1
+        desc_parts = [desc.strip()] if desc else []
+        start = i
         while i < len(raw) and not ARIA.match(raw[i]):
-            s = raw[i].strip()
-            if s.startswith("Tags:"):
-                tags = s[len("Tags:"):].strip()
-            elif s and not s.startswith(("Possible Values:", "Default:")) and not tags:
-                desc_parts.append(s)
             i += 1
-        rows.append(["aria2", version, short or "", long_, arg or "", " ".join(desc_parts), tags])
+        tags = aria_details(raw[start:i], desc_parts)
+        rows.append(["aria2", version, short or "", long_, arg, " ".join(desc_parts), tags])
     return rows
 
 
