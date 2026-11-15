@@ -25,7 +25,7 @@ For each scenario and tool, `results.json` has the arguments, exit code, time, p
 
 ## The known-failure list
 
-`known.go` lists the scenarios that ghola fails today and the audit finding for each one. The test fails when:
+`known_test.go` lists the scenarios that ghola fails today and the audit finding for each one. The test fails when:
 
 1. ghola fails a scenario that is not in the list (a regression), or
 2. ghola passes a scenario that is in the list. Remove the entry in the same change as the fix.
@@ -34,8 +34,8 @@ A reference tool that fails a rule is logged, not treated as an error. The rule 
 
 ## Add a scenario
 
-1. Add a server route in `server.go` if the case needs one. Use `redirect` for redirects, so they stay inside the run's path prefix.
-2. Add a `scenario` in `scenarios.go`: an ID, the finding it belongs to (`ok` for behaviour that must not regress), a command for each tool that can do the job, and a `check`.
-3. Run the harness. If ghola fails the new scenario, add it to `known.go` with the reason.
+1. Add a server route in `server_test.go` if the case needs one. Use `redirect` for redirects, so they stay inside the run's path prefix.
+2. Add a `scenario` in `scenarios_test.go`: an ID, the finding it belongs to (`ok` for behaviour that must not regress), a command for each tool that can do the job, and a `check`.
+3. Run the harness. If ghola fails the new scenario, add it to `known_test.go` with the reason.
 
 Write the check as the correct result, not as the behaviour of one tool. Use `toFile` when the scenario does not test stdout, so a stdout defect cannot hide the result.

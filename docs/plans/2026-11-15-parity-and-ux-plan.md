@@ -106,7 +106,7 @@ A user who pastes a curl command (for example from the browser's "Copy as cURL")
 
 The audit's harness existed only in a session scratchpad. Port it into the repo as a Go test. Every later phase depends on it.
 
-**Status (2026-11-15):** steps 1 to 3 are done in `test/parity/` (branch `test/parity-harness`). 54 scenarios run on Windows against curl 8.18.0, Wget2 2.2.1 and aria2 1.37.0. The known-failure list in `test/parity/known.go` holds 33 ghola failures. The harness found a new finding, H8, and corrected M4 in the audit report. Steps 4 and 5 (CI and pinned versions) wait for Jon's approval of the CI change.
+**Status (2026-11-15):** steps 1 to 3 are done in `test/parity/` (branch `test/parity-harness`). 54 scenarios run on Windows against curl 8.18.0, Wget2 2.2.1 and aria2 1.37.0. The known-failure list in `test/parity/known_test.go` holds 33 ghola failures. The harness found a new finding, H8, and corrected M4 in the audit report. Steps 4 and 5 are in CI since PR robot-accomplice/ghola#41: a `parity` job on `ubuntu-24.04`, `macos-15` and `windows-2025`. Pinned images fix the reference tool versions.
 
 1. Add `test/parity/`. It holds a Go test server with the audit's hostile cases: ignored Range, wrong `Content-Range`, truncated body, hang, redirect chains, cross-host redirect, gzip, `Content-Disposition` traversal, flaky 503, self-signed TLS.
 2. Add a runner. It runs one scenario on ghola and on each installed reference tool. It records exit code, stdout hash, stderr, the files written, the server's request log, the time and the peak memory.

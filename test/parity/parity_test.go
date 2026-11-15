@@ -114,14 +114,14 @@ func TestParity(t *testing.T) {
 	writeRecords(t, out, tools, results)
 }
 
-// judge applies the ratchet in known.go to ghola's result.
+// judge applies the ratchet in known_test.go to ghola's result.
 func judge(t *testing.T, sc scenario, r *Result) {
 	t.Helper()
 	why, isKnown := known[sc.ID]
 	r.Known = why
 	switch {
 	case r.Pass && isKnown:
-		t.Errorf("ghola now passes %s (%s): remove it from known.go", sc.ID, why)
+		t.Errorf("ghola now passes %s (%s): remove it from known_test.go", sc.ID, why)
 	case !r.Pass && !isKnown:
 		t.Errorf("ghola fails %s: %s (args %q, exit %d, stderr %q)", sc.ID, r.Reason, r.Args, r.Exit, firstLine(r.Stderr))
 	case !r.Pass:
@@ -149,7 +149,7 @@ func TestScenariosCoverAuditFindings(t *testing.T) {
 	}
 	for id := range known {
 		if !ids[id] {
-			t.Errorf("known.go lists %s, but no scenario has that ID", id)
+			t.Errorf("known_test.go lists %s, but no scenario has that ID", id)
 		}
 	}
 }
