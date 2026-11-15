@@ -22,3 +22,6 @@ scope/target/
 
 # Serena MCP (local tooling cache/config)
 .serena/
+
+# Parity harness records
+test/parity/out/
