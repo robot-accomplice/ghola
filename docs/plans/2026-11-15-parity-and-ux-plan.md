@@ -1,0 +1,273 @@
+# Plan: match curl, aria2 and wget, and give a better user experience than all three
+
+Date: 2026-11-15. Base: ghola v0.8.0 (`main` at `c157e0f`).
+Input: the audit `docs/audits/2026-11-12-v0.7.0-vs-curl-aria2-wget.md`.
+Status: DRAFT. Decisions D1 to D5 are made (2026-11-15). Nothing in this plan is started.
+
+## 1. Goal
+
+ghola does each job that curl, aria2 and wget do, with a result that is the same or better. It is also easier to use than any of the three.
+
+"The same or better" is a measured claim, not an opinion. A feature counts as done only when the parity harness (section 4) shows all of these:
+
+1. **Result.** The bytes on stdout, the files written and the state of the files after a failure are the same as the best reference tool, or better.
+2. **Exit.** The exit code tells the cause of the failure at least as precisely as curl.
+3. **Cost.** Throughput, peak memory and request count are no worse than the best reference tool, within 10%.
+4. **Hostile input.** The harness's hostile servers give a result that is no worse than the best reference tool.
+
+"Better experience" is also measured. Section 6 lists each improvement and its check.
+
+## 2. Where ghola is today
+
+ghola has about 55 flags. curl has about 270. The table shows the state for each area. "Have" means the feature exists. It does not mean the feature has passed the parity harness.
+
+| Area | ghola v0.8.0 | Best reference |
+|---|---|---|
+| HTTP/1.1 methods, data, forms, upload | Have (`-X -d -F --data-binary --data-urlencode -T`) | curl |
+| Byte-exact stdout | **Broken** (audit H2) | curl |
+| Redirects | Have, but credentials leak (H1) and the limit exits 0 (H6) | curl |
+| HTTP/2 | Only through the impersonation transport (tls-client) | curl |
+| HTTP/3 | `--http3`, only through the impersonation transport | curl |
+| TLS verification, `--cacert`, `-k`, client certificates | Have | curl |
+| TLS version, cipher, pinning, OCSP, ECH flags | Missing | curl |
+| Browser impersonation (TLS and HTTP/2 fingerprint) | **Have, better than all three** | none |
+| Cookies | JSON jar only. curl and wget use the Netscape format | curl |
+| Proxies | HTTP proxy, proxy pools. No SOCKS flag, no `HTTP_PROXY` (M8), no `--noproxy` | curl |
+| Name resolution control (`--resolve`, `--connect-to`, `-4/-6`, DoH) | Missing | curl |
+| Auth | Basic only. No Digest, NTLM, Negotiate, AWS SigV4, `--netrc` | curl |
+| Retries | `-r --backoff --retry-http` | curl |
+| Timeouts | One timeout, and `-o` ignores it (H3) | curl |
+| Resume | Have, checked since v0.8.0 | curl, aria2 |
+| Segmented download from one URL | Have (`-n`), checked since v0.8.0 | aria2 |
+| Several URLs, URL globbing, input file of URLs | Missing | curl, aria2, wget |
+| Several mirrors for one file | Missing | aria2 |
+| Checksum check | Missing | aria2 |
+| Saved session and restart of a download queue | Missing | aria2 |
+| Metalink | Missing | aria2, Wget2 |
+| BitTorrent and magnet links | Missing | aria2 |
+| RPC control of a running downloader | Bridge only (`--serve`), with no download control | aria2 |
+| Recursive download, mirror, link conversion, robots.txt | Missing | wget |
+| Time-stamping (`-N`, `-z`), ETag save and compare | Missing. `-R` sets the file time | wget, curl |
+| WARC output | Missing | wget 1.x |
+| `--write-out`, `--trace`, HAR | HAR only (`--har`). `--timing` | curl |
+| Protocols other than HTTP(S) | None | curl (about 25 protocols) |
+| Config file | Missing | curl, wget, aria2 |
+| Rate limit | `-o` only. stdout ignores it (M3) | curl |
+| Progress meter | Noisy and wrong (M4) | curl |
+
+## 3. Decisions for Jon before work starts
+
+These decisions change the size and order of the plan. Each has a recommendation.
+
+**D1. Protocol scope.** curl supports about 25 protocols.
+- A. All of them, including DICT, GOPHER, IMAP, LDAP, MQTT, POP3, RTMP, RTSP, SMB, SMTP, TELNET and TFTP.
+- B. HTTP(S), WebSocket, FTP(S), SFTP, SCP and FILE. These are the protocols that wget and aria2 also use for downloads, plus SSH transfer.
+- C. HTTP(S) and WebSocket only.
+- **DECIDED by Jon, 2026-11-15: B.** It covers every download job of the three tools. The protocols that A adds are mail, directory and streaming protocols. They do not fit a fetcher, and each one adds its own security surface. Record A as "not planned" with this reason. Do not leave it as "later".
+
+**D2. Flag structure. DECIDED by Jon, 2026-11-15:** the next release is a major version. It gets a new flag structure, designed for the most intuitive use. Section 5A describes the design work. The conflict table below shows one reason for the change: ghola's current letters conflict with curl's. The options below are kept as a record. They are no longer open.
+
+8 short flags mean different things in ghola and curl:
+
+| Flag | ghola | curl |
+|---|---|---|
+| `-r` | `--retry` | `--range` |
+| `-b` | `--backoff` | `--cookie` |
+| `-c` | `--chain` | `--cookie-jar` |
+| `-D` | `--drift` | `--dump-header` |
+| `-G` | `--ghost` | `--get` |
+| `-S` | `--snoop` | `--show-error` |
+| `-w` | `--wget` | `--write-out` |
+| `-n` | `--connections` | `--netrc` |
+
+A user who pastes a curl command (for example from the browser's "Copy as cURL") gets a different request with no warning.
+- A. Give these letters curl's meaning in a major version (v1.0.0). Keep the ghola long names. Before that release, print a warning when one of the 8 letters is used.
+- B. Keep the ghola meanings. Add a `--compat curl` mode, or a `curl` program name, that uses curl's meanings.
+- C. Keep everything as it is.
+- Superseded by the decision above. The new design keeps the main benefit of A: a pasted curl command still works, through the compatibility commands in section 5A. It does this without forcing curl's letters onto the native flags.
+
+**D3. One HTTP engine or two.** ghola has two transports: fasthttp (HTTP/1.1 only) and tls-client (fhttp, with HTTP/2, HTTP/3 and impersonation). Every feature in this plan must work on each transport that stays.
+- A. Move to one engine: the fhttp/tls-client stack for all requests. Use a plain Go TLS profile when impersonation is off.
+- B. Keep both, and test each feature on both.
+- **DECIDED by Jon, 2026-11-15: A, after a benchmark.** fasthttp cannot do HTTP/2 or HTTP/3, so parity with curl needs the second stack anyway. One engine halves the test matrix. The benchmark must show that the single engine meets the "Cost" criterion in section 1 for plain HTTP/1.1 downloads. If it does not, choose B.
+
+**D4. Default behaviour changes.** Some curl defaults are bad for users. For example, curl writes binary data to a terminal, and it does not follow redirects. ghola can choose better defaults, but every changed default breaks a pasted curl command.
+- A. The native command uses ghola's own defaults. The compatibility commands (`ghola curl`, `ghola wget`, `ghola aria2c`) use the defaults of the tool they copy.
+- B. Use curl's defaults everywhere.
+- **DECIDED by Jon, 2026-11-15: A.** Each individual default is still Jon's decision, in section 5A, step 3. The new flag structure (D2) means native commands do not need to copy curl. Pasted commands go through a compatibility command, so they keep the behaviour their authors expected. The defaults to choose are in section 5A, step 3.
+
+**D5. BitTorrent.** BitTorrent needs a DHT node, peer connections and seeding. These make ghola a peer in a public network, not only a client.
+- A. Full support: DHT, PEX, magnet links, seeding, web seeds.
+- B. Download only: magnet links and `.torrent` files, with web seeds, and a fixed seeding ratio after the download.
+- C. None.
+- **DECIDED by Jon, 2026-11-15: B.** It matches the aria2 download job. Full seeding control is a separate product.
+
+## 4. Phase 0: the parity harness
+
+The audit's harness existed only in a session scratchpad. Port it into the repo as a Go test. Every later phase depends on it.
+
+**Status (2026-11-15):** steps 1 to 3 are done in `test/parity/` (branch `test/parity-harness`). 54 scenarios run on Windows against curl 8.18.0, Wget2 2.2.1 and aria2 1.37.0. The known-failure list in `test/parity/known.go` holds 33 ghola failures. The harness found a new finding, H8, and corrected M4 in the audit report. Steps 4 and 5 (CI and pinned versions) wait for Jon's approval of the CI change.
+
+1. Add `test/parity/`. It holds a Go test server with the audit's hostile cases: ignored Range, wrong `Content-Range`, truncated body, hang, redirect chains, cross-host redirect, gzip, `Content-Disposition` traversal, flaky 503, self-signed TLS.
+2. Add a runner. It runs one scenario on ghola and on each installed reference tool. It records exit code, stdout hash, stderr, the files written, the server's request log, the time and the peak memory.
+3. Write the results as JSON, one record for each tool and scenario. A report command compares ghola with the best reference tool for each scenario.
+4. Run the harness in CI on Linux, macOS and Windows. The audit tested Windows only.
+5. Pin the reference tool versions in the harness. A new curl version changes the reference, so update the pin in its own change.
+
+Exit criteria: the harness reproduces each audit finding from H1 to M9, and each reproduction fails on v0.8.0.
+
+RCA data (Rule 13): each scenario record keeps the raw server log and the exact stdout bytes, so a failure can be checked after the run.
+
+## 5A. Phase 0B: the new flag structure (major version)
+
+The flag structure is designed before phases 2 to 4 add about 200 options. Each option added under the old structure would have to be renamed later.
+
+### Design principles
+
+Each principle comes from a known problem in curl, wget or aria2.
+
+1. **The job is a word, not a flag.** `ghola <url>` fetches. Other jobs are subcommands: `ghola download`, `ghola mirror`, `ghola jobs` (queue, pause, resume), `ghola serve`, `ghola explain`. Today wget's `-r`, curl's `-Z` and aria2's `-i` each change the whole job with one letter.
+2. **One concept, one prefix.** Related options share a prefix: `--tls-*`, `--proxy-*`, `--retry-*`, `--cookie-*`, `--auth-*`, `--output-*`, `--impersonate-*`. curl has `--cacert`, `--capath`, `--ciphers`, `--tlsv1.2` and `--ssl-reqd` for one concept.
+3. **Values instead of flag families.** `--http 2` and not `--http2`, `--http2-prior-knowledge`, `--http3-only`. `--ip 6` and not `-6`. `--tls-min 1.2`, not `--tlsv1.2`.
+4. **Units in values.** `--timeout 30s`, `--limit 2MB/s`, `--max-size 1GB`. Today ghola uses milliseconds, curl uses seconds, and wget uses both.
+5. **Every boolean has a `--no-` form.** A config file default can then be turned off on the command line.
+6. **Few short letters, all mnemonic.** Give letters only to the most common options. Choose the letters from measured use, not from habit (step 2). Each letter has one meaning in all subcommands.
+7. **Same name in every mode.** `--retry-max` means the same thing for fetch, download and mirror.
+8. **Errors teach.** An unknown flag shows the nearest match. A curl or wget flag in a native command shows the native name: "`-L` is a curl flag. In ghola, redirects are on by default. Use `--no-follow` to turn them off."
+
+### Compatibility commands
+
+`ghola curl <curl arguments>`, `ghola wget <wget arguments>` and `ghola aria2c <aria2 arguments>` accept the other tools' syntax unchanged. Each one also accepts `--show-native`. That flag prints the equivalent native command and does not run it, so users learn the new flags from commands they already know.
+
+These commands replace the old D2 options A and B. A pasted "Copy as cURL" command works as `ghola curl …`. The native flags keep a clean design.
+
+### Steps
+
+1. **Inventory.** Generate a list of every option of curl, wget, Wget2, aria2 and ghola v0.8.0 from each tool's help output. Do this with a script, not by hand (Rule 6). Map each option to one concept, for example "TLS minimum version" or "retry count".
+2. **Measure use.** Count how often each option occurs in real commands: the "Copy as cURL" output of the browsers, the READMEs and scripts of public repos, and this repo's docs. The most frequent options get short letters (principle 6).
+3. **Decide defaults.** List each default where ghola can differ from curl: follow redirects, fail on HTTP errors, refuse binary output to a terminal, retry transient errors, decompress responses, and show progress only on a terminal. Jon decides each one.
+4. **Draft the spec.** Write `docs/cli-v1.md`: each subcommand, each option, its type, its unit, its default, and the curl, wget and aria2 equivalents.
+5. **Task test.** Write 40 common tasks, for example "resume a download", "post JSON with a bearer token" and "mirror a site to depth 2". For each task, compare the native command with curl, wget and aria2: number of options, characters, and how many tasks need the documentation. The native command must be the shortest or tie for each task. Where it is not, change the spec.
+6. **Review.** Jon reviews the spec and the task results before any code changes.
+7. **Build.** Replace `config.ParseFlags` with the new parser. This also clears the SonarCloud S3776 complexity finding. Build the compatibility commands on the same option table, so they cannot drift from the native flags.
+8. **Migration.** v0.9.x prints a warning when a v0 flag is used, with the new name. v1.0.0 removes the v0 flags. `ghola curl` is the stable path for scripts that use curl syntax.
+
+Exit criteria: the spec is approved, the task test passes, and every v0.8.0 flag has a mapping, or a recorded reason to remove it.
+
+## 5. Phases 1 to 5: features
+
+Phases 2 to 5 use the new flag structure. The curl flag names in those phases name the feature that must exist. They are not the flag that ghola will use.
+
+Each phase starts with harness scenarios that fail. The phase ends when they pass. A phase can start before the previous phase ends, but it cannot claim parity before the harness passes.
+
+### Phase 1: correct HTTP (the audit's open findings)
+
+Parity claims are not possible while the basic fetch is wrong. Fix these first, in this order:
+0. H8: send `-u` credentials on the download path too. It breaks a normal use, so it goes first.
+1. H2 and M2: stream the body to stdout byte-exact. Send `-v`, `-i` and all metadata to stderr.
+2. H1: drop `Authorization`, `Cookie` and `-u` credentials on a cross-host redirect. Add `--location-trusted`.
+3. H3: apply `--timeout` to every path. Add curl's separate `--connect-timeout`, `--max-time`, `--speed-limit` and `--speed-time`.
+4. H4: make `-n` apply only to segmented downloads. Report every failed request and set the exit code.
+5. H5: reject a negative `-r`.
+6. H6 and H7: the redirect-limit exit code, and `-f -o` writes no file.
+7. M1: send no default `Content-Type` on GET. Send `application/x-www-form-urlencoded` for `-d`, as curl does.
+8. M3 to M9: rate limit on stdout, progress meter, the extra HEAD request, exit codes, input checks, proxy variables, URL handling.
+9. Exit codes: adopt curl's exit code numbers for the same causes (6, 7, 22, 23, 28, 35, 47, 60, and the others). This is a breaking change, so it goes into the same major version as D2.
+
+### Phase 2: curl HTTP parity
+
+1. HTTP versions: `--http1.0 --http1.1 --http2 --http2-prior-knowledge --http3 --http3-only` on every transport that stays (D3).
+2. Name resolution and connections: `--resolve`, `--connect-to`, `-4`, `-6`, `--interface`, `--local-port`, `--unix-socket`, `--doh-url`, Happy Eyeballs.
+3. TLS: `--tlsv1.2 --tlsv1.3 --tls-max`, `--ciphers`, `--pinnedpubkey`, `--cert-status`, `--crlfile`, ECH, client certificate types. Keep impersonation as a ghola-only feature on top.
+4. Auth: Digest, NTLM, Negotiate, `--oauth2-bearer`, `--aws-sigv4`, `--netrc` and `--netrc-file`.
+5. Proxies: SOCKS4, SOCKS4a, SOCKS5, SOCKS5h, HTTPS proxy, `--noproxy`, `--proxy-*` TLS flags, and the proxy environment variables.
+6. Cookies: read and write the Netscape format, so jars work with curl and wget. Keep the JSON jar as a ghola format.
+7. Requests: `-G`, `--url-query`, `--json`, `--form-string`, `--variable`, `--path-as-is`, `--request-target`, `-I`, `--head`.
+8. Output: `-w/--write-out` with curl's variables and `%{json}`, `-D/--dump-header`, `--trace`, `--trace-ascii`, `--trace-time`, `--create-dirs`, `--output-dir`, `--max-filesize`, `--no-clobber`, `--remove-on-error`.
+9. Conditional requests: `-z/--time-cond`, `--etag-save`, `--etag-compare`, and `If-Range` on every resume. The audit found that no tested tool checks `If-Range`, so this is a point where ghola can do better than all three.
+10. Several URLs: more than one URL, `-:/--next`, URL globbing (`{a,b}` and `[1-9]`), `-Z/--parallel`, `--parallel-max`.
+11. HSTS and Alt-Svc caches: `--hsts`, `--alt-svc`.
+12. Config file: read `-K/--config` in curl's syntax, and `~/.config/ghola/config`.
+
+### Phase 3: aria2 download-manager parity
+
+1. A job engine: a queue of downloads with a maximum number of active jobs (`-j`), and a global rate limit.
+2. Input file: `-i` with one URL on each line and options for each job, in aria2's format.
+3. Several mirrors for one file: split the segments across the mirrors, and choose the faster mirror based on measured speed.
+4. File allocation: `none`, `prealloc`, `falloc`, `trunc`.
+5. Checksums: `--checksum=sha-256=<hex>` for the whole file, and piece hashes from Metalink. Check before the download is reported as done.
+6. A saved session: write a state file next to each partial download. Restart all unfinished jobs with one command. aria2 has this, and curl and wget do not.
+7. Metalink v3 and v4 (RFC 5854), including mirrors, piece hashes and signatures.
+8. BitTorrent, as decided in D5.
+9. RPC: JSON-RPC over HTTP and WebSocket to add, pause, stop and list jobs. Put it behind the v0.8.0 bridge checks (Host, token, Content-Type). Do not add a second listener with a weaker design.
+10. Hooks: run a command when a job finishes or fails (`--on-download-complete`).
+11. FTP(S), SFTP and SCP sources, if D1 is B.
+
+### Phase 4: wget parity
+
+1. Recursive download: `-r`, `-l`, `-np`, `-H`, `-D`, `-A/-R`, `--accept-regex/--reject-regex`, `-I/-X` directory lists.
+2. Mirror: `-m`, `-N` time-stamping, `-nc`, `-x/-nd/-nH`, `--cut-dirs`.
+3. Page requisites and link conversion: `-p`, `-k`, `-K`, `-E`.
+4. robots.txt and `nofollow`, on by default as in wget. `-e robots=off` turns them off.
+5. Politeness: `--wait`, `--random-wait`, `--quota`.
+6. Input from HTML: `-F -i page.html`, and sitemap parsing as in Wget2.
+7. `--spider` mode to check links without saving them.
+8. File names: `--restrict-file-names`, `--content-disposition`, `--adjust-extension`.
+9. WARC output (`--warc-file`). This matters for forensic users, because WARC is the standard archive format for web captures.
+10. Background mode (`-b`) with a log file.
+11. wget's `-e` and `.wgetrc` options, mapped to the ghola config file.
+
+wget's short flags conflict with curl's in many places (for example `-O`, `-c`, `-N`). ghola cannot follow both. Use curl's letters (D2). Keep wget's long names, and add a `ghola mirror` mode that uses wget's letters if user demand shows a need. This keeps one flag language for the main command.
+
+### Phase 5: other protocols (D1)
+
+For each protocol in the chosen scope: upload, download, resume, list, and the same exit codes as curl. Each protocol gets harness scenarios first, as in the other phases.
+
+## 6. Better experience than all three
+
+Each item has a check. None of these changes a curl default (D4).
+
+| Improvement | Why it is better | Check |
+|---|---|---|
+| Pasted curl, wget and aria2 commands work | `ghola curl …` runs the browser's "Copy as cURL" output unchanged (section 5A) | The harness replays a set of "Copy as cURL" commands from Chrome, Firefox and Safari |
+| `--show-native` teaches the new flags | No other tool translates commands | A test for each compatibility command: the native command it prints gives the same harness result |
+| One tool for fetch, download manager and mirror | Users learn one flag language, not three | Every phase 3 and 4 feature uses the same flag names as phase 2 |
+| Error messages say what failed, why, and what to try | curl prints a code and a short line. wget and aria2 print log lines | Each exit code has one message test |
+| "Did you mean" for unknown flags | curl says only "option unknown" | A test for each long flag with one typo |
+| `ghola explain <exit code>` | Users do not need the curl man page to read an exit code | A test for each code |
+| Progress only on a terminal, with correct totals | Fixes M4. aria2's summary lines are hard to read | Harness checks: no progress output when stderr is a file. Correct total with `--compressed` and retries |
+| A multi-job display that shows each job on one line | aria2 shows one summary line. wget shows one job at a time | Manual check on Linux, macOS and Windows terminals |
+| Machine output: `--json-events` writes one JSON line for each transfer event | curl's `--write-out` is a template language. aria2 needs RPC | A JSON schema in the repo. A test validates the output against it |
+| Every interrupted download can restart | curl and wget lose a queue. aria2 needs `--save-session` | Harness: kill the process during a job, run it again, compare the file |
+| Resume checks `If-Range` | All 4 tested tools mixed old and new content | Harness scenario: the file changes between the first request and the resume |
+| Integrity by default where the server gives a digest (`Digest`, `Content-Digest`, Metalink) | No reference tool checks `Content-Digest` | Harness scenario with a wrong digest |
+| `--help <topic>` and shell completion for bash, zsh, fish and PowerShell | curl has `--help category`, but no completion in the binary | A test for each shell's completion script |
+| Browser impersonation in every mode (fetch, download, mirror) | None of the three can do it | Harness check against a local JA3/JA4 fingerprint server |
+
+## 7. Risks
+
+1. **Size.** curl took more than 25 years to reach its feature set. This plan is very large. The phases let each part ship on its own. Phase 1 is useful even if later phases never start.
+2. **Compatibility commands drift from the native flags.** Build both on one option table (section 5A, step 7). The harness runs each compatibility scenario, and also the native command that `--show-native` prints.
+2a. **Users of v0 flags break.** The v0.9.x warnings and the `ghola curl` path reduce this. The bridge clients (scope, scope-bca) use JSON fields, not flags. Check that the new structure does not rename those fields, or tell the scope-bca session first.
+3. **Two transports.** If D3 is B, every feature needs tests on both transports.
+4. **Binary size.** BitTorrent, SSH and WARC add dependencies. Measure the binary size in CI. Set a limit with Jon before phase 3.
+5. **Security surface.** Each new protocol, the RPC interface and BitTorrent add attack paths. Each one needs its own adversarial review before release, as C1 showed.
+6. **Reference drift.** curl changes often. The pinned reference versions (phase 0, step 5) keep the parity claims honest.
+7. **Impersonation conflicts.** Some curl flags (for example `--ciphers`, `--http1.1`) contradict a browser profile. The rule: an explicit flag wins, and ghola prints one warning that the fingerprint no longer matches the profile.
+
+## 8. What is not planned, and why
+
+- **curl's mail, directory and streaming protocols** (if D1 is B): they do not fit a fetcher, and each one adds a security surface with no download use.
+- **`--libcurl` code output:** ghola is not a library that other programs link to, so there is no code to generate.
+- **BitTorrent seeding control beyond a fixed ratio** (if D5 is B): it is a separate product, a torrent client, not a downloader.
+
+## 9. Order of work
+
+1. D1 to D5 are decided. Run the D3 benchmark early: the phase 1 fixes go into the engine that stays.
+2. Phase 0: the harness. Phase 0B (the flag design) runs at the same time, because the design work does not change code.
+3. Phase 1: the audit fixes, in the v0 flags. Release them as v0.9.0, with the v0-flag warnings from section 5A, step 8.
+4. Build the new flag structure and the compatibility commands. Release them, with the exit-code change, as v1.0.0.
+5. Phase 2, in the new flag structure.
+6. Phases 3 and 4. They can run in parallel, because they touch different packages, but both use the phase 3 job engine. Build the job engine first.
+7. Phase 5.
+8. Section 6 items go with the phase that adds the code they depend on, not at the end.
