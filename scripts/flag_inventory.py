@@ -6,19 +6,50 @@ section 5A, step 1). It reads each tool's own help output, so the list is
 exact for the installed versions, and writes one CSV row per option.
 
 Usage:
-    python scripts/flag_inventory.py --ghola ./ghola --curl curl \
-        --wget wget2 --aria2 aria2c > inventory.csv
+    python scripts/flag_inventory.py > docs/cli/flag-inventory.csv
 
-A tool whose path is not given is skipped. The summary goes to stderr.
+The script finds each tool by a fixed name: first in the repository root
+(a local ghola build), then on PATH, then in the winget package folder.
+A tool that is not found is skipped. The summary goes to stderr.
 """
 
-import argparse
 import csv
+import glob
+import os
 import re
+import shutil
 import subprocess
 import sys
 
+# The tools to list, and the program names to look for, in order.
+TOOLS = {
+    "ghola": ("ghola",),
+    "curl": ("curl",),
+    "wget": ("wget2", "wget"),
+    "aria2": ("aria2c",),
+}
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 FIELDS = ["tool", "version", "short", "long", "arg", "description", "tags"]
+
+
+def locate(names):
+    """Return the path of the first program in names that exists, or None."""
+    exe = ".exe" if os.name == "nt" else ""
+    winget = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Microsoft", "WinGet", "Packages")
+    for name in names:
+        local = os.path.join(ROOT, name + exe)
+        if os.path.isfile(local):
+            return local
+        found = shutil.which(name)
+        if found:
+            return found
+        if os.name == "nt":
+            for pattern in ("*", os.path.join("*", "*")):
+                hits = glob.glob(os.path.join(winget, pattern, name + exe))
+                if hits:
+                    return hits[0]
+    return None
 
 
 def run(path, *args):
@@ -47,7 +78,7 @@ PFLAG = re.compile(r"^\s+(?:(-\S),\s+)?(--[A-Za-z0-9][\w.-]*)(?:\s([a-zA-Z]+))?\
 # wget and Wget2: "  -c  --continue   Resume..." or "  -c,  --continue  ..."
 WGET = re.compile(r"^\s{1,8}(?:(-\S),?\s+)?(--[A-Za-z0-9][\w-]*)(?:=(\S+))?(?:\s{2,}(\S.*))?$")
 # aria2c --help=#all: " -x, --max-connection-per-server=NUM   ..."
-ARIA = re.compile(r"^ (?:(-\S), )?(--[A-Za-z0-9][\w-]*)(\S*)(?:\s+(\S.*))?$")
+ARIA = re.compile(r"^ (?:(-\S), )?(--[A-Za-z0-9][\w-]*)([^\s\w-]\S*)?(?:\s+(\S.*))?$")
 
 
 def simple(tool, version, text, pattern):
@@ -88,7 +119,7 @@ def aria_rows(version, text):
             i += 1
             continue
         short, long_, arg, desc = m.groups()
-        arg = arg.lstrip("[").lstrip("=").rstrip("]")
+        arg = (arg or "").lstrip("[").lstrip("=").rstrip("]")
         desc_parts, tags = ([desc.strip()] if desc else []), ""
         i += 1
         while i < len(raw) and not ARIA.match(raw[i]):
@@ -103,20 +134,20 @@ def aria_rows(version, text):
 
 
 def main():
-    p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    for name in ("ghola", "curl", "wget", "aria2"):
-        p.add_argument("--" + name, help=f"path to {name}")
-    a = p.parse_args()
+    path = {name: locate(names) for name, names in TOOLS.items()}
+    for name, p in path.items():
+        if p is None:
+            print(f"{name}: not found, skipped", file=sys.stderr)
 
     rows = []
-    if a.ghola:
-        rows += simple("ghola", first_line(run(a.ghola, "--version")), run(a.ghola, "--help"), PFLAG)
-    if a.curl:
-        rows += simple("curl", first_line(run(a.curl, "--version")), run(a.curl, "--help", "all"), CURL)
-    if a.wget:
-        rows += wget_rows(first_line(run(a.wget, "--version")), run(a.wget, "--help"))
-    if a.aria2:
-        rows += aria_rows(first_line(run(a.aria2, "--version")), run(a.aria2, "--help=#all"))
+    if path["ghola"]:
+        rows += simple("ghola", first_line(run(path["ghola"], "--version")), run(path["ghola"], "--help"), PFLAG)
+    if path["curl"]:
+        rows += simple("curl", first_line(run(path["curl"], "--version")), run(path["curl"], "--help", "all"), CURL)
+    if path["wget"]:
+        rows += wget_rows(first_line(run(path["wget"], "--version")), run(path["wget"], "--help"))
+    if path["aria2"]:
+        rows += aria_rows(first_line(run(path["aria2"], "--version")), run(path["aria2"], "--help=#all"))
 
     seen, unique = set(), []
     for r in rows:
