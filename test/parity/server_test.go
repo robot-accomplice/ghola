@@ -18,6 +18,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -243,10 +244,11 @@ func (s *server) routes() {
 		}
 		redirect(w, r, fmt.Sprintf("/redirect/%d", n-1), http.StatusFound)
 	})
-	// A redirect to another host name (localhost) on the same server.
+	// A redirect to another host name (localhost) on the same server. The
+	// target uses the server's own port, not the request's Host header.
 	m.HandleFunc("/xhost", func(w http.ResponseWriter, r *http.Request) {
-		_, port, _ := net.SplitHostPort(r.Host)
-		http.Redirect(w, r, "http://localhost:"+port+"/s/"+runKey(r)+"/echo", http.StatusFound)
+		_, port, _ := net.SplitHostPort(s.plain.Listener.Addr().String())
+		http.Redirect(w, r, "http://localhost:"+port+"/s/"+url.PathEscape(runKey(r))+"/echo", http.StatusFound)
 	})
 	m.HandleFunc("/r307", func(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/echo", http.StatusTemporaryRedirect)
