@@ -33,17 +33,7 @@ func findTools(t *testing.T, ghola string) map[string]*tool {
 		"aria2": {"aria2c"},
 	}
 	for name, bins := range search {
-		path := os.Getenv("PARITY_" + strings.ToUpper(name))
-		for _, b := range bins {
-			if path != "" {
-				break
-			}
-			if p, err := exec.LookPath(b); err == nil {
-				path = p
-			} else {
-				path = wingetPath(b)
-			}
-		}
+		path := locate(name, bins)
 		if path == "" {
 			t.Logf("%s: not found, its scenarios are skipped", name)
 			continue
@@ -62,6 +52,22 @@ func findTools(t *testing.T, ghola string) map[string]*tool {
 		}
 	}
 	return found
+}
+
+// locate returns PARITY_<NAME>, or the first of bins on PATH or in winget.
+func locate(name string, bins []string) string {
+	if path := os.Getenv("PARITY_" + strings.ToUpper(name)); path != "" {
+		return path
+	}
+	for _, b := range bins {
+		if p, err := exec.LookPath(b); err == nil {
+			return p
+		}
+		if p := wingetPath(b); p != "" {
+			return p
+		}
+	}
+	return ""
 }
 
 // wingetPath finds a tool that winget installed without a PATH link.

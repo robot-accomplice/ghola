@@ -89,29 +89,35 @@ func TestParity(t *testing.T) {
 				if mk == nil || tl == nil {
 					continue
 				}
-				key := sc.ID + "." + name
-				env := &Env{s: srv, key: key}
-				r, err := execute(tl, mk(env), filepath.Join(out, "runs", key))
-				if err != nil {
-					t.Fatalf("%s: %v", name, err)
-				}
-				r.Scenario, r.Finding = sc.ID, sc.Finding
-				r.Requests = srv.requests(key)
-				if err := sc.Check(r, env); err != nil {
-					r.Reason = err.Error()
-				} else {
-					r.Pass = true
-				}
-				results = append(results, r)
-				if name == "ghola" {
-					judge(t, sc, r)
-				} else if !r.Pass {
-					t.Logf("%s fails: %s", name, r.Reason)
-				}
+				results = append(results, runOne(t, srv, out, sc, tl, mk))
 			}
 		})
 	}
 	writeRecords(t, out, tools, results)
+}
+
+// runOne runs one tool on one scenario, checks the result, and judges it.
+func runOne(t *testing.T, srv *server, out string, sc scenario, tl *tool, mk func(e *Env) Spec) *Result {
+	t.Helper()
+	key := sc.ID + "." + tl.Name
+	env := &Env{s: srv, key: key}
+	r, err := execute(tl, mk(env), filepath.Join(out, "runs", key))
+	if err != nil {
+		t.Fatalf("%s: %v", tl.Name, err)
+	}
+	r.Scenario, r.Finding = sc.ID, sc.Finding
+	r.Requests = srv.requests(key)
+	if err := sc.Check(r, env); err != nil {
+		r.Reason = err.Error()
+	} else {
+		r.Pass = true
+	}
+	if tl.Name == "ghola" {
+		judge(t, sc, r)
+	} else if !r.Pass {
+		t.Logf("%s fails: %s", tl.Name, r.Reason)
+	}
+	return r
 }
 
 // judge applies the ratchet in known_test.go to ghola's result.
