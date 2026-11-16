@@ -13,7 +13,6 @@ package parity
 // The findings are in docs/audits/2026-11-12-v0.7.0-vs-curl-aria2-wget.md.
 // Recorded against v0.8.0 on 2026-11-15.
 var known = map[string]string{
-	"xhost_basic":  "H1: -u credentials follow a cross-host redirect",
 	"xhost_bearer": "H1: a custom Authorization header follows a cross-host redirect",
 
 	"stdout_binary":  "H2: stdout is bytes.Trim'med and gets one newline",
@@ -30,8 +29,6 @@ var known = map[string]string{
 	"redirect_limit": "H6: the redirect limit exits 0",
 
 	"fail_to_file": "H7: -f -o writes the error body",
-
-	"basic_auth": "H8: -u is not sent on the -o download path (found by this harness, 2026-11-15)",
 
 	"get_no_content_type":        "M1: every request gets Content-Type: application/json",
 	"get_no_content_type_chrome": "M1: every request gets Content-Type: application/json",

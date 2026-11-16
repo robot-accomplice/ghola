@@ -459,9 +459,8 @@ func gzipSink(dst io.Writer) (io.Writer, func() error) {
 	}
 }
 
-// buildDownloadRequest sets URI, method, body, headers, and the active
-// browser profile / ghost / auth identity, mirroring prepareRequest but for
-// the streaming path. It reuses the profile builder for header realism.
+// buildDownloadRequest sets URI, method, body and headers for the streaming
+// path. The headers come from setHeaders, as on the stdout path.
 func buildDownloadRequest(req *fasthttp.Request, opts *config.Options, url, method, data string) {
 	req.SetRequestURI(url)
 	req.Header.SetMethod(method)
@@ -475,32 +474,5 @@ func buildDownloadRequest(req *fasthttp.Request, opts *config.Options, url, meth
 			active = resolved
 		}
 	}
-	overrides := parseHeaderOverrides(opts.Headers)
-	for _, generated := range profile.BuildHeaders(active, profile.HeaderOptions{
-		Method:         method,
-		TargetURL:      url,
-		RefererMode:    opts.Stealth.Referer,
-		ExplicitUA:     resolveUserAgent(opts, active),
-		ExplicitLang:   opts.Stealth.AcceptLanguage,
-		StealthHeaders: opts.Stealth.StealthHeaders,
-	}) {
-		if _, ok := overrides[strings.ToLower(generated.Key)]; ok {
-			continue
-		}
-		req.Header.Set(generated.Key, generated.Value)
-	}
-	for _, h := range opts.Headers {
-		if k, v, ok := parseHeader(h); ok {
-			req.Header.Set(k, v)
-		}
-	}
-	if _, ok := overrides["user-agent"]; !ok {
-		req.Header.Set("User-Agent", resolveUserAgent(opts, active))
-	}
-	if opts.Stealth.Ghost {
-		applyGhostSign(req, url)
-	}
-	if opts.Stealth.Compressed {
-		req.Header.Set("Accept-Encoding", "gzip")
-	}
+	setHeaders(req, opts, active, parseHeaderOverrides(opts.Headers), url, method)
 }
