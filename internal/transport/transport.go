@@ -18,7 +18,6 @@ import (
 	"github.com/robot-accomplice/ghola/internal/config"
 	"github.com/robot-accomplice/ghola/internal/profile"
 	"github.com/valyala/fasthttp"
-	"github.com/valyala/fasthttp/fasthttpproxy"
 )
 
 // StreamMeta carries the response status line and the headers the download
@@ -63,9 +62,10 @@ type Transport interface {
 	Name() string
 }
 
+// simpleTransport serves requests without impersonation. Do and Stream use
+// the same net/http client, so an option reaches both or neither.
 type simpleTransport struct {
-	client     *fasthttp.Client
-	httpClient *http.Client // used by Stream for true bounded-memory streaming
+	httpClient *http.Client
 	name       string
 }
 
@@ -119,30 +119,24 @@ func New(opts *config.Options, selectedProxy string) (Transport, error) {
 	if err != nil {
 		return nil, err
 	}
-	client := &fasthttp.Client{
-		ReadBufferSize: opts.Resilience.BufferSize,
-		TLSConfig:      tlsCfg,
-	}
 
-	// net/http client for the streaming download path. fasthttp's client-side
-	// StreamResponseBody does NOT stream responses with a known Content-Length
-	// (it reads the whole body into memory, then exposes a bytes.Reader), which
-	// caused the v0.6.0 large-download OOM. net/http streams resp.Body reliably
-	// regardless of Content-Length, so Stream uses it and io.Copy.
+	// net/http streams resp.Body whatever the Content-Length. fasthttp's
+	// client read a body with a known length into memory, which caused the
+	// v0.6.0 large-download OOM, and it was removed for decision D3.
 	httpTransport := &http.Transport{
 		TLSClientConfig:   tlsCfg,
 		ForceAttemptHTTP2: true,
 		// Never auto-negotiate/transparently decompress: downloads must be
 		// byte-exact, and --compressed is handled explicitly by the caller.
-		DisableCompression: true,
-		Proxy:              http.ProxyFromEnvironment,
+		DisableCompression:     true,
+		Proxy:                  http.ProxyFromEnvironment,
+		MaxResponseHeaderBytes: maxHeaderBytes(opts.Resilience.BufferSize),
 	}
 	if selectedProxy != "" {
 		proxyURL, err := url.Parse(selectedProxy)
 		if err != nil {
 			return nil, fmt.Errorf("parse proxy url: %w", err)
 		}
-		client.Dial = fasthttpproxy.FasthttpHTTPDialer(proxyURL.String())
 		httpTransport.Proxy = http.ProxyURL(proxyURL)
 	}
 	httpClient := &http.Client{
@@ -153,10 +147,19 @@ func New(opts *config.Options, selectedProxy string) (Transport, error) {
 	}
 
 	return &simpleTransport{
-		client:     client,
 		httpClient: httpClient,
-		name:       "fasthttp",
+		name:       "net/http",
 	}, nil
+}
+
+// maxHeaderBytes is the response header limit. --buffer-size can raise
+// net/http's default limit (1 MiB) but not lower it. Its v0 default (4096)
+// came from fasthttp's read buffer, which made larger headers fail.
+func maxHeaderBytes(bufferSize int) int64 {
+	if bufferSize > http.DefaultMaxHeaderBytes {
+		return int64(bufferSize)
+	}
+	return http.DefaultMaxHeaderBytes
 }
 
 func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transport, error) {
@@ -210,25 +213,31 @@ func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transpor
 }
 
 func (t *simpleTransport) Do(ctx context.Context, req *fasthttp.Request, rsp *fasthttp.Response) error {
-	if deadline, ok := ctx.Deadline(); ok {
-		return t.client.DoDeadline(req, rsp, deadline)
+	httpReq, err := newHTTPRequest(ctx, req)
+	if err != nil {
+		return err
 	}
-	return t.client.Do(req, rsp)
+	resp, err := t.httpClient.Do(httpReq)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return fillResponse(rsp, resp.StatusCode, resp.Header, resp.Body)
 }
 
 func (t *simpleTransport) Name() string {
 	return t.name
 }
 
-func (t *simpleTransport) Stream(ctx context.Context, req *fasthttp.Request, sink io.Writer) (StreamMeta, error) {
-	method := string(req.Header.Method())
+// newHTTPRequest converts req to a net/http request.
+func newHTTPRequest(ctx context.Context, req *fasthttp.Request) (*http.Request, error) {
 	var body io.Reader
 	if b := req.Body(); len(b) > 0 {
 		body = bytes.NewReader(b)
 	}
-	httpReq, err := http.NewRequestWithContext(ctx, method, req.URI().String(), body)
+	httpReq, err := http.NewRequestWithContext(ctx, string(req.Header.Method()), req.URI().String(), body)
 	if err != nil {
-		return StreamMeta{}, err
+		return nil, err
 	}
 	for key, value := range req.Header.All() {
 		name := string(key)
@@ -243,6 +252,34 @@ func (t *simpleTransport) Stream(ctx context.Context, req *fasthttp.Request, sin
 		default:
 			httpReq.Header.Add(name, val)
 		}
+	}
+	return httpReq, nil
+}
+
+// fillResponse copies a net/http or fhttp response into rsp. It reads the
+// whole body.
+func fillResponse(rsp *fasthttp.Response, status int, header map[string][]string, body io.Reader) error {
+	b, err := io.ReadAll(body)
+	if err != nil {
+		return err
+	}
+	rsp.SetStatusCode(status)
+	for key, values := range header {
+		if key == fhttp.HeaderOrderKey || key == fhttp.PHeaderOrderKey {
+			continue
+		}
+		for _, value := range values {
+			rsp.Header.Add(key, value)
+		}
+	}
+	rsp.SetBody(b)
+	return nil
+}
+
+func (t *simpleTransport) Stream(ctx context.Context, req *fasthttp.Request, sink io.Writer) (StreamMeta, error) {
+	httpReq, err := newHTTPRequest(ctx, req)
+	if err != nil {
+		return StreamMeta{}, err
 	}
 
 	resp, err := t.httpClient.Do(httpReq)
@@ -285,23 +322,7 @@ func (t *tlsClientTransport) Do(ctx context.Context, req *fasthttp.Request, rsp 
 		return err
 	}
 	defer httpResp.Body.Close()
-
-	body, err := io.ReadAll(httpResp.Body)
-	if err != nil {
-		return err
-	}
-
-	rsp.SetStatusCode(httpResp.StatusCode)
-	for key, values := range httpResp.Header {
-		if key == fhttp.HeaderOrderKey || key == fhttp.PHeaderOrderKey {
-			continue
-		}
-		for _, value := range values {
-			rsp.Header.Add(key, value)
-		}
-	}
-	rsp.SetBody(body)
-	return nil
+	return fillResponse(rsp, httpResp.StatusCode, httpResp.Header, httpResp.Body)
 }
 
 func (t *tlsClientTransport) Name() string {

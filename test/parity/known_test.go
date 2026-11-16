@@ -54,7 +54,7 @@ var known = map[string]string{
 	"neg_timeout":      "M7: a negative --timeout is accepted",
 	"zero_connections": "M7: -n 0 is accepted",
 	"header_no_colon":  "M7: a header without a colon is dropped without a message",
-	"header_remove":    `M7: -H "User-Agent:" sends User-Agent: fasthttp`,
+	"header_remove":    `M7: -H "User-Agent:" sends the engine default (Go-http-client/1.1)`,
 
 	"proxy_env": "M8: HTTP_PROXY is ignored",
 
