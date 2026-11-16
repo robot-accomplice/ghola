@@ -174,8 +174,9 @@ Each phase starts with harness scenarios that fail. The phase ends when they pas
 
 Parity claims are not possible while the basic fetch is wrong. Fix these first, in this order:
 0. H8: send `-u` credentials on the download path too. It breaks a normal use, so it goes first.
+   - Status (2026-11-16, branch `fix/h8-download-auth`): done. Both paths set their headers in one function, `setHeaders` (`internal/client/headers.go`). `-u` goes only to the scheme, host and port of the URL the user gave, as in curl. This also fixes the `-u` part of H1 (`xhost_basic` passes).
 1. H2 and M2: stream the body to stdout byte-exact. Send `-v`, `-i` and all metadata to stderr.
-2. H1: drop `Authorization`, `Cookie` and `-u` credentials on a cross-host redirect. Add `--location-trusted`.
+2. H1: drop `Authorization`, `Cookie` and `-u` credentials on a cross-host redirect. Add `--location-trusted`. The `-u` part is done (step 0). A custom `Authorization` or `Cookie` header (`xhost_bearer`) still follows the redirect.
 3. H3: apply `--timeout` to every path. Add curl's separate `--connect-timeout`, `--max-time`, `--speed-limit` and `--speed-time`.
 4. H4: make `-n` apply only to segmented downloads. Report every failed request and set the exit code.
 5. H5: reject a negative `-r`.
@@ -258,8 +259,8 @@ Each item has a check. None of these changes a curl default (D4).
 
 1. **Size.** curl took more than 25 years to reach its feature set. This plan is very large. The phases let each part ship on its own. Phase 1 is useful even if later phases never start.
 2. **Compatibility commands drift from the native flags.** Build both on one option table (section 5A, step 7). The harness runs each compatibility scenario, and also the native command that `--show-native` prints.
-2a. **Users of v0 flags break.** With one release there are no early warnings. The argument errors that name the new flag, the v0-to-v1 table and the `ghola curl` path reduce this.
-2b. **Audit fixes wait for v1.0.0.** H1 (auth headers sent to another host after a redirect) is a credential leak in v0.8.0, and it stays in the released binary until v1.0.0. **DECIDED by Jon, 2026-11-15: no v0.8.x patch.** H1 waits for v1.0.0 with the other fixes. The bridge clients (scope, scope-bca) use JSON fields, not flags. Check that the new structure does not rename those fields, or tell the scope-bca session first.
+2a. **Users of v0 flags break.** With one release there are no early warnings. The argument errors that name the new flag, the v0-to-v1 table and the `ghola curl` path reduce this. The bridge clients (scope, scope-bca) use JSON fields, not flags. Check that the new structure does not rename those fields, or tell the scope-bca session first.
+2b. **Audit fixes wait for v1.0.0.** H1 (auth headers sent to another host after a redirect) is a credential leak in v0.8.0, and it stays in the released binary until v1.0.0. **DECIDED by Jon, 2026-11-15: no v0.8.x patch.** H1 waits for v1.0.0 with the other fixes.
 3. **Two transports.** D3 is C: net/http and fhttp stay. Every feature needs a test with and without `--impersonate`. One shared request path keeps the two in step.
 4. **Binary size.** BitTorrent, SSH and WARC add dependencies. Measure the binary size in CI. Set a limit with Jon before phase 3.
 5. **Security surface.** Each new protocol, the RPC interface and BitTorrent add attack paths. Each one needs its own adversarial review before release, as C1 showed.
