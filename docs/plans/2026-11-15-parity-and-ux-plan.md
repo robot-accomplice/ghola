@@ -160,7 +160,7 @@ These commands replace the old D2 options A and B. A pasted "Copy as cURL" comma
 5. **Task test.** Write 40 common tasks, for example "resume a download", "post JSON with a bearer token" and "mirror a site to depth 2". For each task, compare the native command with curl, wget and aria2: number of options, characters, and how many tasks need the documentation. The native command must be the shortest or tie for each task. Where it is not, change the spec.
 6. **Review.** Jon reviews the spec and the task results before any code changes.
 7. **Build.** Replace `config.ParseFlags` with the new parser. This also clears the SonarCloud S3776 complexity finding. Build the compatibility commands on the same option table, so they cannot drift from the native flags.
-8. **Migration.** v0.9.x prints a warning when a v0 flag is used, with the new name. v1.0.0 removes the v0 flags. `ghola curl` is the stable path for scripts that use curl syntax.
+8. **Migration.** There is no interim release (section 9), so no release prints warnings for v0 flags before they go. v1.0.0 removes the v0 flags. When v1.0.0 sees a v0 flag, it stops with an argument error that gives the new name. The release notes have a v0-to-v1 table. `ghola curl` is the stable path for scripts that use curl syntax.
 
 Exit criteria: the spec is approved, the task test passes, and every v0.8.0 flag has a mapping, or a recorded reason to remove it.
 
@@ -258,7 +258,8 @@ Each item has a check. None of these changes a curl default (D4).
 
 1. **Size.** curl took more than 25 years to reach its feature set. This plan is very large. The phases let each part ship on its own. Phase 1 is useful even if later phases never start.
 2. **Compatibility commands drift from the native flags.** Build both on one option table (section 5A, step 7). The harness runs each compatibility scenario, and also the native command that `--show-native` prints.
-2a. **Users of v0 flags break.** The v0.9.x warnings and the `ghola curl` path reduce this. The bridge clients (scope, scope-bca) use JSON fields, not flags. Check that the new structure does not rename those fields, or tell the scope-bca session first.
+2a. **Users of v0 flags break.** With one release there are no early warnings. The argument errors that name the new flag, the v0-to-v1 table and the `ghola curl` path reduce this.
+2b. **Audit fixes wait for v1.0.0.** H1 (auth headers sent to another host after a redirect) is a credential leak in v0.8.0, and it stays in the released binary until v1.0.0. **DECIDED by Jon, 2026-11-15: no v0.8.x patch.** H1 waits for v1.0.0 with the other fixes. The bridge clients (scope, scope-bca) use JSON fields, not flags. Check that the new structure does not rename those fields, or tell the scope-bca session first.
 3. **Two transports.** D3 is C: net/http and fhttp stay. Every feature needs a test with and without `--impersonate`. One shared request path keeps the two in step.
 4. **Binary size.** BitTorrent, SSH and WARC add dependencies. Measure the binary size in CI. Set a limit with Jon before phase 3.
 5. **Security surface.** Each new protocol, the RPC interface and BitTorrent add attack paths. Each one needs its own adversarial review before release, as C1 showed.
@@ -274,10 +275,15 @@ Each item has a check. None of these changes a curl default (D4).
 ## 9. Order of work
 
 1. D1 to D5 are decided. The D3 benchmark is done (D3 is C). Remove fasthttp first: the phase 1 fixes go into the shared net/http and fhttp request path.
+   - Status (2026-11-16, branch `refactor/net-http-engine`): the fasthttp client is gone. Without `--impersonate`, `Do` and `Stream` use one net/http client and one request builder (`newHTTPRequest`). `--buffer-size` now only raises net/http's 1 MiB response header limit. The v1 spec decides if it stays.
+   - Still on fasthttp: the `fasthttp.Request` and `fasthttp.Response` types (about 70 call sites) and the `--serve` bridge server. Replace the types with the M2 fix (stdout streaming), because a streamed body cannot live in a `fasthttp.Response`. Moving the bridge server is not required for D3: it is a server, not a client engine.
 2. Phase 0: the harness. Phase 0B (the flag design) runs at the same time, because the design work does not change code.
-3. Phase 1: the audit fixes, in the v0 flags. Release them as v0.9.0, with the v0-flag warnings from section 5A, step 8.
-4. Build the new flag structure and the compatibility commands. Release them, with the exit-code change, as v1.0.0.
+**Release rule. DECIDED by Jon, 2026-11-15: one release.** All parity and UX work ships together as v1.0.0: phases 1 to 5, the new flag structure, the compatibility commands and the exit-code change. There are no interim releases. The steps below merge into `develop` one at a time, but none of them is tagged until all are done.
+
+3. Phase 1: the audit fixes, in the current flags. They merge into `develop` and are not released alone.
+4. Build the new flag structure and the compatibility commands, with the exit-code change.
 5. Phase 2, in the new flag structure.
 6. Phases 3 and 4. They can run in parallel, because they touch different packages, but both use the phase 3 job engine. Build the job engine first.
 7. Phase 5.
 8. Section 6 items go with the phase that adds the code they depend on, not at the end.
+9. Release v1.0.0 when the parity harness shows no known ghola failure for a planned feature (`known_test.go` is empty for planned items) and Jon approves.
