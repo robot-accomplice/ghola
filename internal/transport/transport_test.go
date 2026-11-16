@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,7 +12,6 @@ import (
 
 	"github.com/robot-accomplice/ghola/internal/config"
 	"github.com/valyala/fasthttp"
-	"github.com/valyala/fasthttp/fasthttputil"
 )
 
 func TestNewSelectsSimpleTransportWithoutImpersonation(t *testing.T) {
@@ -21,8 +19,8 @@ func TestNewSelectsSimpleTransportWithoutImpersonation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New returned error: %v", err)
 	}
-	if tr.Name() != "fasthttp" {
-		t.Fatalf("transport name=%q, want fasthttp", tr.Name())
+	if tr.Name() != "net/http" {
+		t.Fatalf("transport name=%q, want net/http", tr.Name())
 	}
 }
 
@@ -36,18 +34,30 @@ func TestNewSelectsTLSClientTransportWithImpersonation(t *testing.T) {
 	}
 }
 
-func TestNewPreservesBufferSizeOnSimpleTransport(t *testing.T) {
-	tr, err := New(&config.Options{Resilience: config.ResilienceOptions{BufferSize: 8192}}, "")
-	if err != nil {
-		t.Fatalf("New returned error: %v", err)
-	}
-
-	simple, ok := tr.(*simpleTransport)
-	if !ok {
-		t.Fatalf("transport type=%T, want *simpleTransport", tr)
-	}
-	if simple.client.ReadBufferSize != 8192 {
-		t.Fatalf("read buffer size=%d, want 8192", simple.client.ReadBufferSize)
+// --buffer-size can raise the response header limit, so a server with very
+// large headers still works. A small value must not lower net/http's default
+// limit: the v0 default (4096) would make normal large headers fail.
+func TestNewHeaderLimitFromBufferSize(t *testing.T) {
+	for _, tc := range []struct {
+		bufferSize int
+		want       int64
+	}{
+		{0, http.DefaultMaxHeaderBytes},
+		{config.DefaultBufferSize, http.DefaultMaxHeaderBytes},
+		{4 << 20, 4 << 20},
+	} {
+		tr, err := New(&config.Options{Resilience: config.ResilienceOptions{BufferSize: tc.bufferSize}}, "")
+		if err != nil {
+			t.Fatalf("New returned error: %v", err)
+		}
+		simple, ok := tr.(*simpleTransport)
+		if !ok {
+			t.Fatalf("transport type=%T, want *simpleTransport", tr)
+		}
+		got := simple.httpClient.Transport.(*http.Transport).MaxResponseHeaderBytes
+		if got != tc.want {
+			t.Errorf("buffer size %d: header limit=%d, want %d", tc.bufferSize, got, tc.want)
+		}
 	}
 }
 
@@ -63,8 +73,8 @@ func TestNew_SimpleTransportWithProxy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New with proxy: %v", err)
 	}
-	if tr.Name() != "fasthttp" {
-		t.Errorf("name = %q, want fasthttp", tr.Name())
+	if tr.Name() != "net/http" {
+		t.Errorf("name = %q, want net/http", tr.Name())
 	}
 }
 
@@ -146,79 +156,87 @@ func TestNew_AllProfiles(t *testing.T) {
 	}
 }
 
-func TestSimpleTransport_Do(t *testing.T) {
-	ln := fasthttputil.NewInmemoryListener()
-	defer ln.Close()
+// Do and Stream must send the same request: when they used different
+// engines, -u reached only one of them (audit finding H8).
+func TestSimpleTransport_DoAndStreamSendTheSameRequest(t *testing.T) {
+	type seen struct{ method, host, auth, body string }
+	got := make(chan seen, 2)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		got <- seen{r.Method, r.Host, r.Header.Get("Authorization"), string(b)}
+		w.Header().Add("Set-Cookie", "a=1")
+		_, _ = io.WriteString(w, "ok")
+	}))
+	defer srv.Close()
 
-	srv := &fasthttp.Server{
-		Handler: func(ctx *fasthttp.RequestCtx) {
-			ctx.SetStatusCode(200)
-			ctx.SetBodyString("ok")
-		},
+	tr, err := New(&config.Options{}, "")
+	if err != nil {
+		t.Fatalf("New: %v", err)
 	}
-	go srv.Serve(ln) //nolint:errcheck
+	newReq := func() *fasthttp.Request {
+		req := fasthttp.AcquireRequest()
+		req.SetRequestURI(srv.URL + "/")
+		req.Header.SetMethod(fasthttp.MethodPost)
+		req.Header.SetHost("example.test")
+		req.Header.Set("Authorization", "Basic YTpi")
+		req.SetBodyString("payload")
+		return req
+	}
+	want := seen{"POST", "example.test", "Basic YTpi", "payload"}
 
-	tr := &simpleTransport{
-		client: &fasthttp.Client{
-			Dial: func(addr string) (net.Conn, error) { return nil, nil },
-		},
-		name: "test-fasthttp",
-	}
-	// Replace the dial func with the actual in-memory listener.
-	tr.client.Dial = func(addr string) (net.Conn, error) {
-		return ln.Dial()
-	}
-
-	req := fasthttp.AcquireRequest()
-	rsp := fasthttp.AcquireResponse()
+	req, rsp := newReq(), fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseRequest(req)
 	defer fasthttp.ReleaseResponse(rsp)
-
-	req.SetRequestURI("http://test/")
 	if err := tr.Do(context.Background(), req, rsp); err != nil {
 		t.Fatalf("Do: %v", err)
 	}
-	if rsp.StatusCode() != 200 {
-		t.Errorf("status = %d, want 200", rsp.StatusCode())
+	if rsp.StatusCode() != 200 || string(rsp.Body()) != "ok" {
+		t.Errorf("Do response = %d %q, want 200 \"ok\"", rsp.StatusCode(), rsp.Body())
 	}
-	if string(rsp.Body()) != "ok" {
-		t.Errorf("body = %q, want ok", rsp.Body())
+	if c := rsp.Header.PeekCookie("a"); len(c) == 0 {
+		t.Error("Do response lost the Set-Cookie header")
+	}
+	if g := <-got; g != want {
+		t.Errorf("Do sent %+v, want %+v", g, want)
+	}
+
+	req2 := newReq()
+	defer fasthttp.ReleaseRequest(req2)
+	var sink bytes.Buffer
+	if _, err := tr.Stream(context.Background(), req2, &sink); err != nil {
+		t.Fatalf("Stream: %v", err)
+	}
+	if g := <-got; g != want {
+		t.Errorf("Stream sent %+v, want %+v", g, want)
 	}
 }
 
-func TestSimpleTransport_DoWithDeadline(t *testing.T) {
-	ln := fasthttputil.NewInmemoryListener()
-	defer ln.Close()
+// The context deadline is the request timeout on the Do path.
+func TestSimpleTransport_DoHonoursDeadline(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-release
+	}))
+	defer srv.Close()
+	defer close(release)
 
-	srv := &fasthttp.Server{
-		Handler: func(ctx *fasthttp.RequestCtx) {
-			ctx.SetStatusCode(204)
-		},
+	tr, err := New(&config.Options{}, "")
+	if err != nil {
+		t.Fatalf("New: %v", err)
 	}
-	go srv.Serve(ln) //nolint:errcheck
-
-	tr := &simpleTransport{
-		client: &fasthttp.Client{},
-		name:   "test",
-	}
-	tr.client.Dial = func(addr string) (net.Conn, error) {
-		return ln.Dial()
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
-	req := fasthttp.AcquireRequest()
-	rsp := fasthttp.AcquireResponse()
+	req, rsp := fasthttp.AcquireRequest(), fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseRequest(req)
 	defer fasthttp.ReleaseResponse(rsp)
-
-	req.SetRequestURI("http://test/")
-	if err := tr.Do(ctx, req, rsp); err != nil {
-		t.Fatalf("Do with deadline: %v", err)
+	req.SetRequestURI(srv.URL + "/")
+	start := time.Now()
+	if err := tr.Do(ctx, req, rsp); err == nil {
+		t.Fatal("Do returned no error after the deadline")
 	}
-	if rsp.StatusCode() != 204 {
-		t.Errorf("status = %d, want 204", rsp.StatusCode())
+	if d := time.Since(start); d > 5*time.Second {
+		t.Errorf("Do returned after %v, want about 100ms", d)
 	}
 }
 
