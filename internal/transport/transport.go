@@ -1,7 +1,9 @@
 package transport
 
 import (
+	"bufio"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -221,8 +223,8 @@ func (t *simpleTransport) Do(ctx context.Context, req *fasthttp.Request, rsp *fa
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
-	return fillResponse(rsp, resp.StatusCode, resp.Header, resp.Body)
+	fillResponse(rsp, resp.StatusCode, resp.Header, resp.Body, resp.ContentLength)
+	return nil
 }
 
 func (t *simpleTransport) Name() string {
@@ -256,14 +258,17 @@ func newHTTPRequest(ctx context.Context, req *fasthttp.Request) (*http.Request, 
 	return httpReq, nil
 }
 
-// fillResponse copies a net/http or fhttp response into rsp. It reads the
-// whole body.
-func fillResponse(rsp *fasthttp.Response, status int, header map[string][]string, body io.Reader) error {
-	b, err := io.ReadAll(body)
-	if err != nil {
-		return err
-	}
+// fillResponse copies a net/http or fhttp response into rsp. It does not
+// read the body: rsp gets it as a body stream, so a large body never has to
+// fit in memory (audit finding M2). fasthttp closes the stream when rsp is
+// reset or released. contentLength is -1 when unknown.
+//
+// The stream is set before the headers: a Content-Length header from the
+// server then replaces the length. tls-client reports -1 even when the
+// server sent the header.
+func fillResponse(rsp *fasthttp.Response, status int, header map[string][]string, body io.ReadCloser, contentLength int64) {
 	rsp.SetStatusCode(status)
+	rsp.SetBodyStream(body, int(contentLength))
 	for key, values := range header {
 		if key == fhttp.HeaderOrderKey || key == fhttp.PHeaderOrderKey {
 			continue
@@ -272,8 +277,6 @@ func fillResponse(rsp *fasthttp.Response, status int, header map[string][]string
 			rsp.Header.Add(key, value)
 		}
 	}
-	rsp.SetBody(b)
-	return nil
 }
 
 func (t *simpleTransport) Stream(ctx context.Context, req *fasthttp.Request, sink io.Writer) (StreamMeta, error) {
@@ -321,8 +324,8 @@ func (t *tlsClientTransport) Do(ctx context.Context, req *fasthttp.Request, rsp 
 	if err != nil {
 		return err
 	}
-	defer httpResp.Body.Close()
-	return fillResponse(rsp, httpResp.StatusCode, httpResp.Header, httpResp.Body)
+	fillResponse(rsp, httpResp.StatusCode, httpResp.Header, httpResp.Body, httpResp.ContentLength)
+	return nil
 }
 
 func (t *tlsClientTransport) Name() string {
@@ -354,4 +357,32 @@ func (t *tlsClientTransport) Stream(ctx context.Context, req *fasthttp.Request, 
 		ContentRange:  httpResp.Header.Get("Content-Range"),
 	}
 	return meta, CopyBody(sink, meta, httpResp.Body)
+}
+
+// ReadBody reads a streamed body into rsp's buffer and returns it. Use it,
+// not rsp.Body(), when the whole body is needed: on a read error, Body()
+// puts the error text in place of the body and reports nothing.
+func ReadBody(rsp *fasthttp.Response) ([]byte, error) {
+	stream := rsp.BodyStream()
+	if stream == nil {
+		return rsp.Body(), nil
+	}
+	b, err := io.ReadAll(stream)
+	_ = rsp.CloseBodyStream()
+	if err != nil {
+		return nil, err
+	}
+	rsp.SetBody(b)
+	return b, nil
+}
+
+// DecodeGzip returns a reader that decodes r when r starts with the gzip
+// magic bytes (0x1f 0x8b). Otherwise it returns r's bytes unchanged, so a
+// server that ignores Accept-Encoding never corrupts the output.
+func DecodeGzip(r io.Reader) (io.Reader, error) {
+	br := bufio.NewReader(r)
+	if magic, _ := br.Peek(2); len(magic) == 2 && magic[0] == 0x1f && magic[1] == 0x8b {
+		return gzip.NewReader(br)
+	}
+	return br, nil
 }

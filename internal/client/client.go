@@ -156,19 +156,26 @@ func handleRedirect(status int, method, data, location, baseURL string) (newURL,
 	return resolved, newMethod, newData, true
 }
 
+// WithTimeout applies --timeout to ctx. The deadline covers the whole
+// transfer, the body included, as curl's --max-time does. The caller keeps
+// ctx until it has read the body, because FetchURL returns the body as a
+// stream that is read after FetchURL returns.
+func WithTimeout(ctx context.Context, opts *config.Options) (context.Context, context.CancelFunc) {
+	if opts.Resilience.Timeout <= 0 {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(ctx, time.Duration(opts.Resilience.Timeout)*time.Millisecond)
+}
+
 // FetchURL sends an HTTP request according to opts, with retry and jitter.
+// It does not apply --timeout: use WithTimeout on ctx. The response body
+// can be a stream that needs ctx to stay alive until it is read.
 // The caller must release the returned Request and Response via
 // fasthttp.ReleaseRequest / ReleaseResponse.
 func FetchURL(ctx context.Context, opts *config.Options, do Doer) (*fasthttp.Request, *fasthttp.Response, error) {
 	state, err := newFetchState(opts, do)
 	if err != nil {
 		return nil, nil, err
-	}
-
-	if opts.Resilience.Timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(opts.Resilience.Timeout)*time.Millisecond)
-		defer cancel()
 	}
 
 	req := fasthttp.AcquireRequest()

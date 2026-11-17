@@ -11,6 +11,7 @@ import (
 
 	"github.com/robot-accomplice/ghola/internal/client"
 	"github.com/robot-accomplice/ghola/internal/config"
+	gholatransport "github.com/robot-accomplice/ghola/internal/transport"
 	"github.com/valyala/fasthttp"
 )
 
@@ -135,7 +136,9 @@ func Handler(do client.Doer) fasthttp.RequestHandler {
 			opts.Headers = append(opts.Headers, k+": "+v)
 		}
 
-		req, rsp, err := client.FetchURL(context.Background(), opts, do)
+		fetchCtx, cancel := client.WithTimeout(context.Background(), opts)
+		defer cancel()
+		req, rsp, err := client.FetchURL(fetchCtx, opts, do)
 		if err != nil {
 			ctx.SetStatusCode(fasthttp.StatusBadGateway)
 			writeError(ctx, err.Error())
@@ -143,6 +146,12 @@ func Handler(do client.Doer) fasthttp.RequestHandler {
 		}
 		defer fasthttp.ReleaseRequest(req)
 		defer fasthttp.ReleaseResponse(rsp)
+		body, err := gholatransport.ReadBody(rsp)
+		if err != nil {
+			ctx.SetStatusCode(fasthttp.StatusBadGateway)
+			writeError(ctx, err.Error())
+			return
+		}
 
 		rspHeaders := make(map[string]string)
 		for key, value := range rsp.Header.All() {
@@ -152,7 +161,7 @@ func Handler(do client.Doer) fasthttp.RequestHandler {
 		out, err := json.Marshal(Response{
 			StatusCode: rsp.StatusCode(),
 			Headers:    rspHeaders,
-			Body:       string(rsp.Body()),
+			Body:       string(body),
 		})
 		if err != nil {
 			ctx.SetStatusCode(fasthttp.StatusInternalServerError)
