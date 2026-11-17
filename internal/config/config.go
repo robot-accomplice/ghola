@@ -80,11 +80,11 @@ type StealthOptions struct {
 
 // ResilienceOptions controls retry, timeout, redirect, and buffer behavior.
 type ResilienceOptions struct {
-	Timeout    int
-	Retries    int
-	Backoff    int
-	RetryHTTP  bool
-	Location   bool
+	Timeout   int
+	Retries   int
+	Backoff   int
+	RetryHTTP bool
+	Location  bool
 	// LocationTrusted sends -u, Authorization and Cookie to every server in
 	// the redirect chain, as curl --location-trusted does.
 	LocationTrusted bool

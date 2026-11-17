@@ -54,8 +54,11 @@ func TestBuildDownloadRequest_UserCredentialsOnlyForTheOriginalServer(t *testing
 	}
 }
 
-// The same rule on the stdout path: -L to another host drops -u.
-func TestFetchURL_UserCredentialsDoNotFollowCrossHostRedirect(t *testing.T) {
+// authAfterCrossHostRedirect runs FetchURL against a server that redirects
+// from host test to host other. It returns the Authorization header that
+// reached host other.
+func authAfterCrossHostRedirect(t *testing.T, opts *config.Options) string {
+	t.Helper()
 	var lastHost, lastAuth string
 	ln, do := newTestServer(func(ctx *fasthttp.RequestCtx) {
 		lastHost = string(ctx.Host())
@@ -69,15 +72,12 @@ func TestFetchURL_UserCredentialsDoNotFollowCrossHostRedirect(t *testing.T) {
 	})
 	defer ln.Close()
 
-	opts := &config.Options{
-		URL:         "http://test/start",
-		Method:      "GET",
-		User:        "alice:s3cret",
-		Stealth:     config.StealthOptions{Agent: "ghola"},
-		Resilience:  config.ResilienceOptions{Location: true, MaxRedirs: 5, Backoff: 1},
-		Output:      config.OutputOptions{Silent: true},
-		Concurrency: 1,
-	}
+	opts.URL = "http://test/start"
+	opts.Method = "GET"
+	opts.Stealth = config.StealthOptions{Agent: "ghola"}
+	opts.Resilience = config.ResilienceOptions{Location: true, MaxRedirs: 5, Backoff: 1}
+	opts.Output = config.OutputOptions{Silent: true}
+	opts.Concurrency = 1
 	req, rsp, err := FetchURL(bg(), opts, do)
 	if err != nil {
 		t.Fatalf("FetchURL error: %v", err)
@@ -88,8 +88,13 @@ func TestFetchURL_UserCredentialsDoNotFollowCrossHostRedirect(t *testing.T) {
 	if lastHost != "other" {
 		t.Fatalf("last request went to %q, want other", lastHost)
 	}
-	if lastAuth != "" {
-		t.Fatalf("redirect to another host carried Authorization %q", lastAuth)
+	return lastAuth
+}
+
+// The same rule on the stdout path: -L to another host drops -u.
+func TestFetchURL_UserCredentialsDoNotFollowCrossHostRedirect(t *testing.T) {
+	if got := authAfterCrossHostRedirect(t, &config.Options{User: "alice:s3cret"}); got != "" {
+		t.Fatalf("redirect to another host carried Authorization %q", got)
 	}
 }
 
@@ -152,39 +157,8 @@ func TestBuildDownloadRequest_LocationTrustedSendsCredentialsToEveryServer(t *te
 // The stdout path follows the same rule: -L to another host drops a custom
 // Authorization header.
 func TestFetchURL_CustomAuthorizationDoesNotFollowCrossHostRedirect(t *testing.T) {
-	var lastHost, lastAuth string
-	ln, do := newTestServer(func(ctx *fasthttp.RequestCtx) {
-		lastHost = string(ctx.Host())
-		lastAuth = string(ctx.Request.Header.Peek("Authorization"))
-		if lastHost == "test" {
-			ctx.SetStatusCode(302)
-			ctx.Response.Header.Set("Location", "http://other/echo")
-			return
-		}
-		ctx.SetStatusCode(200)
-	})
-	defer ln.Close()
-
-	opts := &config.Options{
-		URL:         "http://test/start",
-		Method:      "GET",
-		Headers:     []string{"Authorization: Bearer tok"},
-		Stealth:     config.StealthOptions{Agent: "ghola"},
-		Resilience:  config.ResilienceOptions{Location: true, MaxRedirs: 5, Backoff: 1},
-		Output:      config.OutputOptions{Silent: true},
-		Concurrency: 1,
-	}
-	req, rsp, err := FetchURL(bg(), opts, do)
-	if err != nil {
-		t.Fatalf("FetchURL error: %v", err)
-	}
-	defer fasthttp.ReleaseRequest(req)
-	defer fasthttp.ReleaseResponse(rsp)
-
-	if lastHost != "other" {
-		t.Fatalf("last request went to %q, want other", lastHost)
-	}
-	if lastAuth != "" {
-		t.Fatalf("redirect to another host carried Authorization %q", lastAuth)
+	opts := &config.Options{Headers: []string{"Authorization: Bearer tok"}}
+	if got := authAfterCrossHostRedirect(t, opts); got != "" {
+		t.Fatalf("redirect to another host carried Authorization %q", got)
 	}
 }
