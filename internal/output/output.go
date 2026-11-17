@@ -64,20 +64,7 @@ func ProcessResponse(w, ew io.Writer, opts *config.Options, req *fasthttp.Reques
 	}
 
 	if opts.Output.Verbose {
-		fmt.Fprintf(ew, "Ghost Signature: %s\n", req.Header.Peek("X-Ghola-Identity"))
-		if opts.Stealth.Impersonate != "" {
-			fmt.Fprintf(ew, "Profile: %s\n", opts.Stealth.Impersonate)
-			fmt.Fprintln(ew, "Transport: tls-client (pure Go)")
-		}
-		if opts.Stealth.StealthHeaders {
-			fmt.Fprintln(ew, "Stealth Headers: enabled")
-		}
-		if opts.ProxyCfg.Proxy != "" {
-			fmt.Fprintf(ew, "Proxy: %s\n", opts.ProxyCfg.Proxy)
-		}
-		if opts.Stealth.CookieJar != "" {
-			fmt.Fprintf(ew, "Cookie Jar: %s\n", opts.Stealth.CookieJar)
-		}
+		printVerbose(ew, opts, req)
 	}
 	if opts.Output.Include {
 		if _, err := w.Write(rsp.Header.Header()); err != nil {
@@ -124,6 +111,24 @@ func writeFile(name string, body io.Reader) error {
 		return fmt.Errorf("write output file: %w", err)
 	}
 	return nil
+}
+
+// printVerbose writes the -v lines to ew.
+func printVerbose(ew io.Writer, opts *config.Options, req *fasthttp.Request) {
+	fmt.Fprintf(ew, "Ghost Signature: %s\n", req.Header.Peek("X-Ghola-Identity"))
+	if opts.Stealth.Impersonate != "" {
+		fmt.Fprintf(ew, "Profile: %s\n", opts.Stealth.Impersonate)
+		fmt.Fprintln(ew, "Transport: tls-client (pure Go)")
+	}
+	if opts.Stealth.StealthHeaders {
+		fmt.Fprintln(ew, "Stealth Headers: enabled")
+	}
+	if opts.ProxyCfg.Proxy != "" {
+		fmt.Fprintf(ew, "Proxy: %s\n", opts.ProxyCfg.Proxy)
+	}
+	if opts.Stealth.CookieJar != "" {
+		fmt.Fprintf(ew, "Cookie Jar: %s\n", opts.Stealth.CookieJar)
+	}
 }
 
 func printTiming(ew io.Writer, opts *config.Options, elapsed time.Duration) {

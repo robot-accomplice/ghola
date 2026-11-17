@@ -58,7 +58,7 @@ func runWithin(t *testing.T, limit time.Duration, args ...string) int {
 func TestExecute_TimeoutStopsAStalledStdoutBody(t *testing.T) {
 	srv := stallServer(t)
 	// No -s: ghola's -s skips the body, so the stall would never be read.
-	if code := runWithin(t, 5*time.Second, "--timeout", "300", srv.URL); code == 0 {
+	if runWithin(t, 5*time.Second, "--timeout", "300", srv.URL) == 0 {
 		t.Error("exit status 0 for a body that did not arrive")
 	}
 }
@@ -67,7 +67,7 @@ func TestExecute_TimeoutStopsAStalledStdoutBody(t *testing.T) {
 func TestExecute_TimeoutStopsAStalledFileDownload(t *testing.T) {
 	srv := stallServer(t)
 	file := filepath.Join(t.TempDir(), "f")
-	if code := runWithin(t, 5*time.Second, "-s", "--timeout", "300", "-o", file, srv.URL); code == 0 {
+	if runWithin(t, 5*time.Second, "-s", "--timeout", "300", "-o", file, srv.URL) == 0 {
 		t.Error("exit status 0 for a body that did not arrive")
 	}
 }

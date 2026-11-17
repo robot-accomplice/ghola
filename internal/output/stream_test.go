@@ -159,3 +159,73 @@ func TestProcessResponse_ReportsABrokenBody(t *testing.T) {
 type errReader struct{ err error }
 
 func (r errReader) Read([]byte) (int, error) { return 0, r.err }
+
+func brokenResponse(t *testing.T, broken error) (*fasthttp.Request, *fasthttp.Response) {
+	t.Helper()
+	req := fasthttp.AcquireRequest()
+	rsp := fasthttp.AcquireResponse()
+	t.Cleanup(func() {
+		fasthttp.ReleaseRequest(req)
+		fasthttp.ReleaseResponse(rsp)
+	})
+	rsp.SetStatusCode(200)
+	rsp.SetBodyStream(io.MultiReader(bytes.NewReader([]byte(`{"a":`)), errReader{broken}), -1)
+	return req, rsp
+}
+
+// --jq and -o report a broken body as an error, as stdout does.
+func TestProcessResponse_BrokenBodyFailsJQAndFile(t *testing.T) {
+	broken := errors.New("connection reset")
+	for name, opts := range map[string]*config.Options{
+		"jq":   {Output: config.OutputOptions{JQ: "a"}},
+		"file": {Output: config.OutputOptions{File: t.TempDir() + "/out"}},
+	} {
+		req, rsp := brokenResponse(t, broken)
+		if err := ProcessResponse(io.Discard, io.Discard, opts, req, rsp, 0); !errors.Is(err, broken) {
+			t.Errorf("%s: err = %v, want %v", name, err, broken)
+		}
+	}
+}
+
+// A body that starts with the gzip magic bytes but has a bad gzip header
+// is an error, not output.
+func TestProcessResponse_BadGzipIsAnError(t *testing.T) {
+	req := fasthttp.AcquireRequest()
+	rsp := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseRequest(req)
+	defer fasthttp.ReleaseResponse(rsp)
+	rsp.SetStatusCode(200)
+	rsp.Header.Set("Content-Encoding", "gzip")
+	rsp.SetBodyString("\x1f\x8bnot gzip")
+
+	var out bytes.Buffer
+	opts := &config.Options{Stealth: config.StealthOptions{Compressed: true}}
+	if err := ProcessResponse(&out, io.Discard, opts, req, rsp, 0); err == nil {
+		t.Fatal("no error for a bad gzip header")
+	}
+	if out.Len() != 0 {
+		t.Errorf("stdout = %q, want nothing", out.String())
+	}
+}
+
+type failWriter struct{ err error }
+
+func (w failWriter) Write([]byte) (int, error) { return 0, w.err }
+
+// A stdout that cannot be written (a closed pipe, a full disk) is an error.
+func TestProcessResponse_StdoutWriteErrorIsReported(t *testing.T) {
+	closed := errors.New("broken pipe")
+	for _, include := range []bool{false, true} {
+		req := fasthttp.AcquireRequest()
+		rsp := fasthttp.AcquireResponse()
+		rsp.SetStatusCode(200)
+		rsp.SetBodyString("body")
+		opts := &config.Options{Output: config.OutputOptions{Include: include}}
+		err := ProcessResponse(failWriter{closed}, io.Discard, opts, req, rsp, 0)
+		fasthttp.ReleaseRequest(req)
+		fasthttp.ReleaseResponse(rsp)
+		if !errors.Is(err, closed) {
+			t.Errorf("include=%v: err = %v, want %v", include, err, closed)
+		}
+	}
+}
