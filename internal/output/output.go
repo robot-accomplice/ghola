@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/robot-accomplice/ghola/internal/config"
+	"github.com/robot-accomplice/ghola/internal/transport"
 	"github.com/tidwall/gjson"
 	"github.com/valyala/fasthttp"
 )
@@ -20,39 +21,41 @@ import (
 var ErrNon2xx = errors.New("non-2xx http status")
 
 // ProcessResponse writes the HTTP response to the appropriate destination
-// (file or stdout) based on opts. It returns a non-nil error if file I/O fails.
-func ProcessResponse(w io.Writer, opts *config.Options, req *fasthttp.Request, rsp *fasthttp.Response, elapsed time.Duration) error {
+// (file or stdout) based on opts. The body goes to w exactly as the server
+// sent it, without a buffer (audit findings H2 and M2). -i puts the header
+// block on w in front of the body, as curl -i does. Metadata (-v lines and
+// the timing line) goes to ew. It returns a non-nil error if the body cannot
+// be read or written.
+func ProcessResponse(w, ew io.Writer, opts *config.Options, req *fasthttp.Request, rsp *fasthttp.Response, elapsed time.Duration) error {
 	httpOk := rsp.StatusCode() >= 200 && rsp.StatusCode() < 300
 
 	if opts.Output.Fail && !httpOk {
 		return fmt.Errorf("%w: %d %s", ErrNon2xx, rsp.StatusCode(), fasthttp.StatusMessage(rsp.StatusCode()))
 	}
 
-	body := rsp.Body()
-
-	// Decode gzip when --compressed was requested and the server honoured it.
-	if opts.Stealth.Compressed && bytes.EqualFold(rsp.Header.Peek("Content-Encoding"), []byte("gzip")) {
-		if decoded, err := rsp.BodyGunzip(); err == nil {
-			body = decoded
-		}
+	body, err := bodyReader(opts, rsp)
+	if err != nil {
+		return err
 	}
 
-	// Apply JSON extraction if --jq is set.
+	// Apply JSON extraction if --jq is set. It needs the whole body.
 	if opts.Output.JQ != "" {
-		result := gjson.GetBytes(body, opts.Output.JQ)
+		b, err := io.ReadAll(body)
+		if err != nil {
+			return fmt.Errorf("read response body: %w", err)
+		}
+		result := gjson.GetBytes(b, opts.Output.JQ)
 		if !result.Exists() {
 			return fmt.Errorf("jq path %q: no match in response", opts.Output.JQ)
 		}
-		body = []byte(result.String())
+		body = strings.NewReader(result.String())
 	}
 
 	if opts.Output.File != "" {
-		if err := os.WriteFile(opts.Output.File, body, 0644); err != nil {
-			return fmt.Errorf("write output file: %w", err)
+		if err := writeFile(opts.Output.File, body); err != nil {
+			return err
 		}
-		if opts.Output.Timing {
-			fmt.Fprintf(w, "Total: %s\n", elapsed.Truncate(time.Millisecond))
-		}
+		printTiming(ew, opts, elapsed)
 		return nil
 	}
 
@@ -60,32 +63,78 @@ func ProcessResponse(w io.Writer, opts *config.Options, req *fasthttp.Request, r
 		return nil
 	}
 
-	if opts.Output.Include {
-		fmt.Fprintf(w, "%s\n\n", bytes.Trim(rsp.Header.Header(), "\n"))
-	}
 	if opts.Output.Verbose {
-		fmt.Fprintf(w, "Ghost Signature: %s\n", req.Header.Peek("X-Ghola-Identity"))
-		if opts.Stealth.Impersonate != "" {
-			fmt.Fprintf(w, "Profile: %s\n", opts.Stealth.Impersonate)
-			fmt.Fprintln(w, "Transport: tls-client (pure Go)")
-		}
-		if opts.Stealth.StealthHeaders {
-			fmt.Fprintln(w, "Stealth Headers: enabled")
-		}
-		if opts.ProxyCfg.Proxy != "" {
-			fmt.Fprintf(w, "Proxy: %s\n", opts.ProxyCfg.Proxy)
-		}
-		if opts.Stealth.CookieJar != "" {
-			fmt.Fprintf(w, "Cookie Jar: %s\n", opts.Stealth.CookieJar)
+		printVerbose(ew, opts, req)
+	}
+	if opts.Output.Include {
+		if _, err := w.Write(rsp.Header.Header()); err != nil {
+			return fmt.Errorf("write output: %w", err)
 		}
 	}
-	fmt.Fprintf(w, "%s\n", bytes.Trim(body, "\n"))
-
-	if opts.Output.Timing {
-		fmt.Fprintf(w, "Total: %s\n", elapsed.Truncate(time.Millisecond))
+	if _, err := io.Copy(w, body); err != nil {
+		return fmt.Errorf("copy response body: %w", err)
 	}
 
+	printTiming(ew, opts, elapsed)
 	return nil
+}
+
+// bodyReader returns the response body as a reader: the stream when the
+// transport left one, else the buffer. With --compressed and a gzip
+// Content-Encoding, it decodes the body.
+func bodyReader(opts *config.Options, rsp *fasthttp.Response) (io.Reader, error) {
+	body := rsp.BodyStream()
+	if body == nil {
+		body = bytes.NewReader(rsp.Body())
+	}
+	if opts.Stealth.Compressed && bytes.EqualFold(rsp.Header.Peek("Content-Encoding"), []byte("gzip")) {
+		decoded, err := transport.DecodeGzip(body)
+		if err != nil {
+			return nil, fmt.Errorf("decode gzip body: %w", err)
+		}
+		body = decoded
+	}
+	return body, nil
+}
+
+// writeFile copies body to the file at name.
+func writeFile(name string, body io.Reader) error {
+	f, err := os.OpenFile(name, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if err != nil {
+		return fmt.Errorf("write output file: %w", err)
+	}
+	_, err = io.Copy(f, body)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return fmt.Errorf("write output file: %w", err)
+	}
+	return nil
+}
+
+// printVerbose writes the -v lines to ew.
+func printVerbose(ew io.Writer, opts *config.Options, req *fasthttp.Request) {
+	fmt.Fprintf(ew, "Ghost Signature: %s\n", req.Header.Peek("X-Ghola-Identity"))
+	if opts.Stealth.Impersonate != "" {
+		fmt.Fprintf(ew, "Profile: %s\n", opts.Stealth.Impersonate)
+		fmt.Fprintln(ew, "Transport: tls-client (pure Go)")
+	}
+	if opts.Stealth.StealthHeaders {
+		fmt.Fprintln(ew, "Stealth Headers: enabled")
+	}
+	if opts.ProxyCfg.Proxy != "" {
+		fmt.Fprintf(ew, "Proxy: %s\n", opts.ProxyCfg.Proxy)
+	}
+	if opts.Stealth.CookieJar != "" {
+		fmt.Fprintf(ew, "Cookie Jar: %s\n", opts.Stealth.CookieJar)
+	}
+}
+
+func printTiming(ew io.Writer, opts *config.Options, elapsed time.Duration) {
+	if opts.Output.Timing {
+		fmt.Fprintf(ew, "Total: %s\n", elapsed.Truncate(time.Millisecond))
+	}
 }
 
 // RunSnoop prints a security posture report for the target URL.

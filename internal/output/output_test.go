@@ -3,6 +3,7 @@ package output
 import (
 	"bytes"
 	"compress/gzip"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,7 +25,7 @@ func TestProcessResponse_Stdout(t *testing.T) {
 
 	var buf bytes.Buffer
 	opts := &config.Options{}
-	err := ProcessResponse(&buf, opts, req, rsp, 0)
+	err := ProcessResponse(&buf, io.Discard, opts, req, rsp, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -58,7 +59,7 @@ func TestProcessResponse_CompressedGzip(t *testing.T) {
 
 	var buf bytes.Buffer
 	opts := &config.Options{Stealth: config.StealthOptions{Compressed: true}}
-	if err := ProcessResponse(&buf, opts, req, rsp, 0); err != nil {
+	if err := ProcessResponse(&buf, io.Discard, opts, req, rsp, 0); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !strings.Contains(buf.String(), "decoded-body-content") {
@@ -78,7 +79,7 @@ func TestProcessResponse_IncludeHeaders(t *testing.T) {
 
 	var buf bytes.Buffer
 	opts := &config.Options{Output: config.OutputOptions{Include: true}}
-	err := ProcessResponse(&buf, opts, req, rsp, 0)
+	err := ProcessResponse(&buf, io.Discard, opts, req, rsp, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -100,14 +101,19 @@ func TestProcessResponse_Verbose(t *testing.T) {
 	rsp.Header.SetStatusCode(200)
 	rsp.SetBodyString("data")
 
-	var buf bytes.Buffer
+	// -v lines are metadata: they go to stderr, as curl's -v does, so that
+	// stdout holds only the body (audit finding H2).
+	var buf, errBuf bytes.Buffer
 	opts := &config.Options{Output: config.OutputOptions{Verbose: true}}
-	err := ProcessResponse(&buf, opts, req, rsp, 0)
+	err := ProcessResponse(&buf, &errBuf, opts, req, rsp, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(buf.String(), "Ghost Signature: abc123") {
-		t.Errorf("verbose output missing ghost signature, got %q", buf.String())
+	if !strings.Contains(errBuf.String(), "Ghost Signature: abc123") {
+		t.Errorf("stderr missing ghost signature, got %q", errBuf.String())
+	}
+	if buf.String() != "data" {
+		t.Errorf("stdout = %q, want only the body", buf.String())
 	}
 }
 
@@ -122,7 +128,7 @@ func TestProcessResponse_Silent(t *testing.T) {
 
 	var buf bytes.Buffer
 	opts := &config.Options{Output: config.OutputOptions{Silent: true}}
-	err := ProcessResponse(&buf, opts, req, rsp, 0)
+	err := ProcessResponse(&buf, io.Discard, opts, req, rsp, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -142,7 +148,7 @@ func TestProcessResponse_FailOnHTTPError(t *testing.T) {
 
 	var buf bytes.Buffer
 	opts := &config.Options{Output: config.OutputOptions{Fail: true}}
-	err := ProcessResponse(&buf, opts, req, rsp, 0)
+	err := ProcessResponse(&buf, io.Discard, opts, req, rsp, 0)
 	if err == nil {
 		t.Fatal("expected error for non-2xx with fail=true")
 	}
@@ -162,7 +168,7 @@ func TestProcessResponse_FailWithSuccess(t *testing.T) {
 
 	var buf bytes.Buffer
 	opts := &config.Options{Output: config.OutputOptions{Fail: true}}
-	err := ProcessResponse(&buf, opts, req, rsp, 0)
+	err := ProcessResponse(&buf, io.Discard, opts, req, rsp, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -184,7 +190,7 @@ func TestProcessResponse_FileOutput(t *testing.T) {
 
 	var buf bytes.Buffer
 	opts := &config.Options{Output: config.OutputOptions{File: tmpFile}}
-	err := ProcessResponse(&buf, opts, req, rsp, 0)
+	err := ProcessResponse(&buf, io.Discard, opts, req, rsp, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -220,7 +226,7 @@ func TestProcessResponse_FileOutputFailSuppresses(t *testing.T) {
 
 	opts := &config.Options{Output: config.OutputOptions{File: tmpFile, Fail: true}}
 	var buf bytes.Buffer
-	err := ProcessResponse(&buf, opts, req, rsp, 0)
+	err := ProcessResponse(&buf, io.Discard, opts, req, rsp, 0)
 	if err == nil {
 		t.Fatal("expected error for non-2xx with fail=true")
 	}
@@ -241,7 +247,7 @@ func TestProcessResponse_FileOutputError(t *testing.T) {
 
 	opts := &config.Options{Output: config.OutputOptions{File: "/nonexistent/dir/file.txt"}}
 	var buf bytes.Buffer
-	err := ProcessResponse(&buf, opts, req, rsp, 0)
+	err := ProcessResponse(&buf, io.Discard, opts, req, rsp, 0)
 	if err == nil {
 		t.Fatal("expected error for invalid output path")
 	}
@@ -337,7 +343,7 @@ func TestProcessResponse_StatusCodes(t *testing.T) {
 
 			var buf bytes.Buffer
 			opts := &config.Options{Output: config.OutputOptions{Fail: tt.fail}}
-			_ = ProcessResponse(&buf, opts, req, rsp, 0)
+			_ = ProcessResponse(&buf, io.Discard, opts, req, rsp, 0)
 
 			hasOutput := buf.Len() > 0
 			if hasOutput != tt.output {
@@ -375,7 +381,7 @@ func TestProcessResponse_JQ(t *testing.T) {
 
 	var buf bytes.Buffer
 	opts := &config.Options{Output: config.OutputOptions{JQ: "result"}}
-	err := ProcessResponse(&buf, opts, req, rsp, 0)
+	err := ProcessResponse(&buf, io.Discard, opts, req, rsp, 0)
 	if err != nil {
 		t.Fatalf("ProcessResponse: %v", err)
 	}
@@ -395,7 +401,7 @@ func TestProcessResponse_JQ_NoMatch(t *testing.T) {
 
 	var buf bytes.Buffer
 	opts := &config.Options{Output: config.OutputOptions{JQ: "nonexistent"}}
-	err := ProcessResponse(&buf, opts, req, rsp, 0)
+	err := ProcessResponse(&buf, io.Discard, opts, req, rsp, 0)
 	if err == nil {
 		t.Fatal("expected error for non-matching JQ path")
 	}
@@ -410,14 +416,18 @@ func TestProcessResponse_Timing(t *testing.T) {
 	rsp.SetStatusCode(200)
 	rsp.SetBodyString("ok")
 
-	var buf bytes.Buffer
+	// The timing line is metadata: it goes to stderr (audit finding H2).
+	var buf, errBuf bytes.Buffer
 	opts := &config.Options{Output: config.OutputOptions{Timing: true}}
-	err := ProcessResponse(&buf, opts, req, rsp, 150*time.Millisecond)
+	err := ProcessResponse(&buf, &errBuf, opts, req, rsp, 150*time.Millisecond)
 	if err != nil {
 		t.Fatalf("ProcessResponse: %v", err)
 	}
-	if !strings.Contains(buf.String(), "Total: 150ms") {
-		t.Errorf("timing output = %q, want 'Total: 150ms'", buf.String())
+	if !strings.Contains(errBuf.String(), "Total: 150ms") {
+		t.Errorf("stderr = %q, want 'Total: 150ms'", errBuf.String())
+	}
+	if buf.String() != "ok" {
+		t.Errorf("stdout = %q, want only the body", buf.String())
 	}
 }
 
@@ -433,7 +443,7 @@ func TestProcessResponse_JQ_WithFileOutput(t *testing.T) {
 	tmpFile := filepath.Join(t.TempDir(), "jq-out.txt")
 	var buf bytes.Buffer
 	opts := &config.Options{Output: config.OutputOptions{File: tmpFile, JQ: "data.value"}}
-	err := ProcessResponse(&buf, opts, req, rsp, 0)
+	err := ProcessResponse(&buf, io.Discard, opts, req, rsp, 0)
 	if err != nil {
 		t.Fatalf("ProcessResponse: %v", err)
 	}

@@ -175,7 +175,9 @@ Each phase starts with harness scenarios that fail. The phase ends when they pas
 Parity claims are not possible while the basic fetch is wrong. Fix these first, in this order:
 0. H8: send `-u` credentials on the download path too. It breaks a normal use, so it goes first.
    - Status (2026-11-16, branch `fix/h8-download-auth`): done. Both paths set their headers in one function, `setHeaders` (`internal/client/headers.go`). `-u` goes only to the scheme, host and port of the URL the user gave, as in curl. This also fixes the `-u` part of H1 (`xhost_basic` passes).
-1. H2 and M2: stream the body to stdout byte-exact. Send `-v`, `-i` and all metadata to stderr.
+1. H2 and M2: stream the body to stdout byte-exact. Send `-v` and all other metadata to stderr. `-i` stays on stdout, as in curl (decided by Jon, 2026-11-17; the earlier text put `-i` on stderr).
+   - Status (2026-11-17, branch `fix/h2-stdout-stream`): done. `Do` returns at the headers and leaves the body in the `fasthttp.Response` as a body stream (`SetBodyStream`). `ProcessResponse` copies it to stdout unchanged, and `-i` writes the exact header block. `-v`, the ghost signature, the profile lines and `Total:` go to stderr. `--jq`, `--har` and the bridge read the whole body through `transport.ReadBody`, which reports a broken body. `rsp.Body()` does not: it puts the error text in place of the body.
+   - `--timeout` moved out of `FetchURL` into `client.WithTimeout`, which the caller holds until the body is read. The deadline now covers the body, as curl's `--max-time` does, and the `-o` path too. This fixes the core of H3. The separate curl timeout flags (step 3) are still open.
 2. H1: drop `Authorization`, `Cookie` and `-u` credentials on a cross-host redirect. Add `--location-trusted`. The `-u` part is done (step 0). A custom `Authorization` or `Cookie` header (`xhost_bearer`) still follows the redirect.
 3. H3: apply `--timeout` to every path. Add curl's separate `--connect-timeout`, `--max-time`, `--speed-limit` and `--speed-time`.
 4. H4: make `-n` apply only to segmented downloads. Report every failed request and set the exit code.
@@ -277,7 +279,8 @@ Each item has a check. None of these changes a curl default (D4).
 
 1. D1 to D5 are decided. The D3 benchmark is done (D3 is C). Remove fasthttp first: the phase 1 fixes go into the shared net/http and fhttp request path.
    - Status (2026-11-16, branch `refactor/net-http-engine`): the fasthttp client is gone. Without `--impersonate`, `Do` and `Stream` use one net/http client and one request builder (`newHTTPRequest`). `--buffer-size` now only raises net/http's 1 MiB response header limit. The v1 spec decides if it stays.
-   - Still on fasthttp: the `fasthttp.Request` and `fasthttp.Response` types (about 70 call sites) and the `--serve` bridge server. Replace the types with the M2 fix (stdout streaming), because a streamed body cannot live in a `fasthttp.Response`. Moving the bridge server is not required for D3: it is a server, not a client engine.
+   - Still on fasthttp: the `fasthttp.Request` and `fasthttp.Response` types (about 70 call sites) and the `--serve` bridge server. Moving the bridge server is not required for D3: it is a server, not a client engine.
+   - RETRACTED (2026-11-17): this item said the M2 fix must replace the types, "because a streamed body cannot live in a `fasthttp.Response`". That is wrong: fasthttp v1.73.0 has `Response.SetBodyStream`, and `ReleaseResponse` closes the stream. Jon chose to keep the types for M2 (2026-11-17). Replacing them is no longer a dependency of any phase 1 step.
 2. Phase 0: the harness. Phase 0B (the flag design) runs at the same time, because the design work does not change code.
 **Release rule. DECIDED by Jon, 2026-11-15: one release.** All parity and UX work ships together as v1.0.0: phases 1 to 5, the new flag structure, the compatibility commands and the exit-code change. There are no interim releases. The steps below merge into `develop` one at a time, but none of them is tagged until all are done.
 

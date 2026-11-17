@@ -15,12 +15,6 @@ package parity
 var known = map[string]string{
 	"xhost_bearer": "H1: a custom Authorization header follows a cross-host redirect",
 
-	"stdout_binary":  "H2: stdout is bytes.Trim'med and gets one newline",
-	"stdout_gzip":    "H2: stdout loses the last newline of the decoded body",
-	"stdout_verbose": "H2: -v lines go to stdout",
-
-	"timeout_file": "H3: --timeout does not apply to the -o stream",
-
 	"n_post":    "H4: -n repeats the POST",
 	"n_refused": "H4: -n drops errors and exits 0",
 
@@ -33,8 +27,6 @@ var known = map[string]string{
 	"get_no_content_type":        "M1: every request gets Content-Type: application/json",
 	"get_no_content_type_chrome": "M1: every request gets Content-Type: application/json",
 	"form_content_type":          "M1: -d is labelled application/json",
-
-	"stdout_memory": "M2: stdout buffers the whole body (and H2 adds a byte)",
 
 	"rate_stdout": "M3: --limit-rate does not apply to stdout",
 

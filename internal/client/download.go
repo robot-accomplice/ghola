@@ -4,8 +4,6 @@
 package client
 
 import (
-	"bufio"
-	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
@@ -435,22 +433,13 @@ func gzipSink(dst io.Writer) (io.Writer, func() error) {
 	pr, pw := io.Pipe()
 	done := make(chan error, 1)
 	go func() {
-		br := bufio.NewReader(pr)
-		magic, _ := br.Peek(2)
-		if len(magic) == 2 && magic[0] == 0x1f && magic[1] == 0x8b {
-			zr, err := gzip.NewReader(br)
-			if err != nil {
-				pw.CloseWithError(err)
-				done <- err
-				return
-			}
-			_, cerr := io.Copy(dst, zr)
-			zr.Close()
-			done <- cerr
+		decoded, err := gholatransport.DecodeGzip(pr)
+		if err != nil {
+			pr.CloseWithError(err)
+			done <- err
 			return
 		}
-		// Not gzip: pass through verbatim.
-		_, cerr := io.Copy(dst, br)
+		_, cerr := io.Copy(dst, decoded)
 		done <- cerr
 	}()
 	return pw, func() error {

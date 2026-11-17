@@ -17,6 +17,7 @@ import (
 	"github.com/robot-accomplice/ghola/internal/client"
 	"github.com/robot-accomplice/ghola/internal/config"
 	"github.com/robot-accomplice/ghola/internal/output"
+	gholatransport "github.com/robot-accomplice/ghola/internal/transport"
 	"github.com/valyala/fasthttp"
 )
 
@@ -98,6 +99,9 @@ func execute(ctx context.Context, args []string, do client.Doer, stream client.S
 		opts.Data = config.URLEncodeData(opts.DataURLEncode)
 	}
 
+	ctx, cancel := client.WithTimeout(ctx, opts)
+	defer cancel()
+
 	if config.ShouldStream(opts) {
 		if err := client.Download(ctx, opts, stream); err != nil {
 			if !opts.Output.Silent {
@@ -115,7 +119,7 @@ func execute(ctx context.Context, args []string, do client.Doer, stream client.S
 			if opts.Output.Snoop {
 				output.RunSnoop(w, opts, rsp)
 			} else {
-				if err := output.ProcessResponse(w, opts, req, rsp, 0); err != nil {
+				if err := output.ProcessResponse(w, os.Stderr, opts, req, rsp, 0); err != nil {
 					fmt.Fprintln(os.Stderr, err)
 				}
 			}
@@ -140,7 +144,15 @@ func execute(ctx context.Context, args []string, do client.Doer, stream client.S
 		return config.NoError.Int()
 	}
 
-	if err := output.ProcessResponse(w, opts, req, rsp, elapsed); err != nil {
+	// The HAR file records the body, so read it before stdout gets it.
+	if opts.Output.HAR != "" {
+		if _, err := gholatransport.ReadBody(rsp); err != nil {
+			fmt.Fprintf(os.Stderr, "read response body: %v\n", err)
+			return config.WriteFileFailed.Int()
+		}
+	}
+
+	if err := output.ProcessResponse(w, os.Stderr, opts, req, rsp, elapsed); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		if errors.Is(err, output.ErrNon2xx) {
 			return config.SendFailed.Int()
