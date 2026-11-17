@@ -514,3 +514,15 @@ func TestShouldStream(t *testing.T) {
 		}
 	}
 }
+
+// curl --location-trusted follows redirects without -L. A user who gives it
+// alone must not get the 3xx response instead of the target.
+func TestParseFlags_LocationTrustedFollowsRedirects(t *testing.T) {
+	opts, _, err := ParseFlags([]string{"--location-trusted", "http://example.com"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !opts.Resilience.Location || !opts.Resilience.LocationTrusted {
+		t.Errorf("Location = %v, LocationTrusted = %v, want both true", opts.Resilience.Location, opts.Resilience.LocationTrusted)
+	}
+}

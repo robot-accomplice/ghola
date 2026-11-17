@@ -13,8 +13,6 @@ package parity
 // The findings are in docs/audits/2026-11-12-v0.7.0-vs-curl-aria2-wget.md.
 // Recorded against v0.8.0 on 2026-11-15.
 var known = map[string]string{
-	"xhost_bearer": "H1: a custom Authorization header follows a cross-host redirect",
-
 	"n_post":    "H4: -n repeats the POST",
 	"n_refused": "H4: -n drops errors and exits 0",
 
