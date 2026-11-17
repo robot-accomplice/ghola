@@ -7,7 +7,6 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"math/big"
@@ -115,46 +114,7 @@ func newFetchState(opts *config.Options, do Doer) (*fetchState, error) {
 func (s *fetchState) prepareRequest(req *fasthttp.Request, opts *config.Options, effectiveURL, effectiveMethod, effectiveData string) {
 	req.SetRequestURI(effectiveURL)
 	req.SetBodyString(effectiveData)
-
-	for _, generated := range profile.BuildHeaders(s.activeProfile, profile.HeaderOptions{
-		Method:         effectiveMethod,
-		TargetURL:      effectiveURL,
-		RefererMode:    opts.Stealth.Referer,
-		ExplicitUA:     resolveUserAgent(opts, s.activeProfile),
-		ExplicitLang:   opts.Stealth.AcceptLanguage,
-		StealthHeaders: opts.Stealth.StealthHeaders,
-	}) {
-		if _, overridden := s.headerOverrides[strings.ToLower(generated.Key)]; overridden {
-			continue
-		}
-		req.Header.Set(generated.Key, generated.Value)
-	}
-
-	for _, h := range opts.Headers {
-		key, val, ok := parseHeader(h)
-		if !ok {
-			continue
-		}
-		req.Header.Set(key, val)
-	}
-
-	if _, overridden := s.headerOverrides["user-agent"]; !overridden {
-		req.Header.Set("User-Agent", resolveUserAgent(opts, s.activeProfile))
-	}
-
-	if opts.Stealth.Ghost {
-		applyGhostSign(req, effectiveURL)
-	}
-
-	if opts.Stealth.Compressed {
-		req.Header.Set("Accept-Encoding", "gzip")
-	}
-
-	if opts.User != "" {
-		auth := base64.StdEncoding.EncodeToString([]byte(opts.User))
-		req.Header.Set("Authorization", "Basic "+auth)
-	}
-
+	setHeaders(req, opts, s.activeProfile, s.headerOverrides, effectiveURL, effectiveMethod)
 	req.Header.SetMethod(effectiveMethod)
 
 	if _, overridden := s.headerOverrides["cookie"]; !overridden {
