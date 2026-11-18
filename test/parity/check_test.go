@@ -31,6 +31,9 @@ func (e *Env) Ref(size string) []byte { return e.s.content(parseSize(size)) }
 func (e *Env) CAFile() string  { return e.s.caFile }
 func (e *Env) DeadURL() string { return e.s.deadURL }
 
+// SilentURL is an https URL whose server accepts TCP and never answers.
+func (e *Env) SilentURL() string { return e.s.silentURL }
+
 // check returns nil when a run passes, or the reason it fails.
 type check func(r *Result, e *Env) error
 

@@ -10,11 +10,13 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptrace"
 	"net/url"
 	"os"
 	"strings"
 
 	fhttp "github.com/bogdanfinn/fhttp"
+	fhttptrace "github.com/bogdanfinn/fhttp/httptrace"
 	tlsclient "github.com/bogdanfinn/tls-client"
 	tlsprofiles "github.com/bogdanfinn/tls-client/profiles"
 	"github.com/robot-accomplice/ghola/internal/config"
@@ -69,11 +71,13 @@ type Transport interface {
 type simpleTransport struct {
 	httpClient *http.Client
 	name       string
+	limits     limits
 }
 
 type tlsClientTransport struct {
 	client tlsclient.HttpClient
 	name   string
+	limits limits
 }
 
 // buildTLSConfig assembles a *tls.Config from the TLS-related options, or
@@ -151,6 +155,7 @@ func New(opts *config.Options, selectedProxy string) (Transport, error) {
 	return &simpleTransport{
 		httpClient: httpClient,
 		name:       "net/http",
+		limits:     newLimits(opts.Resilience),
 	}, nil
 }
 
@@ -211,20 +216,33 @@ func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transpor
 	return &tlsClientTransport{
 		client: client,
 		name:   "tls-client",
+		limits: newLimits(opts.Resilience),
 	}, nil
 }
 
 func (t *simpleTransport) Do(ctx context.Context, req *fasthttp.Request, rsp *fasthttp.Response) error {
-	httpReq, err := newHTTPRequest(ctx, req)
+	resp, w, err := t.send(ctx, req)
 	if err != nil {
 		return err
+	}
+	fillResponse(rsp, resp.StatusCode, resp.Header, w.body(resp.Body), resp.ContentLength)
+	return nil
+}
+
+// send sends req under the curl limits (--connect-timeout, --speed-limit).
+// The caller must pass resp.Body through w.body.
+func (t *simpleTransport) send(ctx context.Context, req *fasthttp.Request) (*http.Response, *watch, error) {
+	w := t.limits.start(ctx)
+	ctx = httptrace.WithClientTrace(w.ctx, &httptrace.ClientTrace{GotConn: func(httptrace.GotConnInfo) { w.connected() }})
+	httpReq, err := newHTTPRequest(ctx, req)
+	if err != nil {
+		return nil, nil, w.fail(err)
 	}
 	resp, err := t.httpClient.Do(httpReq)
 	if err != nil {
-		return err
+		return nil, nil, w.fail(err)
 	}
-	fillResponse(rsp, resp.StatusCode, resp.Header, resp.Body, resp.ContentLength)
-	return nil
+	return resp, w, nil
 }
 
 func (t *simpleTransport) Name() string {
@@ -280,16 +298,12 @@ func fillResponse(rsp *fasthttp.Response, status int, header map[string][]string
 }
 
 func (t *simpleTransport) Stream(ctx context.Context, req *fasthttp.Request, sink io.Writer) (StreamMeta, error) {
-	httpReq, err := newHTTPRequest(ctx, req)
+	resp, w, err := t.send(ctx, req)
 	if err != nil {
 		return StreamMeta{}, err
 	}
-
-	resp, err := t.httpClient.Do(httpReq)
-	if err != nil {
-		return StreamMeta{}, err
-	}
-	defer resp.Body.Close()
+	body := w.body(resp.Body)
+	defer body.Close()
 
 	meta := StreamMeta{
 		StatusCode:    resp.StatusCode,
@@ -299,15 +313,21 @@ func (t *simpleTransport) Stream(ctx context.Context, req *fasthttp.Request, sin
 		Disposition:   resp.Header.Get("Content-Disposition"),
 		ContentRange:  resp.Header.Get("Content-Range"),
 	}
-	return meta, CopyBody(sink, meta, resp.Body)
+	return meta, CopyBody(sink, meta, body)
 }
 
 func (t *tlsClientTransport) Do(ctx context.Context, req *fasthttp.Request, rsp *fasthttp.Response) error {
-	httpReq, err := fhttp.NewRequestWithContext(ctx, string(req.Header.Method()), req.URI().String(), bytes.NewReader(req.Body()))
+	httpResp, w, err := t.send(ctx, req, orderedHeaders)
 	if err != nil {
 		return err
 	}
+	fillResponse(rsp, httpResp.StatusCode, httpResp.Header, w.body(httpResp.Body), httpResp.ContentLength)
+	return nil
+}
 
+// orderedHeaders copies req's headers to httpReq in req's order, so the
+// header order matches the browser profile.
+func orderedHeaders(httpReq *fhttp.Request, req *fasthttp.Request) {
 	headerOrder := make([]string, 0, 16)
 	httpReq.Header = make(fhttp.Header)
 	for key, value := range req.Header.All() {
@@ -319,13 +339,31 @@ func (t *tlsClientTransport) Do(ctx context.Context, req *fasthttp.Request, rsp 
 		httpReq.Header[fhttp.HeaderOrderKey] = headerOrder
 		httpReq.Header[fhttp.PHeaderOrderKey] = []string{":method", ":authority", ":scheme", ":path"}
 	}
+}
 
+// plainHeaders copies req's headers to httpReq without an order.
+func plainHeaders(httpReq *fhttp.Request, req *fasthttp.Request) {
+	httpReq.Header = make(fhttp.Header)
+	for key, value := range req.Header.All() {
+		httpReq.Header.Set(string(key), string(value))
+	}
+}
+
+// send sends req under the curl limits (--connect-timeout, --speed-limit).
+// The caller must pass httpResp.Body through w.body.
+func (t *tlsClientTransport) send(ctx context.Context, req *fasthttp.Request, setHeaders func(*fhttp.Request, *fasthttp.Request)) (*fhttp.Response, *watch, error) {
+	w := t.limits.start(ctx)
+	ctx = fhttptrace.WithClientTrace(w.ctx, &fhttptrace.ClientTrace{GotConn: func(fhttptrace.GotConnInfo) { w.connected() }})
+	httpReq, err := fhttp.NewRequestWithContext(ctx, string(req.Header.Method()), req.URI().String(), bytes.NewReader(req.Body()))
+	if err != nil {
+		return nil, nil, w.fail(err)
+	}
+	setHeaders(httpReq, req)
 	httpResp, err := t.client.Do(httpReq)
 	if err != nil {
-		return err
+		return nil, nil, w.fail(err)
 	}
-	fillResponse(rsp, httpResp.StatusCode, httpResp.Header, httpResp.Body, httpResp.ContentLength)
-	return nil
+	return httpResp, w, nil
 }
 
 func (t *tlsClientTransport) Name() string {
@@ -333,20 +371,12 @@ func (t *tlsClientTransport) Name() string {
 }
 
 func (t *tlsClientTransport) Stream(ctx context.Context, req *fasthttp.Request, sink io.Writer) (StreamMeta, error) {
-	httpReq, err := fhttp.NewRequestWithContext(ctx, string(req.Header.Method()), req.URI().String(), bytes.NewReader(req.Body()))
+	httpResp, w, err := t.send(ctx, req, plainHeaders)
 	if err != nil {
 		return StreamMeta{}, err
 	}
-	httpReq.Header = make(fhttp.Header)
-	for key, value := range req.Header.All() {
-		httpReq.Header.Set(string(key), string(value))
-	}
-
-	httpResp, err := t.client.Do(httpReq)
-	if err != nil {
-		return StreamMeta{}, err
-	}
-	defer httpResp.Body.Close()
+	body := w.body(httpResp.Body)
+	defer body.Close()
 
 	meta := StreamMeta{
 		StatusCode:    httpResp.StatusCode,
@@ -356,7 +386,7 @@ func (t *tlsClientTransport) Stream(ctx context.Context, req *fasthttp.Request, 
 		Disposition:   httpResp.Header.Get("Content-Disposition"),
 		ContentRange:  httpResp.Header.Get("Content-Range"),
 	}
-	return meta, CopyBody(sink, meta, httpResp.Body)
+	return meta, CopyBody(sink, meta, body)
 }
 
 // ReadBody reads a streamed body into rsp's buffer and returns it. Use it,
