@@ -80,13 +80,16 @@ type StealthOptions struct {
 
 // ResilienceOptions controls retry, timeout, redirect, and buffer behavior.
 type ResilienceOptions struct {
-	Timeout    int
-	Retries    int
-	Backoff    int
-	RetryHTTP  bool
-	Location   bool
-	MaxRedirs  int
-	BufferSize int
+	Timeout   int
+	Retries   int
+	Backoff   int
+	RetryHTTP bool
+	Location  bool
+	// LocationTrusted sends -u, Authorization and Cookie to every server in
+	// the redirect chain, as curl --location-trusted does.
+	LocationTrusted bool
+	MaxRedirs       int
+	BufferSize      int
 }
 
 // ProxyOptions controls proxy routing behavior.
@@ -187,6 +190,7 @@ func ParseFlags(args []string) (opts *Options, done bool, err error) {
 	fs.IntVarP(&opts.Resilience.Backoff, "backoff", "b", DefaultBackoffMs, "Base backoff time for retries (ms)")
 	fs.BoolVar(&opts.Resilience.RetryHTTP, "retry-http", false, "Retry on retryable HTTP status codes (e.g. 429, 5xx)")
 	fs.BoolVarP(&opts.Resilience.Location, "location", "L", false, "Follow HTTP redirects")
+	fs.BoolVar(&opts.Resilience.LocationTrusted, "location-trusted", false, "Like -L, and send -u, Authorization and Cookie to other hosts too")
 	fs.IntVar(&opts.Resilience.MaxRedirs, "max-redirs", DefaultMaxRedirs, "Maximum number of redirects to follow")
 	fs.BoolVarP(&opts.Output.Snoop, "snoop", "S", false, "Snoop Mode: Pre-flight check of headers and security posture")
 	fs.StringVarP(&opts.Chain, "chain", "c", "", "Chain-Aware Shortcut: Pre-fills RPC headers for [eth, base, solana]")
@@ -253,6 +257,10 @@ func ParseFlags(args []string) (opts *Options, done bool, err error) {
 		return nil, false, fmt.Errorf("URL is mandatory")
 	}
 	opts.Stealth.AgentExplicit = fs.Changed("user-agent")
+	// curl --location-trusted is -L plus the credentials on every hop.
+	if opts.Resilience.LocationTrusted {
+		opts.Resilience.Location = true
+	}
 
 	if opts.Stealth.Impersonate != "" {
 		if _, err := profile.Resolve(opts.Stealth.Impersonate); err != nil {

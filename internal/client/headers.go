@@ -29,10 +29,13 @@ func setHeaders(req *fasthttp.Request, opts *config.Options, active profile.Brow
 		req.Header.Set(generated.Key, generated.Value)
 	}
 
+	trusted := sendsCredentials(opts, target)
 	for _, h := range opts.Headers {
-		if key, val, ok := parseHeader(h); ok {
-			req.Header.Set(key, val)
+		key, val, ok := parseHeader(h)
+		if !ok || (!trusted && isCredentialHeader(key)) {
+			continue
 		}
+		req.Header.Set(key, val)
 	}
 
 	if _, overridden := overrides["user-agent"]; !overridden {
@@ -47,12 +50,24 @@ func setHeaders(req *fasthttp.Request, opts *config.Options, active profile.Brow
 		req.Header.Set("Accept-Encoding", "gzip")
 	}
 
-	// -u is for the server the user named. A redirect to another server must
-	// not receive the password (audit finding H1; curl does the same).
-	if opts.User != "" && sameServer(opts.URL, target) {
+	if opts.User != "" && trusted {
 		auth := base64.StdEncoding.EncodeToString([]byte(opts.User))
 		req.Header.Set("Authorization", "Basic "+auth)
 	}
+}
+
+// sendsCredentials reports whether -u and the Authorization and Cookie
+// headers from -H go to target. They are for the server the user named. A
+// redirect to another scheme, host or port does not receive them unless
+// --location-trusted is set, as in curl. Otherwise any server that redirects
+// can collect them (audit finding H1).
+func sendsCredentials(opts *config.Options, target string) bool {
+	return opts.Resilience.LocationTrusted || sameServer(opts.URL, target)
+}
+
+// isCredentialHeader reports whether a -H header carries a credential.
+func isCredentialHeader(key string) bool {
+	return strings.EqualFold(key, "Authorization") || strings.EqualFold(key, "Cookie")
 }
 
 // sameServer reports whether a and b have the same scheme, host and port.

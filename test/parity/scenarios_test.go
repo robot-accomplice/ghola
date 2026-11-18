@@ -229,6 +229,18 @@ var scenarios = []scenario{
 		Check: lastTo("/echo", "localhost", headerAbsent("Cookie")),
 	},
 	{
+		ID: "xhost_trusted", Finding: "H1", What: "--location-trusted sends the credentials to the other host",
+		Runs: map[string]func(e *Env) Spec{
+			"ghola": func(e *Env) Spec {
+				return args("--location-trusted", "-H", "Authorization: Bearer tok", e.URL("/xhost"))
+			},
+			"curl": func(e *Env) Spec {
+				return args("-sS", "--location-trusted", "-H", "Authorization: Bearer tok", e.URL("/xhost"))
+			},
+		},
+		Check: lastTo("/echo", "localhost", headerIs("Authorization", "Bearer tok")),
+	},
+	{
 		ID: "r303", Finding: "ok", What: "a 303 after a POST becomes a GET",
 		Runs: map[string]func(e *Env) Spec{
 			"ghola": func(e *Env) Spec { return args("-L", "-d", "hello", e.URL("/r303")) },
