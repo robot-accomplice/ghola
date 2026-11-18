@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -55,10 +54,6 @@ func TestExecute_CurlExitCodes(t *testing.T) {
 		}
 	}))
 	defer plain.Close()
-	certSrv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
-	certSrv.TLS = &tls.Config{ClientAuth: tls.RequireAnyClientCert}
-	certSrv.StartTLS()
-	defer certSrv.Close()
 	// garbage answers a TLS hello with bytes that are not TLS and not HTTP,
 	// and keeps the connection open until the client closes it.
 	garbage, err := net.Listen("tcp", "127.0.0.1:0")
@@ -103,8 +98,6 @@ func TestExecute_CurlExitCodes(t *testing.T) {
 		{"TLS to a plain server, impersonate", []string{"--impersonate", "chrome", httpsToPlain}, 35},
 		{"not TLS", []string{garbageURL}, 35},
 		{"not TLS, impersonate", []string{"--impersonate", "chrome", garbageURL}, 35},
-		{"TLS alert", []string{"-k", certSrv.URL}, 35},
-		{"TLS alert, impersonate", []string{"-k", "--impersonate", "chrome", certSrv.URL}, 35},
 		{"redirect limit", []string{"-L", "--max-redirs", "2", plain.URL + "/loop"}, 47},
 		{"redirect limit, -o", []string{"-L", "--max-redirs", "2", "-o", filepath.Join(t.TempDir(), "f"), plain.URL + "/loop"}, 47},
 		{"untrusted certificate", []string{tlsSrv.URL}, 60},
@@ -141,6 +134,11 @@ func TestExitFor_WrappedCauses(t *testing.T) {
 		{fmt.Errorf("download: %w", client.ErrTooManyRedirects), 47},
 		{fmt.Errorf("x: %w", config.ErrHTTPStatus), 22},
 		{config.WriteError(errors.New("disk full")), 23},
+		// A TLS alert from the server. A test server that refuses the
+		// handshake with an alert closes the connection at once, and the
+		// reset can arrive before the alert (1 run in 40 on CI), so the
+		// alert is checked here and not against a server.
+		{fmt.Errorf("x: %w", &net.OpError{Op: "remote error", Err: errors.New("tls: certificate required")}), 35},
 		{errors.New("something else"), config.SendFailed},
 	}
 	for _, tc := range tests {
