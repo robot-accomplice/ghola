@@ -48,6 +48,9 @@ const (
 	// SendFailed indicates a request failure without a more exact code
 	// (curl 55).
 	SendFailed ExitCode = 55
+	// RecvFailed indicates a failure after the connection was ready, for
+	// example a reset or a TLS alert after the handshake (curl 56).
+	RecvFailed ExitCode = 56
 	// PeerFailedVerification indicates that the server certificate or its
 	// host name did not verify (curl 60).
 	PeerFailedVerification ExitCode = 60

@@ -30,6 +30,8 @@ func exitFor(err error) config.ExitCode {
 		return config.TooManyRedirects
 	case isTimeout(err):
 		return config.TimedOut
+	case errors.Is(err, gholatransport.ErrRecv):
+		return config.RecvFailed
 	case errors.As(err, &dnsErr):
 		return config.CouldntResolveHost
 	case isCertError(err):
