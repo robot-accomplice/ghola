@@ -51,10 +51,15 @@ Attribution: the direction for Ghola's browser-like fetching work was inspired b
 | `-v` | **Verbose** -- show ghost signature and extra diagnostics. |
 | `-s` | **Silent** -- suppress all output. |
 | `-f` | **Fail** on non-2xx HTTP status (exit non-zero, suppress body output). |
-| `-L, --location` | **Follow redirects** (HTTP 3xx). |
+| `-L, --location` | **Follow redirects** (HTTP 3xx). `-u`, `Authorization` and `Cookie` go only to the scheme, host and port you gave, as in curl. |
+| `--location-trusted` | **Follow redirects** and send `-u`, `Authorization` and `Cookie` to every host, as in curl. |
 | `--max-redirs <n>` | **Max redirects** to follow when `--location` is enabled. |
 | `--retry-http` | **Retry on statuses** (e.g. 429, 5xx) in addition to transport failures. |
-| `--timeout <ms>` | **Request timeout** in milliseconds (0 disables). |
+| `--timeout <ms>` | **Request timeout** in milliseconds (0 disables). It covers the whole transfer, the body included. |
+| `--max-time <s>` | **Request timeout** in seconds, as curl `--max-time`. Use it or `--timeout`, not both. |
+| `--connect-timeout <s>` | **Connect timeout** in seconds: DNS, TCP, proxy CONNECT and TLS only. |
+| `--speed-limit <B/s>` | **Stall check** -- stop when slower than this many bytes per second for `--speed-time` (default 30 s). |
+| `--speed-time <s>` | **Stall window** in seconds for `--speed-limit` (default limit 1 byte per second). |
 | `--cookie-jar <file>` | **Persistent cookies** -- save and reuse cookies across runs. |
 | `--cookie <name=value>` | **Seed cookies** -- add one or more cookies to the request session. |
 | `--proxy <url>` | **Single proxy** -- route traffic through an HTTP proxy. |
