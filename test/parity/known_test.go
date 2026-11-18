@@ -16,8 +16,6 @@ var known = map[string]string{
 	"n_post":    "H4: -n repeats the POST",
 	"n_refused": "H4: -n drops errors and exits 0",
 
-	"neg_retry": "H5: -r -1 gives a nil response and a panic",
-
 	"redirect_limit": "H6: the redirect limit exits 0",
 
 	"fail_to_file": "H7: -f -o writes the error body",

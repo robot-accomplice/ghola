@@ -860,3 +860,18 @@ func TestFetchURL_CookieJarPersistsAcrossRequests(t *testing.T) {
 		t.Fatalf("cookie header=%q, want persisted session cookie", seenCookie)
 	}
 }
+
+// A negative retry count ran the attempt loop zero times, and FetchURL
+// returned a nil response with a nil error. The caller then dereferenced
+// the nil response and panicked (audit finding H5). The bridge passes its
+// JSON "retries" field here too, so FetchURL itself must refuse it.
+func TestFetchURL_NegativeRetriesIsAnError(t *testing.T) {
+	opts := &config.Options{URL: "http://test", Method: "GET", Resilience: config.ResilienceOptions{Retries: -1}}
+	req, rsp, err := FetchURL(bg(), opts, func(context.Context, *config.Options, *fasthttp.Request, *fasthttp.Response) error {
+		t.Fatal("no request may be sent")
+		return nil
+	})
+	if err == nil || req != nil || rsp != nil {
+		t.Fatalf("FetchURL = %v, %v, %v; want nil, nil and an error", req, rsp, err)
+	}
+}
