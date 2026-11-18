@@ -15,7 +15,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/robot-accomplice/ghola/internal/config"
@@ -382,90 +381,4 @@ func applyGhostSign(req *fasthttp.Request, rawURL string) {
 	id := fmt.Sprintf("%d-%s", time.Now().Unix(), rawURL)
 	hash := sha256.Sum256([]byte(id))
 	req.Header.Set("X-Ghola-Identity", hex.EncodeToString(hash[:]))
-}
-
-// RunConcurrent spawns opts.Concurrency goroutines, each calling FetchURL.
-// The first successful response is passed to out; the remaining goroutines
-// are cancelled immediately via the or-done pattern.
-func orDone[T any](done <-chan struct{}, ch <-chan T) <-chan T {
-	out := make(chan T)
-	go func() {
-		defer close(out)
-		for {
-			select {
-			case <-done:
-				return
-			case v, ok := <-ch:
-				if !ok {
-					return
-				}
-				select {
-				case out <- v:
-				case <-done:
-					return
-				}
-			}
-		}
-	}()
-	return out
-}
-
-func RunConcurrent(ctx context.Context, opts *config.Options, do Doer, out func(*fasthttp.Request, *fasthttp.Response)) {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	type result struct {
-		req *fasthttp.Request
-		rsp *fasthttp.Response
-		err error
-	}
-
-	results := make(chan result, opts.Concurrency)
-	var wg sync.WaitGroup
-	for i := 0; i < opts.Concurrency; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			req, rsp, err := FetchURL(ctx, opts, do)
-			if err != nil {
-				return
-			}
-			select {
-			case results <- result{req: req, rsp: rsp, err: nil}:
-			case <-ctx.Done():
-				fasthttp.ReleaseRequest(req)
-				fasthttp.ReleaseResponse(rsp)
-			}
-		}()
-	}
-
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	winnerProcessed := false
-	for r := range orDone(ctx.Done(), results) {
-		if r.err != nil {
-			continue
-		}
-		if !winnerProcessed {
-			winnerProcessed = true
-			out(r.req, r.rsp)
-			cancel()
-			continue
-		}
-		fasthttp.ReleaseRequest(r.req)
-		fasthttp.ReleaseResponse(r.rsp)
-	}
-
-	if winnerProcessed {
-		for r := range results {
-			if r.err != nil {
-				continue
-			}
-			fasthttp.ReleaseRequest(r.req)
-			fasthttp.ReleaseResponse(r.rsp)
-		}
-	}
 }

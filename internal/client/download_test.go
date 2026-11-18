@@ -341,3 +341,16 @@ func TestDownload_CompressedPassthrough(t *testing.T) {
 		t.Fatalf("passthrough body mismatch: got %d bytes, want %d", len(got), len(plain))
 	}
 }
+
+// A segmented download sends range GETs with no body. A GET with a body
+// (-X GET -d x -o f) must go as one request, or the server never gets the
+// body the user gave.
+func TestCanSegment_OnlyWithoutABody(t *testing.T) {
+	meta := gholatransport.StreamMeta{AcceptRanges: true, ContentLength: config.DefaultSegmentMinBytes}
+	for data, want := range map[string]bool{"": true, "x": false} {
+		opts := &config.Options{Method: "GET", Data: data, Concurrency: 4, Output: config.OutputOptions{File: "f"}}
+		if got := canSegment(opts, meta); got != want {
+			t.Errorf("data %q: canSegment = %v, want %v", data, got, want)
+		}
+	}
+}

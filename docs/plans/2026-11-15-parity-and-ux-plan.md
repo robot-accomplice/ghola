@@ -182,6 +182,7 @@ Parity claims are not possible while the basic fetch is wrong. Fix these first, 
    - Status (2026-11-17, branch `fix/h1-cross-host-headers`): done. `setHeaders` drops the `Authorization` and `Cookie` headers from `-H` on a redirect to another scheme, host or port, as it does for `-u`. `--location-trusted` sends all three to every host and turns on `-L`, as in curl. `xhost_bearer` passes. The new scenario `xhost_trusted` matches curl.
 3. H3: apply `--timeout` to every path. Add curl's separate `--connect-timeout`, `--max-time`, `--speed-limit` and `--speed-time`.
 4. H4: make `-n` apply only to segmented downloads. Report every failed request and set the exit code.
+   - Status (2026-11-18, branch `fix/h4-concurrency`): done. `RunConcurrent` (race n copies of the request, keep the first answer) is removed. Without `-o`, `-n` sends one request and prints a note on stderr, so a failure gives the normal error exit. A GET with a body (`-X GET -d`) is not segmented. `n_post` and `n_refused` pass.
 5. H5: reject a negative `-r`.
 6. H6 and H7: the redirect-limit exit code, and `-f -o` writes no file.
 7. M1: send no default `Content-Type` on GET. Send `application/x-www-form-urlencoded` for `-d`, as curl does.

@@ -152,8 +152,11 @@ func probe(ctx context.Context, opts *config.Options, stream Streamer) (string, 
 }
 
 // canSegment reports whether a segmented (parallel Range) download applies.
+// Segments are range GETs without a body (config.ShouldStream sends only
+// GET here), so a GET with a body (-X GET -d) goes as one request.
 func canSegment(opts *config.Options, meta gholatransport.StreamMeta) bool {
 	return opts.Concurrency > 1 &&
+		opts.Data == "" &&
 		opts.Output.File != "" &&
 		meta.AcceptRanges &&
 		meta.ContentLength >= config.DefaultSegmentMinBytes &&

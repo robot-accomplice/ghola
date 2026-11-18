@@ -112,19 +112,10 @@ func execute(ctx context.Context, args []string, do client.Doer, stream client.S
 		return config.NoError.Int()
 	}
 
-	if opts.Concurrency > 1 {
-		client.RunConcurrent(ctx, opts, do, func(req *fasthttp.Request, rsp *fasthttp.Response) {
-			defer fasthttp.ReleaseRequest(req)
-			defer fasthttp.ReleaseResponse(rsp)
-			if opts.Output.Snoop {
-				output.RunSnoop(w, opts, rsp)
-			} else {
-				if err := output.ProcessResponse(w, os.Stderr, opts, req, rsp, 0); err != nil {
-					fmt.Fprintln(os.Stderr, err)
-				}
-			}
-		})
-		return config.NoError.Int()
+	// -n splits a download to a file into ranges. It does not repeat a
+	// request: n copies of a POST are a side effect (audit finding H4).
+	if opts.Concurrency > 1 && !opts.Output.Silent {
+		fmt.Fprintln(os.Stderr, "Note: -n applies only to a download to a file (-o); sending one request")
 	}
 
 	start := time.Now()
