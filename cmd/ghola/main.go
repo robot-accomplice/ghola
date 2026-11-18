@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -107,24 +106,15 @@ func execute(ctx context.Context, args []string, do client.Doer, stream client.S
 			if !opts.Output.Silent {
 				fmt.Fprintf(os.Stderr, "Failed: %s\n", err)
 			}
-			return config.WriteFileFailed.Int()
+			return exitFor(err).Int()
 		}
 		return config.NoError.Int()
 	}
 
-	if opts.Concurrency > 1 {
-		client.RunConcurrent(ctx, opts, do, func(req *fasthttp.Request, rsp *fasthttp.Response) {
-			defer fasthttp.ReleaseRequest(req)
-			defer fasthttp.ReleaseResponse(rsp)
-			if opts.Output.Snoop {
-				output.RunSnoop(w, opts, rsp)
-			} else {
-				if err := output.ProcessResponse(w, os.Stderr, opts, req, rsp, 0); err != nil {
-					fmt.Fprintln(os.Stderr, err)
-				}
-			}
-		})
-		return config.NoError.Int()
+	// -n splits a download to a file into ranges. It does not repeat a
+	// request: n copies of a POST are a side effect (audit finding H4).
+	if opts.Concurrency > 1 && !opts.Output.Silent {
+		fmt.Fprintln(os.Stderr, "Note: -n applies only to a download to a file (-o); sending one request")
 	}
 
 	start := time.Now()
@@ -134,7 +124,7 @@ func execute(ctx context.Context, args []string, do client.Doer, stream client.S
 		if !opts.Output.Silent {
 			fmt.Fprintf(os.Stderr, "Failed: %s\n", err)
 		}
-		return config.SendFailed.Int()
+		return exitFor(err).Int()
 	}
 	defer fasthttp.ReleaseRequest(req)
 	defer fasthttp.ReleaseResponse(rsp)
@@ -148,16 +138,13 @@ func execute(ctx context.Context, args []string, do client.Doer, stream client.S
 	if opts.Output.HAR != "" {
 		if _, err := gholatransport.ReadBody(rsp); err != nil {
 			fmt.Fprintf(os.Stderr, "read response body: %v\n", err)
-			return config.WriteFileFailed.Int()
+			return exitFor(err).Int()
 		}
 	}
 
 	if err := output.ProcessResponse(w, os.Stderr, opts, req, rsp, elapsed); err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		if errors.Is(err, output.ErrNon2xx) {
-			return config.SendFailed.Int()
-		}
-		return config.WriteFileFailed.Int()
+		return exitFor(err).Int()
 	}
 
 	if opts.Output.HAR != "" {

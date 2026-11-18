@@ -4,21 +4,18 @@ package output
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/robot-accomplice/ghola/internal/client"
 	"github.com/robot-accomplice/ghola/internal/config"
 	"github.com/robot-accomplice/ghola/internal/transport"
 	"github.com/tidwall/gjson"
 	"github.com/valyala/fasthttp"
 )
-
-// ErrNon2xx is returned when --fail is set and the server responds with a non-2xx status.
-var ErrNon2xx = errors.New("non-2xx http status")
 
 // ProcessResponse writes the HTTP response to the appropriate destination
 // (file or stdout) based on opts. The body goes to w exactly as the server
@@ -27,10 +24,8 @@ var ErrNon2xx = errors.New("non-2xx http status")
 // the timing line) goes to ew. It returns a non-nil error if the body cannot
 // be read or written.
 func ProcessResponse(w, ew io.Writer, opts *config.Options, req *fasthttp.Request, rsp *fasthttp.Response, elapsed time.Duration) error {
-	httpOk := rsp.StatusCode() >= 200 && rsp.StatusCode() < 300
-
-	if opts.Output.Fail && !httpOk {
-		return fmt.Errorf("%w: %d %s", ErrNon2xx, rsp.StatusCode(), fasthttp.StatusMessage(rsp.StatusCode()))
+	if opts.Output.FailsOn(rsp.StatusCode()) {
+		return fmt.Errorf("%w: %d %s", config.ErrHTTPStatus, rsp.StatusCode(), fasthttp.StatusMessage(rsp.StatusCode()))
 	}
 
 	body, err := bodyReader(opts, rsp)
@@ -68,10 +63,10 @@ func ProcessResponse(w, ew io.Writer, opts *config.Options, req *fasthttp.Reques
 	}
 	if opts.Output.Include {
 		if _, err := w.Write(rsp.Header.Header()); err != nil {
-			return fmt.Errorf("write output: %w", err)
+			return fmt.Errorf("write output: %w", config.WriteError(err))
 		}
 	}
-	if _, err := io.Copy(w, body); err != nil {
+	if _, err := io.Copy(config.MarkWrites(w), body); err != nil {
 		return fmt.Errorf("copy response body: %w", err)
 	}
 
@@ -81,11 +76,17 @@ func ProcessResponse(w, ew io.Writer, opts *config.Options, req *fasthttp.Reques
 
 // bodyReader returns the response body as a reader: the stream when the
 // transport left one, else the buffer. With --compressed and a gzip
-// Content-Encoding, it decodes the body.
+// Content-Encoding, it decodes the body. With --limit-rate, it throttles it.
 func bodyReader(opts *config.Options, rsp *fasthttp.Response) (io.Reader, error) {
 	body := rsp.BodyStream()
 	if body == nil {
 		body = bytes.NewReader(rsp.Body())
+	}
+	// The limit counts the bytes on the wire, as in curl, so it comes
+	// before the gzip decoder.
+	body, err := client.LimitReader(body, opts)
+	if err != nil {
+		return nil, err
 	}
 	if opts.Stealth.Compressed && bytes.EqualFold(rsp.Header.Peek("Content-Encoding"), []byte("gzip")) {
 		decoded, err := transport.DecodeGzip(body)
@@ -101,11 +102,11 @@ func bodyReader(opts *config.Options, rsp *fasthttp.Response) (io.Reader, error)
 func writeFile(name string, body io.Reader) error {
 	f, err := os.OpenFile(name, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
-		return fmt.Errorf("write output file: %w", err)
+		return fmt.Errorf("write output file: %w", config.WriteError(err))
 	}
-	_, err = io.Copy(f, body)
+	_, err = io.Copy(config.MarkWrites(f), body)
 	if cerr := f.Close(); err == nil {
-		err = cerr
+		err = config.WriteError(cerr)
 	}
 	if err != nil {
 		return fmt.Errorf("write output file: %w", err)

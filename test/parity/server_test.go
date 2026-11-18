@@ -42,6 +42,12 @@ type server struct {
 	mux        *http.ServeMux
 	caFile     string
 	deadURL    string // a local port with no listener
+	// silent accepts TCP connections and never sends a byte, so a TLS
+	// handshake to silentURL never ends.
+	silent    net.Listener
+	silentURL string
+	silentMu  sync.Mutex
+	silentCs  []net.Conn
 
 	mu    sync.Mutex
 	logs  map[string][]reqLog
@@ -74,10 +80,35 @@ func newServer(dir string) (*server, error) {
 	}
 	s.deadURL = "http://" + ln.Addr().String() + "/"
 	ln.Close()
+
+	if s.silent, err = net.Listen("tcp4", "127.0.0.1:0"); err != nil {
+		return nil, err
+	}
+	s.silentURL = "https://" + s.silent.Addr().String() + "/"
+	go s.holdSilent()
 	return s, nil
 }
 
+// holdSilent accepts connections on s.silent and keeps them open until close.
+func (s *server) holdSilent() {
+	for {
+		c, err := s.silent.Accept()
+		if err != nil {
+			return
+		}
+		s.silentMu.Lock()
+		s.silentCs = append(s.silentCs, c)
+		s.silentMu.Unlock()
+	}
+}
+
 func (s *server) close() {
+	s.silent.Close()
+	s.silentMu.Lock()
+	for _, c := range s.silentCs {
+		c.Close()
+	}
+	s.silentMu.Unlock()
 	s.plain.CloseClientConnections()
 	s.tls.CloseClientConnections()
 	s.plain.Close()
@@ -220,6 +251,20 @@ func (s *server) routes() {
 	})
 	// Never answers.
 	m.HandleFunc("/hang", func(w http.ResponseWriter, r *http.Request) { <-r.Context().Done() })
+	// One byte each 500 ms, for at most 60 s.
+	m.HandleFunc("/trickle", func(w http.ResponseWriter, r *http.Request) {
+		for i := 0; i < 120; i++ {
+			if _, err := w.Write([]byte("x")); err != nil {
+				return
+			}
+			w.(http.Flusher).Flush()
+			select {
+			case <-r.Context().Done():
+				return
+			case <-time.After(500 * time.Millisecond):
+			}
+		}
+	})
 	m.HandleFunc("/status/{code}", func(w http.ResponseWriter, r *http.Request) {
 		c, _ := strconv.Atoi(r.PathValue("code"))
 		w.WriteHeader(c)

@@ -372,43 +372,6 @@ func TestFetchURL_RedirectLocationRelative(t *testing.T) {
 	}
 }
 
-func TestFetchURL_RedirectMaxRedirsExceededReturnsLastResponse(t *testing.T) {
-	var attempts int32
-	ln, do := newTestServer(func(ctx *fasthttp.RequestCtx) {
-		atomic.AddInt32(&attempts, 1)
-		ctx.SetStatusCode(302)
-		ctx.Response.Header.Set("Location", "/loop")
-		ctx.SetBodyString("redir")
-	})
-	defer ln.Close()
-
-	opts := &config.Options{
-		URL:         "http://test/start",
-		Method:      "GET",
-		Stealth:     config.StealthOptions{Agent: "ghola"},
-		Resilience:  config.ResilienceOptions{Retries: 0, Location: true, MaxRedirs: 1, RetryHTTP: false, Backoff: 1},
-		Output:      config.OutputOptions{Silent: true},
-		Concurrency: 1,
-	}
-
-	req, rsp, err := FetchURL(bg(), opts, do)
-	if err != nil {
-		t.Fatalf("FetchURL error: %v", err)
-	}
-	defer fasthttp.ReleaseRequest(req)
-	defer fasthttp.ReleaseResponse(rsp)
-
-	if atomic.LoadInt32(&attempts) != 2 {
-		t.Fatalf("attempts=%d, want 2", attempts)
-	}
-	if rsp.StatusCode() != 302 {
-		t.Fatalf("status=%d, want 302", rsp.StatusCode())
-	}
-	if string(rsp.Body()) != "redir" {
-		t.Fatalf("body=%q, want redir", rsp.Body())
-	}
-}
-
 func TestFetchURL_Redirect303RewritesToGET(t *testing.T) {
 	var attempts int32
 	ln, do := newTestServer(func(ctx *fasthttp.RequestCtx) {
@@ -554,67 +517,6 @@ func TestFetchURL_CustomHeadersNoSpaceAfterColon(t *testing.T) {
 	defer fasthttp.ReleaseResponse(rsp)
 }
 
-func TestRunConcurrent_AllGoroutinesComplete(t *testing.T) {
-	var count int32
-	ln, do := newTestServer(func(ctx *fasthttp.RequestCtx) {
-		atomic.AddInt32(&count, 1)
-		ctx.SetStatusCode(200)
-		ctx.SetBodyString("ok")
-	})
-	defer ln.Close()
-
-	opts := &config.Options{
-		URL:         "http://test",
-		Method:      "GET",
-		Stealth:     config.StealthOptions{Agent: "ghola"},
-		Concurrency: 5,
-	}
-
-	var processed int32
-	RunConcurrent(bg(), opts, do, func(req *fasthttp.Request, rsp *fasthttp.Response) {
-		atomic.AddInt32(&processed, 1)
-		defer fasthttp.ReleaseRequest(req)
-		defer fasthttp.ReleaseResponse(rsp)
-	})
-
-	if atomic.LoadInt32(&count) != 5 {
-		// Cancellation happens as soon as the first request succeeds, so not all
-		// goroutines necessarily reach the network call before ctx is canceled.
-		if atomic.LoadInt32(&count) < 1 {
-			t.Errorf("server received %d requests, want at least 1", count)
-		}
-		if atomic.LoadInt32(&count) > 5 {
-			t.Errorf("server received %d requests, want at most 5", count)
-		}
-	}
-	if atomic.LoadInt32(&processed) != 1 {
-		t.Errorf("processed %d responses, want exactly 1", processed)
-	}
-}
-
-func TestRunConcurrent_AllFail(t *testing.T) {
-	failDoer := func(ctx context.Context, opts *config.Options, req *fasthttp.Request, resp *fasthttp.Response) error {
-		return fmt.Errorf("fail")
-	}
-
-	opts := &config.Options{
-		URL:         "http://test",
-		Method:      "GET",
-		Stealth:     config.StealthOptions{Agent: "ghola"},
-		Concurrency: 3,
-		Output:      config.OutputOptions{Silent: true},
-	}
-
-	var processed int32
-	RunConcurrent(bg(), opts, failDoer, func(req *fasthttp.Request, rsp *fasthttp.Response) {
-		atomic.AddInt32(&processed, 1)
-	})
-
-	if atomic.LoadInt32(&processed) != 0 {
-		t.Errorf("processed %d responses, want 0 when all fail", processed)
-	}
-}
-
 func TestFetchURL_ZeroRetries(t *testing.T) {
 	failDoer := func(ctx context.Context, opts *config.Options, req *fasthttp.Request, resp *fasthttp.Response) error {
 		return fmt.Errorf("fail")
@@ -694,45 +596,6 @@ func TestFetchURL_CancelDuringBackoff(t *testing.T) {
 	}
 	if elapsed > 500*time.Millisecond {
 		t.Errorf("FetchURL took %v; should abort during backoff sleep", elapsed)
-	}
-}
-
-func TestRunConcurrent_CancelsLosers(t *testing.T) {
-	var started int32
-	gate := make(chan struct{})
-
-	slowDoer := func(ctx context.Context, opts *config.Options, req *fasthttp.Request, resp *fasthttp.Response) error {
-		n := atomic.AddInt32(&started, 1)
-		if n == 1 {
-			resp.SetStatusCode(200)
-			resp.SetBodyString("winner")
-			close(gate)
-			return nil
-		}
-		<-gate
-		return fmt.Errorf("context cancelled")
-	}
-
-	opts := &config.Options{
-		URL:         "http://test",
-		Method:      "GET",
-		Stealth:     config.StealthOptions{Agent: "ghola"},
-		Concurrency: 5,
-		Output:      config.OutputOptions{Silent: true},
-	}
-
-	var processed int32
-	start := time.Now()
-	RunConcurrent(bg(), opts, slowDoer, func(req *fasthttp.Request, rsp *fasthttp.Response) {
-		atomic.AddInt32(&processed, 1)
-	})
-	elapsed := time.Since(start)
-
-	if atomic.LoadInt32(&processed) != 1 {
-		t.Errorf("processed = %d, want exactly 1", processed)
-	}
-	if elapsed > 2*time.Second {
-		t.Errorf("RunConcurrent took %v; losers should be cancelled quickly", elapsed)
 	}
 }
 
@@ -858,5 +721,20 @@ func TestFetchURL_CookieJarPersistsAcrossRequests(t *testing.T) {
 
 	if !strings.Contains(seenCookie, "session=abc") {
 		t.Fatalf("cookie header=%q, want persisted session cookie", seenCookie)
+	}
+}
+
+// A negative retry count ran the attempt loop zero times, and FetchURL
+// returned a nil response with a nil error. The caller then dereferenced
+// the nil response and panicked (audit finding H5). The bridge passes its
+// JSON "retries" field here too, so FetchURL itself must refuse it.
+func TestFetchURL_NegativeRetriesIsAnError(t *testing.T) {
+	opts := &config.Options{URL: "http://test", Method: "GET", Resilience: config.ResilienceOptions{Retries: -1}}
+	req, rsp, err := FetchURL(bg(), opts, func(context.Context, *config.Options, *fasthttp.Request, *fasthttp.Response) error {
+		t.Fatal("no request may be sent")
+		return nil
+	})
+	if err == nil || req != nil || rsp != nil {
+		t.Fatalf("FetchURL = %v, %v, %v; want nil, nil and an error", req, rsp, err)
 	}
 }

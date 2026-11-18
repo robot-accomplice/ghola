@@ -40,21 +40,26 @@ Attribution: the direction for Ghola's browser-like fetching work was inspired b
 
 | Flag | Description |
 | ------ | ------------- |
-| `-n <int>` | **Concurrent connections** via goroutines (first successful response wins). |
+| `-n <int>` | **Segmented download** -- split a download to a file (`-o`) into this many parallel ranges. It does not repeat a request. |
 | `-w, --wget` | **Wget mode** -- auto-saves to local file using the inferred remote filename. |
 | `-u <user:pass>` | **Basic Auth** -- native HTTP basic authentication. |
 | `-T <file>` | **Upload** -- send a local file as the request body. |
 | `-o <file>` | **Output** -- write response body to a file. |
-| `-H <header>` | **Custom headers** -- repeatable. Default: `Content-Type: application/json`. |
+| `-H <header>` | **Custom headers** -- repeatable. A GET has no `Content-Type`. `-d`, `--data-binary` and `--data-urlencode` send `application/x-www-form-urlencoded`, as in curl. `--chain` sends `application/json`. A `Content-Type` from `-H` wins. |
 | `-X <method>` | **HTTP method** -- defaults to GET, auto-switches to POST when `-d` is used. |
 | `-i` | **Include headers** in output. |
 | `-v` | **Verbose** -- show ghost signature and extra diagnostics. |
 | `-s` | **Silent** -- suppress all output. |
 | `-f` | **Fail** on non-2xx HTTP status (exit non-zero, suppress body output). |
-| `-L, --location` | **Follow redirects** (HTTP 3xx). |
+| `-L, --location` | **Follow redirects** (HTTP 3xx). `-u`, `Authorization` and `Cookie` go only to the scheme, host and port you gave, as in curl. |
+| `--location-trusted` | **Follow redirects** and send `-u`, `Authorization` and `Cookie` to every host, as in curl. |
 | `--max-redirs <n>` | **Max redirects** to follow when `--location` is enabled. |
 | `--retry-http` | **Retry on statuses** (e.g. 429, 5xx) in addition to transport failures. |
-| `--timeout <ms>` | **Request timeout** in milliseconds (0 disables). |
+| `--timeout <ms>` | **Request timeout** in milliseconds (0 disables). It covers the whole transfer, the body included. |
+| `--max-time <s>` | **Request timeout** in seconds, as curl `--max-time`. Use it or `--timeout`, not both. |
+| `--connect-timeout <s>` | **Connect timeout** in seconds: DNS, TCP, proxy CONNECT and TLS only. |
+| `--speed-limit <B/s>` | **Stall check** -- stop when slower than this many bytes per second for `--speed-time` (default 30 s). |
+| `--speed-time <s>` | **Stall window** in seconds for `--speed-limit` (default limit 1 byte per second). |
 | `--cookie-jar <file>` | **Persistent cookies** -- save and reuse cookies across runs. |
 | `--cookie <name=value>` | **Seed cookies** -- add one or more cookies to the request session. |
 | `--proxy <url>` | **Single proxy** -- route traffic through an HTTP proxy. |
@@ -155,7 +160,7 @@ ghola --impersonate chrome --proxy http://user:pass@proxy.local:8080 https://exa
 ghola --profile-list
 
 # POST with data and verbose ghost signing
-ghola -vG -d '{"query": "balance"}' https://rpc.example.com
+ghola -vG -H 'Content-Type: application/json' -d '{"query": "balance"}' https://rpc.example.com
 
 # Snoop mode -- check security posture
 ghola -S https://example.com
@@ -166,9 +171,29 @@ ghola -c base -r 3 https://rpc.base.org
 # Download a file (wget mode)
 ghola -w https://example.com/report.pdf
 
-# Concurrent connections with drift jitter
-ghola -n 5 -D 200 https://api.example.com/data
+# Download a large file in 5 parallel ranges
+ghola -n 5 -o big.iso https://example.com/big.iso
 ```
+
+### Exit codes
+
+ghola uses curl's exit codes for the same causes, so a script written for curl reads them the same way.
+
+| Code | Cause |
+|------|-------|
+| 0 | Success |
+| 2 | Invalid or missing argument |
+| 6 | The host name did not resolve |
+| 7 | The connection failed (for example, refused) |
+| 22 | `-f` refused the HTTP status |
+| 23 | ghola could not write the output (stdout or the `-o` file) |
+| 26 | ghola could not read a local file (`-d @file`, `-T`, `-F name=@file`) |
+| 28 | A time limit ended the transfer (`--max-time`, `--connect-timeout`, `--speed-limit`) |
+| 35 | The TLS handshake failed |
+| 47 | `-L` reached `--max-redirs` |
+| 55 | The request failed for another cause |
+| 56 | The connection failed after it was ready (for example, a reset, or a TLS alert after the handshake) |
+| 60 | The server certificate did not verify |
 
 ## Architecture
 

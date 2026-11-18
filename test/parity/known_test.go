@@ -13,38 +13,6 @@ package parity
 // The findings are in docs/audits/2026-11-12-v0.7.0-vs-curl-aria2-wget.md.
 // Recorded against v0.8.0 on 2026-11-15.
 var known = map[string]string{
-	"n_post":    "H4: -n repeats the POST",
-	"n_refused": "H4: -n drops errors and exits 0",
-
-	"neg_retry": "H5: -r -1 gives a nil response and a panic",
-
-	"redirect_limit": "H6: the redirect limit exits 0",
-
-	"fail_to_file": "H7: -f -o writes the error body",
-
-	"get_no_content_type":        "M1: every request gets Content-Type: application/json",
-	"get_no_content_type_chrome": "M1: every request gets Content-Type: application/json",
-	"form_content_type":          "M1: -d is labelled application/json",
-
-	"rate_stdout": "M3: --limit-rate does not apply to stdout",
-
-	"progress_not_tty": "M4: the meter prints when stderr is not a terminal",
-	"progress_total":   "M4: the total comes from the compressed length",
-
-	"no_head": "M5: each -o download sends HEAD first",
-
-	"exit_refused": "M6: every network error exits 2",
-	"exit_dns":     "M6: every network error exits 2",
-	"exit_tls":     "M6: every network error exits 2",
-	"exit_timeout": "M6: every network error exits 2",
-
-	"neg_timeout":      "M7: a negative --timeout is accepted",
-	"zero_connections": "M7: -n 0 is accepted",
-	"header_no_colon":  "M7: a header without a colon is dropped without a message",
-	"header_remove":    `M7: -H "User-Agent:" sends the engine default (Go-http-client/1.1)`,
-
-	"proxy_env": "M8: HTTP_PROXY is ignored",
-
 	"url_no_scheme": "M9: a URL without a scheme fails",
 	"two_urls":      "M9: extra URLs are ignored without a message",
 

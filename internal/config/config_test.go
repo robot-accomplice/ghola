@@ -318,32 +318,25 @@ func TestExitCode_Int(t *testing.T) {
 		code ExitCode
 		want int
 	}{
+		// curl's exit codes for the same causes (audit finding M6).
 		{NoError, 0},
-		{BadFlag, 1},
-		{SendFailed, 2},
-		{ReadFileFailed, 3},
-		{WriteFileFailed, 4},
+		{BadFlag, 2},
+		{CouldntResolveHost, 6},
+		{CouldntConnect, 7},
+		{HTTPError, 22},
+		{WriteFileFailed, 23},
+		{ReadFileFailed, 26},
+		{TimedOut, 28},
+		{TLSConnectFailed, 35},
+		{TooManyRedirects, 47},
+		{SendFailed, 55},
+		{RecvFailed, 56},
+		{PeerFailedVerification, 60},
 	}
 	for _, tt := range tests {
 		if got := tt.code.Int(); got != tt.want {
 			t.Errorf("ExitCode(%d).Int() = %d, want %d", tt.code, got, tt.want)
 		}
-	}
-}
-
-func TestParseFlags_DefaultHeaders(t *testing.T) {
-	opts, _, err := ParseFlags([]string{"http://example.com"})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	found := false
-	for _, h := range opts.Headers {
-		if h == "Content-Type: application/json" {
-			found = true
-		}
-	}
-	if !found {
-		t.Error("default Content-Type header missing")
 	}
 }
 

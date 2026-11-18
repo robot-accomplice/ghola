@@ -3,6 +3,7 @@ package output
 import (
 	"bytes"
 	"compress/gzip"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -521,5 +522,65 @@ func TestRunSnoop_RateLimitHeaders(t *testing.T) {
 	out := buf.String()
 	if !strings.Contains(out, "Rate Limiting") {
 		t.Error("missing rate limit section in snoop output")
+	}
+}
+
+// TestProcessResponse_LimitRateStdout checks that --limit-rate applies to the
+// body on stdout, not only to a download to a file (audit finding M3). A
+// script that limits the rate must not flood the link when it pipes the body.
+func TestProcessResponse_LimitRateStdout(t *testing.T) {
+	req := fasthttp.AcquireRequest()
+	rsp := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseRequest(req)
+	defer fasthttp.ReleaseResponse(rsp)
+
+	body := bytes.Repeat([]byte("x"), 10_000)
+	rsp.Header.SetStatusCode(200)
+	rsp.SetBody(body)
+
+	var buf bytes.Buffer
+	opts := &config.Options{Output: config.OutputOptions{LimitRate: "10k"}}
+	start := time.Now()
+	if err := ProcessResponse(&buf, io.Discard, opts, req, rsp, 0); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// 10 000 bytes at 10 000 bytes/s with an empty bucket take about 1 s.
+	if elapsed := time.Since(start); elapsed < 700*time.Millisecond {
+		t.Errorf("body took %v, want about 1s at --limit-rate 10k", elapsed)
+	}
+	if !bytes.Equal(buf.Bytes(), body) {
+		t.Errorf("wrote %d bytes, want the %d body bytes", buf.Len(), len(body))
+	}
+}
+
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("broken pipe") }
+
+type failingReader struct{}
+
+func (failingReader) Read([]byte) (int, error) { return 0, errors.New("connection reset") }
+
+// TestProcessResponse_WriteErrorIsMarked checks that a failed write to stdout
+// is a write error (curl exit 23), and that a body that breaks off is not
+// (audit finding M6). Both come out of the same io.Copy.
+func TestProcessResponse_WriteErrorIsMarked(t *testing.T) {
+	req := fasthttp.AcquireRequest()
+	defer fasthttp.ReleaseRequest(req)
+
+	rsp := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseResponse(rsp)
+	rsp.SetBodyString("hello")
+	err := ProcessResponse(failingWriter{}, io.Discard, &config.Options{}, req, rsp, 0)
+	if !errors.Is(err, config.ErrWrite) {
+		t.Errorf("write to a broken stdout: err = %v, want ErrWrite", err)
+	}
+
+	broken := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseResponse(broken)
+	broken.SetBodyStream(failingReader{}, -1)
+	err = ProcessResponse(io.Discard, io.Discard, &config.Options{}, req, broken, 0)
+	if err == nil || errors.Is(err, config.ErrWrite) {
+		t.Errorf("broken body: err = %v, want an error that is not ErrWrite", err)
 	}
 }

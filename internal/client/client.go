@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math/big"
 	"net/http"
@@ -15,7 +16,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/robot-accomplice/ghola/internal/config"
@@ -76,16 +76,7 @@ func newFetchState(opts *config.Options, do Doer) (*fetchState, error) {
 	}
 	s.jar = jar
 
-	proxySelector, err := gholaproxy.NewSelector(opts.ProxyCfg.Proxy, opts.ProxyCfg.Auth, opts.ProxyCfg.File, opts.ProxyCfg.Strategy)
-	if err != nil {
-		return nil, err
-	}
-	if opts.ProxyCfg.HealthCheck {
-		if err := proxySelector.HealthCheck(); err != nil {
-			return nil, err
-		}
-	}
-	selectedProxy, err := proxySelector.Select()
+	selectedProxy, err := selectProxy(opts)
 	if err != nil {
 		return nil, err
 	}
@@ -156,6 +147,13 @@ func handleRedirect(status int, method, data, location, baseURL string) (newURL,
 	return resolved, newMethod, newData, true
 }
 
+// ErrTooManyRedirects is returned when -L reaches --max-redirs.
+var ErrTooManyRedirects = errors.New("too many redirects")
+
+func tooManyRedirects(opts *config.Options) error {
+	return fmt.Errorf("%w: maximum (%d) redirects followed", ErrTooManyRedirects, opts.Resilience.MaxRedirs)
+}
+
 // WithTimeout applies --timeout to ctx. The deadline covers the whole
 // transfer, the body included, as curl's --max-time does. The caller keeps
 // ctx until it has read the body, because FetchURL returns the body as a
@@ -173,6 +171,12 @@ func WithTimeout(ctx context.Context, opts *config.Options) (context.Context, co
 // The caller must release the returned Request and Response via
 // fasthttp.ReleaseRequest / ReleaseResponse.
 func FetchURL(ctx context.Context, opts *config.Options, do Doer) (*fasthttp.Request, *fasthttp.Response, error) {
+	// A negative count would run no attempt and return no response and no
+	// error (audit finding H5). The bridge reaches this point without the
+	// CLI's flag check.
+	if opts.Resilience.Retries < 0 {
+		return nil, nil, fmt.Errorf("retries cannot be negative: %d", opts.Resilience.Retries)
+	}
 	state, err := newFetchState(opts, do)
 	if err != nil {
 		return nil, nil, err
@@ -199,15 +203,12 @@ redirectLoop:
 			}
 
 			if attempt > 0 {
-				wait := time.Duration(opts.Resilience.Backoff<<uint(attempt-1)) * time.Millisecond
+				wait := backoffWait(opts, attempt)
 				if haveNextWait {
 					wait = nextWait
 					haveNextWait = false
 				}
-				if !opts.Output.Silent {
-					fmt.Fprintf(os.Stderr, "Retry %d/%d in %v...\n", attempt, opts.Resilience.Retries, wait)
-				}
-				if err := sleepCtx(ctx, wait); err != nil {
+				if err := waitToRetry(ctx, opts, attempt, wait); err != nil {
 					lastErr = err
 					break
 				}
@@ -245,9 +246,17 @@ redirectLoop:
 				continue
 			}
 
-			if opts.Resilience.Location && isRedirectStatus(status) && redirectsFollowed < opts.Resilience.MaxRedirs {
+			if opts.Resilience.Location && isRedirectStatus(status) {
 				loc := string(rsp.Header.Peek("Location"))
 				if newURL, newMethod, newData, ok := handleRedirect(status, effectiveMethod, effectiveData, loc, effectiveURL); ok {
+					// One more hop than --max-redirs is an error, as in curl
+					// (audit finding H6). A 3xx without a usable Location is
+					// the answer.
+					if redirectsFollowed >= opts.Resilience.MaxRedirs {
+						fasthttp.ReleaseRequest(req)
+						fasthttp.ReleaseResponse(rsp)
+						return nil, nil, tooManyRedirects(opts)
+					}
 					redirectsFollowed++
 					effectiveURL = newURL
 					effectiveMethod = newMethod
@@ -265,6 +274,23 @@ redirectLoop:
 	}
 }
 
+// selectProxy returns the proxy from --proxy or --proxy-file, or "" when
+// neither is set. Then the transport takes the proxy from the environment.
+// FetchURL and the download path both call it, so a proxy cannot reach one
+// path and miss the other (audit finding M8).
+func selectProxy(opts *config.Options) (string, error) {
+	selector, err := gholaproxy.NewSelector(opts.ProxyCfg.Proxy, opts.ProxyCfg.Auth, opts.ProxyCfg.File, opts.ProxyCfg.Strategy)
+	if err != nil {
+		return "", err
+	}
+	if opts.ProxyCfg.HealthCheck {
+		if err := selector.HealthCheck(); err != nil {
+			return "", err
+		}
+	}
+	return selector.Select()
+}
+
 func resolveUserAgent(opts *config.Options, activeProfile profile.BrowserProfile) string {
 	if opts.Stealth.AgentExplicit {
 		return opts.Stealth.Agent
@@ -278,25 +304,12 @@ func resolveUserAgent(opts *config.Options, activeProfile profile.BrowserProfile
 func parseHeaderOverrides(headers []string) map[string]string {
 	overrides := make(map[string]string, len(headers))
 	for _, raw := range headers {
-		key, val, ok := parseHeader(raw)
+		key, val, ok := config.ParseHeader(raw)
 		if ok {
 			overrides[strings.ToLower(key)] = val
 		}
 	}
 	return overrides
-}
-
-func parseHeader(raw string) (string, string, bool) {
-	i := strings.IndexByte(raw, ':')
-	if i < 0 {
-		return "", "", false
-	}
-	key := strings.TrimSpace(raw[:i])
-	val := strings.TrimSpace(raw[i+1:])
-	if key == "" {
-		return "", "", false
-	}
-	return key, val, true
 }
 
 func isRedirectStatus(status int) bool {
@@ -328,6 +341,20 @@ func resolveLocation(baseURL, location string) (string, bool) {
 	return resolved.String(), true
 }
 
+// backoffWait returns the wait before retry number attempt (1 for the first
+// retry): --backoff milliseconds, doubled for each retry after the first.
+func backoffWait(opts *config.Options, attempt int) time.Duration {
+	return time.Duration(opts.Resilience.Backoff<<uint(attempt-1)) * time.Millisecond
+}
+
+// waitToRetry announces retry number attempt on stderr and waits.
+func waitToRetry(ctx context.Context, opts *config.Options, attempt int, wait time.Duration) error {
+	if !opts.Output.Silent {
+		fmt.Fprintf(os.Stderr, "Retry %d/%d in %v...\n", attempt, opts.Resilience.Retries, wait)
+	}
+	return sleepCtx(ctx, wait)
+}
+
 func isRetryableHTTPStatus(status int) bool {
 	switch status {
 	case 429, 500, 502, 503, 504:
@@ -338,7 +365,11 @@ func isRetryableHTTPStatus(status int) bool {
 }
 
 func parseRetryAfter(rsp *fasthttp.Response) (time.Duration, bool) {
-	raw := string(rsp.Header.Peek("Retry-After"))
+	return retryAfter(string(rsp.Header.Peek("Retry-After")))
+}
+
+// retryAfter parses a Retry-After value: seconds, or an HTTP date.
+func retryAfter(raw string) (time.Duration, bool) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return 0, false
@@ -382,90 +413,4 @@ func applyGhostSign(req *fasthttp.Request, rawURL string) {
 	id := fmt.Sprintf("%d-%s", time.Now().Unix(), rawURL)
 	hash := sha256.Sum256([]byte(id))
 	req.Header.Set("X-Ghola-Identity", hex.EncodeToString(hash[:]))
-}
-
-// RunConcurrent spawns opts.Concurrency goroutines, each calling FetchURL.
-// The first successful response is passed to out; the remaining goroutines
-// are cancelled immediately via the or-done pattern.
-func orDone[T any](done <-chan struct{}, ch <-chan T) <-chan T {
-	out := make(chan T)
-	go func() {
-		defer close(out)
-		for {
-			select {
-			case <-done:
-				return
-			case v, ok := <-ch:
-				if !ok {
-					return
-				}
-				select {
-				case out <- v:
-				case <-done:
-					return
-				}
-			}
-		}
-	}()
-	return out
-}
-
-func RunConcurrent(ctx context.Context, opts *config.Options, do Doer, out func(*fasthttp.Request, *fasthttp.Response)) {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	type result struct {
-		req *fasthttp.Request
-		rsp *fasthttp.Response
-		err error
-	}
-
-	results := make(chan result, opts.Concurrency)
-	var wg sync.WaitGroup
-	for i := 0; i < opts.Concurrency; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			req, rsp, err := FetchURL(ctx, opts, do)
-			if err != nil {
-				return
-			}
-			select {
-			case results <- result{req: req, rsp: rsp, err: nil}:
-			case <-ctx.Done():
-				fasthttp.ReleaseRequest(req)
-				fasthttp.ReleaseResponse(rsp)
-			}
-		}()
-	}
-
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	winnerProcessed := false
-	for r := range orDone(ctx.Done(), results) {
-		if r.err != nil {
-			continue
-		}
-		if !winnerProcessed {
-			winnerProcessed = true
-			out(r.req, r.rsp)
-			cancel()
-			continue
-		}
-		fasthttp.ReleaseRequest(r.req)
-		fasthttp.ReleaseResponse(r.rsp)
-	}
-
-	if winnerProcessed {
-		for r := range results {
-			if r.err != nil {
-				continue
-			}
-			fasthttp.ReleaseRequest(r.req)
-			fasthttp.ReleaseResponse(r.rsp)
-		}
-	}
 }

@@ -8,6 +8,8 @@ import (
 	"io"
 	"sync"
 	"time"
+
+	"github.com/robot-accomplice/ghola/internal/config"
 )
 
 // progressInterval is the minimum time between progress line updates.
@@ -58,6 +60,41 @@ func (rl *rateLimiter) wait(n int) {
 	}
 }
 
+// chunk returns the most bytes that one wait may ask for. The bucket holds
+// at most one second of bytes, so a larger request could never pass.
+func (rl *rateLimiter) chunk() int {
+	return int(min(rateLimitChunk, rl.bytesPerSec))
+}
+
+// LimitReader returns r throttled to --limit-rate, or r when the flag is not
+// set. The stdout path uses it, so the limit applies there as it does to a
+// download to a file (audit finding M3).
+func LimitReader(r io.Reader, opts *config.Options) (io.Reader, error) {
+	if opts.Output.LimitRate == "" {
+		return r, nil
+	}
+	bps, err := config.ParseRate(opts.Output.LimitRate)
+	if err != nil {
+		return nil, fmt.Errorf("parse --limit-rate: %w", err)
+	}
+	return &rateLimitedReader{r: r, rl: newRateLimiter(bps)}, nil
+}
+
+// rateLimitedReader throttles reads through a rateLimiter.
+type rateLimitedReader struct {
+	r  io.Reader
+	rl *rateLimiter
+}
+
+func (rr *rateLimitedReader) Read(p []byte) (int, error) {
+	if n := rr.rl.chunk(); len(p) > n {
+		p = p[:n]
+	}
+	n, err := rr.r.Read(p)
+	rr.rl.wait(n)
+	return n, err
+}
+
 // rateLimitedWriter wraps an io.Writer and throttles writes through a shared
 // rateLimiter. Safe for concurrent use from multiple goroutines (segments).
 type rateLimitedWriter struct {
@@ -74,10 +111,7 @@ func (rw *rateLimitedWriter) Write(p []byte) (int, error) {
 	// Without this cap, any --limit-rate below rateLimitChunk (32 KB/s)
 	// would cause wait to loop forever because allowance is capped at
 	// bytesPerSec and can never reach n.
-	maxChunk := rateLimitChunk
-	if int64(maxChunk) > rw.rl.bytesPerSec {
-		maxChunk = int(rw.rl.bytesPerSec)
-	}
+	maxChunk := rw.rl.chunk()
 	written := 0
 	for len(p) > 0 {
 		n := len(p)
@@ -122,29 +156,51 @@ func newProgressWriter(dst, w io.Writer, total int64) *progressWriter {
 
 func (p *progressWriter) Write(b []byte) (int, error) {
 	n, err := p.dst.Write(b)
-	p.mu.Lock()
-	p.written += int64(n)
-	now := time.Now()
-	if now.Sub(p.last) >= progressInterval || (p.total > 0 && p.written >= p.total) {
-		p.last = now
-		secs := now.Sub(p.start).Seconds()
-		var rate float64
-		if secs > 0 {
-			rate = float64(p.written) / secs
-		}
-		if p.total > 0 {
-			fmt.Fprintf(p.w, "\r%6.1f%%  %d/%d bytes  %.1f MB/s   ",
-				100*float64(p.written)/float64(p.total), p.written, p.total, rate/1e6)
-		} else {
-			fmt.Fprintf(p.w, "\r%d bytes  %.1f MB/s   ", p.written, rate/1e6)
-		}
-	}
-	p.mu.Unlock()
+	p.add(n)
 	return n, err
 }
 
-// done prints a trailing newline to finish the progress line.
-func (p *progressWriter) done() { fmt.Fprintln(p.w) }
+// add counts n bytes and prints a meter line when progressInterval has passed.
+func (p *progressWriter) add(n int) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.written += int64(n)
+	if now := time.Now(); now.Sub(p.last) >= progressInterval {
+		p.report(now)
+	}
+}
+
+// setTotal sets the total from the accepted response. A probe of the URL can
+// give a different length than the response that is written (audit finding M4).
+func (p *progressWriter) setTotal(total int64) {
+	p.mu.Lock()
+	p.total = total
+	p.mu.Unlock()
+}
+
+// report prints one meter line. The caller holds p.mu.
+func (p *progressWriter) report(now time.Time) {
+	p.last = now
+	secs := now.Sub(p.start).Seconds()
+	var rate float64
+	if secs > 0 {
+		rate = float64(p.written) / secs
+	}
+	if p.total > 0 {
+		fmt.Fprintf(p.w, "\r%6.1f%%  %d/%d bytes  %.1f MB/s   ",
+			100*float64(p.written)/float64(p.total), p.written, p.total, rate/1e6)
+	} else {
+		fmt.Fprintf(p.w, "\r%d bytes  %.1f MB/s   ", p.written, rate/1e6)
+	}
+}
+
+// done prints the final meter line and a newline.
+func (p *progressWriter) done() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.report(time.Now())
+	fmt.Fprintln(p.w)
+}
 
 // progressTap is a per-segment io.Writer that forwards bytes to a local sink
 // while counting them into a shared progressWriter. This avoids the data race
@@ -163,30 +219,7 @@ func newProgressTap(dst io.Writer, progress *progressWriter) io.Writer {
 func (pt *progressTap) Write(b []byte) (int, error) {
 	n, err := pt.dst.Write(b)
 	if n > 0 {
-		// Count into shared progress using the mutex-guarded path. We pass a
-		// nil dst on the shared instance (only used for single-stream); here we
-		// drive counting through the tap by calling Write on a discard-backed
-		// temporary—but that would double-write. Instead, update the counter
-		// directly under the mutex.
-		pt.progress.mu.Lock()
-		pt.progress.written += int64(n)
-		now := time.Now()
-		if now.Sub(pt.progress.last) >= progressInterval {
-			pt.progress.last = now
-			secs := now.Sub(pt.progress.start).Seconds()
-			var rate float64
-			if secs > 0 {
-				rate = float64(pt.progress.written) / secs
-			}
-			if pt.progress.total > 0 {
-				fmt.Fprintf(pt.progress.w, "\r%6.1f%%  %d/%d bytes  %.1f MB/s   ",
-					100*float64(pt.progress.written)/float64(pt.progress.total),
-					pt.progress.written, pt.progress.total, rate/1e6)
-			} else {
-				fmt.Fprintf(pt.progress.w, "\r%d bytes  %.1f MB/s   ", pt.progress.written, rate/1e6)
-			}
-		}
-		pt.progress.mu.Unlock()
+		pt.progress.add(n)
 	}
 	return n, err
 }

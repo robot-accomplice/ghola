@@ -10,26 +10,50 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/robot-accomplice/ghola/internal/profile"
 	flag "github.com/spf13/pflag"
 	"github.com/valyala/fasthttp"
 )
 
-// ExitCode represents a process exit status returned by ghola.
+// ExitCode represents a process exit status returned by ghola. The values
+// are curl's exit codes for the same causes (audit finding M6), so a script
+// written for curl reads them the same way.
 type ExitCode int
 
 const (
 	// NoError indicates successful execution.
-	NoError ExitCode = iota
-	// BadFlag indicates invalid or missing CLI arguments.
-	BadFlag
-	// SendFailed indicates the HTTP request could not be completed.
-	SendFailed
-	// ReadFileFailed indicates a local file could not be read (e.g. --upload-file).
-	ReadFileFailed
-	// WriteFileFailed indicates output could not be written to disk.
-	WriteFileFailed
+	NoError ExitCode = 0
+	// BadFlag indicates invalid or missing CLI arguments (curl 2).
+	BadFlag ExitCode = 2
+	// CouldntResolveHost indicates that DNS did not resolve the host (curl 6).
+	CouldntResolveHost ExitCode = 6
+	// CouldntConnect indicates that the TCP connection failed (curl 7).
+	CouldntConnect ExitCode = 7
+	// HTTPError indicates an HTTP status that -f refuses (curl 22).
+	HTTPError ExitCode = 22
+	// WriteFileFailed indicates output could not be written (curl 23).
+	WriteFileFailed ExitCode = 23
+	// ReadFileFailed indicates a local file could not be read, e.g.
+	// --upload-file or -d @file (curl 26).
+	ReadFileFailed ExitCode = 26
+	// TimedOut indicates --max-time, --connect-timeout or --speed-limit
+	// ended the transfer (curl 28).
+	TimedOut ExitCode = 28
+	// TLSConnectFailed indicates a TLS handshake failure (curl 35).
+	TLSConnectFailed ExitCode = 35
+	// TooManyRedirects indicates that -L reached --max-redirs (curl 47).
+	TooManyRedirects ExitCode = 47
+	// SendFailed indicates a request failure without a more exact code
+	// (curl 55).
+	SendFailed ExitCode = 55
+	// RecvFailed indicates a failure after the connection was ready, for
+	// example a reset or a TLS alert after the handshake (curl 56).
+	RecvFailed ExitCode = 56
+	// PeerFailedVerification indicates that the server certificate or its
+	// host name did not verify (curl 60).
+	PeerFailedVerification ExitCode = 60
 )
 
 // Int returns the ExitCode as a plain int for use with os.Exit.
@@ -85,6 +109,12 @@ type ResilienceOptions struct {
 	Backoff   int
 	RetryHTTP bool
 	Location  bool
+	// ConnectTimeout limits the connection phase (--connect-timeout).
+	ConnectTimeout time.Duration
+	// SpeedLimit and SpeedTime stop a transfer that is slower than
+	// SpeedLimit bytes per second for SpeedTime (--speed-limit, --speed-time).
+	SpeedLimit int64
+	SpeedTime  time.Duration
 	// LocationTrusted sends -u, Authorization and Cookie to every server in
 	// the redirect chain, as curl --location-trusted does.
 	LocationTrusted bool
@@ -180,7 +210,7 @@ func ParseFlags(args []string) (opts *Options, done bool, err error) {
 	fs.StringVarP(&opts.User, "user", "u", "", "Server user and password <user:password>")
 	fs.StringVarP(&opts.Stealth.Agent, "user-agent", "A", DefaultAgent, "Send User-Agent <name>")
 	fs.StringVarP(&opts.Method, "request", "X", DefaultMethod, "HTTP request method")
-	fs.StringSliceVarP(&opts.Headers, "header", "H", []string{DefaultContentType}, "Pass custom headers")
+	fs.StringSliceVarP(&opts.Headers, "header", "H", nil, "Pass custom headers")
 	fs.BoolVarP(&opts.Output.Verbose, "verbose", "v", false, "verbose mode")
 
 	fs.IntVarP(&opts.Stealth.Drift, "drift", "D", 0, "Temporal Drift (ms jitter)")
@@ -224,6 +254,9 @@ func ParseFlags(args []string) (opts *Options, done bool, err error) {
 	fs.StringVar(&opts.Stealth.ClientCert, "cert", "", "Client certificate file")
 	fs.StringVar(&opts.Stealth.ClientKey, "key", "", "Private key file for the client certificate")
 
+	var limitFlags curlLimitFlags
+	limitFlags.register(fs)
+
 	fs.Usage = func() { writeUsage(os.Stdout, fs) }
 
 	if err := fs.Parse(args); err != nil {
@@ -257,6 +290,12 @@ func ParseFlags(args []string) (opts *Options, done bool, err error) {
 		return nil, false, fmt.Errorf("URL is mandatory")
 	}
 	opts.Stealth.AgentExplicit = fs.Changed("user-agent")
+	if err := limitFlags.apply(fs, &opts.Resilience); err != nil {
+		return nil, false, err
+	}
+	if err := checkInput(opts); err != nil {
+		return nil, false, err
+	}
 	// curl --location-trusted is -L plus the credentials on every hop.
 	if opts.Resilience.LocationTrusted {
 		opts.Resilience.Location = true
@@ -306,6 +345,7 @@ func ParseFlags(args []string) (opts *Options, done bool, err error) {
 		return nil, false, fmt.Errorf("--form cannot be combined with --data-urlencode")
 	}
 
+	addDefaultContentType(opts)
 	if (opts.Data != "" || opts.DataBinary != "" || len(opts.Form) > 0 || len(opts.DataURLEncode) > 0) && !fs.Changed("request") {
 		opts.Method = fasthttp.MethodPost
 	}
@@ -329,6 +369,10 @@ func applyChainShortcuts(opts *Options) {
 		return
 	}
 	opts.Headers = append(opts.Headers, "X-Chain: "+info.Header)
+	// A chain shortcut is for JSON-RPC, so its body is JSON.
+	if !hasHeader(opts.Headers, "Content-Type") {
+		opts.Headers = append(opts.Headers, jsonContentType)
+	}
 	if opts.URL == "" && info.DefaultRPC != "" {
 		opts.URL = info.DefaultRPC
 	}
