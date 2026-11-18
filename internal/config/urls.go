@@ -24,8 +24,11 @@ func withScheme(u string) string {
 	if strings.Contains(u, "://") {
 		return u
 	}
-	return "http://" + u
+	return defaultScheme + "://" + u
 }
+
+// defaultScheme is the scheme of a URL without one, as in curl.
+const defaultScheme = "http"
 
 // checkOneOutput refuses a second URL with an option that names one output.
 // Two bodies cannot share one file name, and the v1 flag design decides how
