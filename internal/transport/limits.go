@@ -16,6 +16,12 @@ import (
 // CONNECT and TLS) takes longer than --connect-timeout.
 var ErrConnectTimeout = errors.New("connection timed out")
 
+// ErrRecv marks a request that failed after the connection was ready: DNS,
+// TCP, the proxy CONNECT and TLS were done. curl reports this as a receive
+// failure (exit 56), for example a TLS 1.3 alert that the server sends
+// after the handshake, or a reset.
+var ErrRecv = errors.New("receive failure")
+
 // ErrTooSlow is returned when the transfer is slower than --speed-limit for
 // --speed-time, as curl's "Operation too slow".
 var ErrTooSlow = errors.New("operation too slow")
@@ -49,6 +55,7 @@ type watch struct {
 	once    sync.Once
 	conn    *time.Timer
 	done    chan struct{}
+	up      atomic.Bool // the connection was ready (GotConn)
 }
 
 // start returns the request context and the watch for one request. The
@@ -70,6 +77,13 @@ func (l limits) start(ctx context.Context) (context.Context, *watch) {
 		go w.checkSpeed(l)
 	}
 	return ctx, w
+}
+
+// gotConn marks the connection ready and stops the connect timer. The
+// GotConn trace event calls it, on net/http and on tls-client, after TLS.
+func (w *watch) gotConn() {
+	w.up.Store(true)
+	w.connected()
 }
 
 // connected stops the connect timer.
@@ -96,9 +110,13 @@ func (w *watch) cause(err error) error {
 	return err
 }
 
-// fail stops the watch after a failed request and returns the error to report.
+// fail stops the watch after a failed request and returns the error to
+// report. An error after the connection was ready is marked ErrRecv.
 func (w *watch) fail(err error) error {
 	err = w.cause(err)
+	if w.up.Load() {
+		err = fmt.Errorf("%w: %w", ErrRecv, err)
+	}
 	w.stop()
 	return err
 }

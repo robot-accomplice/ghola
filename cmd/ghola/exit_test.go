@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -55,10 +56,6 @@ func TestExecute_CurlExitCodes(t *testing.T) {
 		}
 	}))
 	defer plain.Close()
-	certSrv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {}))
-	certSrv.TLS = &tls.Config{ClientAuth: tls.RequireAnyClientCert}
-	certSrv.StartTLS()
-	defer certSrv.Close()
 	// garbage answers a TLS hello with bytes that are not TLS and not HTTP,
 	// and keeps the connection open until the client closes it.
 	garbage, err := net.Listen("tcp", "127.0.0.1:0")
@@ -80,6 +77,14 @@ func TestExecute_CurlExitCodes(t *testing.T) {
 		}
 	}()
 	garbageURL := "https://" + garbage.Addr().String() + "/"
+	// certSrv refuses a client without a certificate. In TLS 1.3 the alert
+	// comes after the client's handshake is done, so curl 8.18.0 exits 56
+	// (400 of 400 runs: "Recv failure: Connection was aborted").
+	certSrv := httptest.NewUnstartedServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	certSrv.TLS = &tls.Config{ClientAuth: tls.RequireAnyClientCert}
+	certSrv.Config.ErrorLog = log.New(io.Discard, "", 0)
+	certSrv.StartTLS()
+	defer certSrv.Close()
 	httpsToPlain := "https://" + plain.Listener.Addr().String() + "/"
 	noDir := filepath.Join(t.TempDir(), "no-such-dir", "f")
 
@@ -103,8 +108,8 @@ func TestExecute_CurlExitCodes(t *testing.T) {
 		{"TLS to a plain server, impersonate", []string{"--impersonate", "chrome", httpsToPlain}, 35},
 		{"not TLS", []string{garbageURL}, 35},
 		{"not TLS, impersonate", []string{"--impersonate", "chrome", garbageURL}, 35},
-		{"TLS alert", []string{"-k", certSrv.URL}, 35},
-		{"TLS alert, impersonate", []string{"-k", "--impersonate", "chrome", certSrv.URL}, 35},
+		{"TLS alert after the handshake", []string{"-k", certSrv.URL}, 56},
+		{"TLS alert after the handshake, impersonate", []string{"-k", "--impersonate", "chrome", certSrv.URL}, 56},
 		{"redirect limit", []string{"-L", "--max-redirs", "2", plain.URL + "/loop"}, 47},
 		{"redirect limit, -o", []string{"-L", "--max-redirs", "2", "-o", filepath.Join(t.TempDir(), "f"), plain.URL + "/loop"}, 47},
 		{"untrusted certificate", []string{tlsSrv.URL}, 60},
@@ -141,6 +146,9 @@ func TestExitFor_WrappedCauses(t *testing.T) {
 		{fmt.Errorf("download: %w", client.ErrTooManyRedirects), 47},
 		{fmt.Errorf("x: %w", config.ErrHTTPStatus), 22},
 		{config.WriteError(errors.New("disk full")), 23},
+		// A TLS alert during the handshake (before GotConn).
+		{fmt.Errorf("x: %w", &net.OpError{Op: "remote error", Err: errors.New("tls: handshake failure")}), 35},
+		{fmt.Errorf("x: %w: %w", gholatransport.ErrRecv, errors.New("connection reset")), 56},
 		{errors.New("something else"), config.SendFailed},
 	}
 	for _, tc := range tests {

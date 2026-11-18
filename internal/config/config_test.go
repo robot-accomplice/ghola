@@ -330,6 +330,7 @@ func TestExitCode_Int(t *testing.T) {
 		{TLSConnectFailed, 35},
 		{TooManyRedirects, 47},
 		{SendFailed, 55},
+		{RecvFailed, 56},
 		{PeerFailedVerification, 60},
 	}
 	for _, tt := range tests {
