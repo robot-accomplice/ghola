@@ -13,8 +13,5 @@ package parity
 // The findings are in docs/audits/2026-11-12-v0.7.0-vs-curl-aria2-wget.md.
 // Recorded against v0.8.0 on 2026-11-15.
 var known = map[string]string{
-	"url_no_scheme": "M9: a URL without a scheme fails",
-	"two_urls":      "M9: extra URLs are ignored without a message",
-
 	"resume_changed": "GAP-if-range: resume does not send If-Range (no tested tool does)",
 }
