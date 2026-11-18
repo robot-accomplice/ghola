@@ -13,8 +13,6 @@ package parity
 // The findings are in docs/audits/2026-11-12-v0.7.0-vs-curl-aria2-wget.md.
 // Recorded against v0.8.0 on 2026-11-15.
 var known = map[string]string{
-	"rate_stdout": "M3: --limit-rate does not apply to stdout",
-
 	"progress_not_tty": "M4: the meter prints when stderr is not a terminal",
 	"progress_total":   "M4: the total comes from the compressed length",
 

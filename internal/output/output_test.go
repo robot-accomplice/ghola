@@ -523,3 +523,31 @@ func TestRunSnoop_RateLimitHeaders(t *testing.T) {
 		t.Error("missing rate limit section in snoop output")
 	}
 }
+
+// TestProcessResponse_LimitRateStdout checks that --limit-rate applies to the
+// body on stdout, not only to a download to a file (audit finding M3). A
+// script that limits the rate must not flood the link when it pipes the body.
+func TestProcessResponse_LimitRateStdout(t *testing.T) {
+	req := fasthttp.AcquireRequest()
+	rsp := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseRequest(req)
+	defer fasthttp.ReleaseResponse(rsp)
+
+	body := bytes.Repeat([]byte("x"), 10_000)
+	rsp.Header.SetStatusCode(200)
+	rsp.SetBody(body)
+
+	var buf bytes.Buffer
+	opts := &config.Options{Output: config.OutputOptions{LimitRate: "10k"}}
+	start := time.Now()
+	if err := ProcessResponse(&buf, io.Discard, opts, req, rsp, 0); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// 10 000 bytes at 10 000 bytes/s with an empty bucket take about 1 s.
+	if elapsed := time.Since(start); elapsed < 700*time.Millisecond {
+		t.Errorf("body took %v, want about 1s at --limit-rate 10k", elapsed)
+	}
+	if !bytes.Equal(buf.Bytes(), body) {
+		t.Errorf("wrote %d bytes, want the %d body bytes", buf.Len(), len(body))
+	}
+}

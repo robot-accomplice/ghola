@@ -192,6 +192,7 @@ Parity claims are not possible while the basic fetch is wrong. Fix these first, 
 7. M1: send no default `Content-Type` on GET. Send `application/x-www-form-urlencoded` for `-d`, as curl does.
    - Status (2026-11-18, branch `fix/m1-content-type`): done. The `-H` flag has no default. `-d`, `--data-binary` and `--data-urlencode` add `application/x-www-form-urlencoded` when `-H` gives no `Content-Type`. `--chain` adds `application/json`, because it is a JSON-RPC shortcut. The bridge never used the CLI default (`Headers: nil`), so bridge requests do not change. Breaking: a script that posts JSON with `-d` must add `-H 'Content-Type: application/json'` (or `--json` in phase 2).
 8. M3 to M9: rate limit on stdout, progress meter, the extra HEAD request, exit codes, input checks, proxy variables, URL handling.
+   - Status (2026-11-18, branch `fix/m3-rate-stdout`): M3 done. `output.bodyReader` passes the body through `client.LimitReader`, so `--limit-rate` applies to stdout and to the buffered `-o` path (POST, `--jq`, `--har`). The limit counts the bytes on the wire, before the `--compressed` decoder, as in curl. `rate_stdout` passes. Not changed: ghola reads `k` as 1000 and curl reads it as 1024; the v1 flag design owns the unit.
 9. Exit codes: adopt curl's exit code numbers for the same causes (6, 7, 22, 23, 28, 35, 47, 60, and the others). This is a breaking change, so it goes into the same major version as D2.
 
 ### Phase 2: curl HTTP parity
