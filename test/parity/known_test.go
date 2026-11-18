@@ -19,8 +19,6 @@ var known = map[string]string{
 
 	"rate_stdout": "M3: --limit-rate does not apply to stdout",
 
-	"no_head": "M5: each -o download sends HEAD first",
-
 	"exit_refused": "M6: every network error exits 2",
 	"exit_dns":     "M6: every network error exits 2",
 	"exit_tls":     "M6: every network error exits 2",

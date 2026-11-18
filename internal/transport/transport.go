@@ -33,6 +33,7 @@ type StreamMeta struct {
 	LastModified  string
 	Disposition   string // Content-Disposition
 	ContentRange  string // Content-Range, "" when absent
+	Location      string // Location, "" when absent
 }
 
 // HeaderChecker is implemented by a sink that must see the response headers
@@ -312,6 +313,7 @@ func (t *simpleTransport) Stream(ctx context.Context, req *fasthttp.Request, sin
 		LastModified:  resp.Header.Get("Last-Modified"),
 		Disposition:   resp.Header.Get("Content-Disposition"),
 		ContentRange:  resp.Header.Get("Content-Range"),
+		Location:      resp.Header.Get("Location"),
 	}
 	return meta, CopyBody(sink, meta, body)
 }
@@ -385,6 +387,7 @@ func (t *tlsClientTransport) Stream(ctx context.Context, req *fasthttp.Request, 
 		LastModified:  httpResp.Header.Get("Last-Modified"),
 		Disposition:   httpResp.Header.Get("Content-Disposition"),
 		ContentRange:  httpResp.Header.Get("Content-Range"),
+		Location:      httpResp.Header.Get("Location"),
 	}
 	return meta, CopyBody(sink, meta, body)
 }
