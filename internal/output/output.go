@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/robot-accomplice/ghola/internal/client"
 	"github.com/robot-accomplice/ghola/internal/config"
 	"github.com/robot-accomplice/ghola/internal/transport"
 	"github.com/tidwall/gjson"
@@ -75,11 +76,17 @@ func ProcessResponse(w, ew io.Writer, opts *config.Options, req *fasthttp.Reques
 
 // bodyReader returns the response body as a reader: the stream when the
 // transport left one, else the buffer. With --compressed and a gzip
-// Content-Encoding, it decodes the body.
+// Content-Encoding, it decodes the body. With --limit-rate, it throttles it.
 func bodyReader(opts *config.Options, rsp *fasthttp.Response) (io.Reader, error) {
 	body := rsp.BodyStream()
 	if body == nil {
 		body = bytes.NewReader(rsp.Body())
+	}
+	// The limit counts the bytes on the wire, as in curl, so it comes
+	// before the gzip decoder.
+	body, err := client.LimitReader(body, opts)
+	if err != nil {
+		return nil, err
 	}
 	if opts.Stealth.Compressed && bytes.EqualFold(rsp.Header.Peek("Content-Encoding"), []byte("gzip")) {
 		decoded, err := transport.DecodeGzip(body)

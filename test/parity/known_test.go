@@ -17,8 +17,6 @@ var known = map[string]string{
 	"get_no_content_type_chrome": "M1: every request gets Content-Type: application/json",
 	"form_content_type":          "M1: -d is labelled application/json",
 
-	"rate_stdout": "M3: --limit-rate does not apply to stdout",
-
 	"progress_not_tty": "M4: the meter prints when stderr is not a terminal",
 	"progress_total":   "M4: the total comes from the compressed length",
 
