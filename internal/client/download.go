@@ -310,25 +310,45 @@ func streamLocation(ctx context.Context, opts *config.Options, req *fasthttp.Req
 	return string(rsp.Header.Peek("Location")), rsp.Header.StatusCode(), nil
 }
 
-func downloadSingle(ctx context.Context, opts *config.Options, stream Streamer, url string, limiter *rateLimiter, progress *progressWriter) error {
-	flags := os.O_CREATE | os.O_WRONLY
-	var offset int64
-	rangeHeader := ""
-
+// singlePlan returns the open flags, the resume offset and the Range header
+// of a single-stream download.
+func singlePlan(opts *config.Options) (flags int, offset int64, rangeHeader string, err error) {
+	flags = os.O_CREATE | os.O_WRONLY
 	switch {
 	case opts.Output.ContinueAt != "":
-		off, err := resumeOffset(opts)
-		if err != nil {
-			return err
+		if offset, err = resumeOffset(opts); err != nil {
+			return 0, 0, "", err
 		}
-		offset = off
-		flags |= os.O_APPEND
-		rangeHeader = fmt.Sprintf("bytes=%d-", offset)
+		return flags | os.O_APPEND, offset, fmt.Sprintf("bytes=%d-", offset), nil
 	case opts.Output.Range != "":
-		rangeHeader = "bytes=" + strings.TrimPrefix(opts.Output.Range, "bytes=")
-		flags |= os.O_TRUNC
+		return flags | os.O_TRUNC, 0, "bytes=" + strings.TrimPrefix(opts.Output.Range, "bytes="), nil
 	default:
-		flags |= os.O_TRUNC
+		return flags | os.O_TRUNC, 0, "", nil
+	}
+}
+
+// acceptCheck is the header check of a single-stream download. The file
+// opens only for an accepted response. -f refuses an HTTP error (audit
+// finding H7), and a resume appends only a 206 that starts at the offset.
+// A refused response writes no file and leaves an existing file unchanged.
+func acceptCheck(opts *config.Options, offset int64, f *lazyFile) func(gholatransport.StreamMeta) error {
+	return func(meta gholatransport.StreamMeta) error {
+		if opts.Output.FailsOn(meta.StatusCode) {
+			return fmt.Errorf("%w: %d", config.ErrHTTPStatus, meta.StatusCode)
+		}
+		if offset > 0 {
+			if err := expectRange(offset, -1)(meta); err != nil {
+				return err
+			}
+		}
+		return f.open()
+	}
+}
+
+func downloadSingle(ctx context.Context, opts *config.Options, stream Streamer, url string, limiter *rateLimiter, progress *progressWriter) error {
+	flags, offset, rangeHeader, err := singlePlan(opts)
+	if err != nil {
+		return err
 	}
 
 	f := &lazyFile{name: opts.Output.File, flags: flags}
@@ -362,22 +382,8 @@ func downloadSingle(ctx context.Context, opts *config.Options, stream Streamer, 
 		sink = gw
 	}
 
-	// Outermost: the file opens only for an accepted response. -f refuses
-	// an HTTP error (audit finding H7), and a resume appends only a 206
-	// that starts at the offset. A refused response writes no file and
-	// leaves an existing file unchanged.
-	check := func(meta gholatransport.StreamMeta) error {
-		if opts.Output.FailsOn(meta.StatusCode) {
-			return fmt.Errorf("%w: %d", config.ErrHTTPStatus, meta.StatusCode)
-		}
-		if offset > 0 {
-			if err := expectRange(offset, -1)(meta); err != nil {
-				return err
-			}
-		}
-		return f.open()
-	}
-	meta, err := stream(ctx, opts, req, newCheckedSink(sink, check))
+	// Outermost: acceptCheck decides whether the response reaches the file.
+	meta, err := stream(ctx, opts, req, newCheckedSink(sink, acceptCheck(opts, offset, f)))
 	if flush != nil {
 		if ferr := flush(); ferr != nil && err == nil {
 			err = ferr
