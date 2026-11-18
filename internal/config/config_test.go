@@ -331,22 +331,6 @@ func TestExitCode_Int(t *testing.T) {
 	}
 }
 
-func TestParseFlags_DefaultHeaders(t *testing.T) {
-	opts, _, err := ParseFlags([]string{"http://example.com"})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	found := false
-	for _, h := range opts.Headers {
-		if h == "Content-Type: application/json" {
-			found = true
-		}
-	}
-	if !found {
-		t.Error("default Content-Type header missing")
-	}
-}
-
 func TestParseFlags_Concurrency(t *testing.T) {
 	opts, _, err := ParseFlags([]string{"-n", "8", "http://example.com"})
 	if err != nil {

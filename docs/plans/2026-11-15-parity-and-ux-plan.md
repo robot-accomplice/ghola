@@ -188,6 +188,7 @@ Parity claims are not possible while the basic fetch is wrong. Fix these first, 
    - Status (2026-11-18, branch `fix/h5-negative-retry`): done. `-r -1` is an argument error. `FetchURL` also refuses a negative count, because the bridge passes its JSON `retries` field there without the flag check. Before the fix, `"retries": -1` crashed the bridge process with a nil-pointer panic.
 6. H6 and H7: the redirect-limit exit code, and `-f -o` writes no file.
 7. M1: send no default `Content-Type` on GET. Send `application/x-www-form-urlencoded` for `-d`, as curl does.
+   - Status (2026-11-18, branch `fix/m1-content-type`): done. The `-H` flag has no default. `-d`, `--data-binary` and `--data-urlencode` add `application/x-www-form-urlencoded` when `-H` gives no `Content-Type`. `--chain` adds `application/json`, because it is a JSON-RPC shortcut. The bridge never used the CLI default (`Headers: nil`), so bridge requests do not change. Breaking: a script that posts JSON with `-d` must add `-H 'Content-Type: application/json'` (or `--json` in phase 2).
 8. M3 to M9: rate limit on stdout, progress meter, the extra HEAD request, exit codes, input checks, proxy variables, URL handling.
 9. Exit codes: adopt curl's exit code numbers for the same causes (6, 7, 22, 23, 28, 35, 47, 60, and the others). This is a breaking change, so it goes into the same major version as D2.
 
