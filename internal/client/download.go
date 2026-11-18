@@ -287,7 +287,7 @@ func resolveTargetViaGet(ctx context.Context, opts *config.Options, stream Strea
 		}
 		target = resolved
 	}
-	return "", fmt.Errorf("download: too many redirects (>%d)", opts.Resilience.MaxRedirs)
+	return "", fmt.Errorf("download: %w", tooManyRedirects(opts))
 }
 
 // streamLocation runs a request, discards the body, and returns the Location
@@ -331,10 +331,7 @@ func downloadSingle(ctx context.Context, opts *config.Options, stream Streamer, 
 		flags |= os.O_TRUNC
 	}
 
-	f, err := os.OpenFile(opts.Output.File, flags, 0644)
-	if err != nil {
-		return fmt.Errorf("open output file: %w", err)
-	}
+	f := &lazyFile{name: opts.Output.File, flags: flags}
 	defer f.Close()
 
 	req := fasthttp.AcquireRequest()
@@ -365,11 +362,20 @@ func downloadSingle(ctx context.Context, opts *config.Options, stream Streamer, 
 		sink = gw
 	}
 
-	// Outermost: a resume appends only a 206 that starts at the offset.
-	// Any other answer leaves the partial file unchanged.
-	check := func(gholatransport.StreamMeta) error { return nil }
-	if offset > 0 {
-		check = expectRange(offset, -1)
+	// Outermost: the file opens only for an accepted response. -f refuses
+	// an HTTP error (audit finding H7), and a resume appends only a 206
+	// that starts at the offset. A refused response writes no file and
+	// leaves an existing file unchanged.
+	check := func(meta gholatransport.StreamMeta) error {
+		if opts.Output.FailsOn(meta.StatusCode) {
+			return fmt.Errorf("%w: %d", config.ErrHTTPStatus, meta.StatusCode)
+		}
+		if offset > 0 {
+			if err := expectRange(offset, -1)(meta); err != nil {
+				return err
+			}
+		}
+		return f.open()
 	}
 	meta, err := stream(ctx, opts, req, newCheckedSink(sink, check))
 	if flush != nil {
@@ -387,6 +393,35 @@ func downloadSingle(ctx context.Context, opts *config.Options, stream Streamer, 
 		return fmt.Errorf("download: non-2xx status %d", meta.StatusCode)
 	}
 	return nil
+}
+
+// lazyFile is the output file of a single-stream download. It opens only
+// when the response is accepted, so a refused response creates no file and
+// does not truncate an existing one.
+type lazyFile struct {
+	name  string
+	flags int
+	f     *os.File
+}
+
+func (l *lazyFile) open() error {
+	f, err := os.OpenFile(l.name, l.flags, 0644)
+	if err != nil {
+		return fmt.Errorf("open output file: %w", err)
+	}
+	l.f = f
+	return nil
+}
+
+// Write is called only after open: checkedSink refuses a write before the
+// check passes.
+func (l *lazyFile) Write(p []byte) (int, error) { return l.f.Write(p) }
+
+func (l *lazyFile) Close() error {
+	if l.f == nil {
+		return nil
+	}
+	return l.f.Close()
 }
 
 // resumeOffset computes the resume byte offset: an explicit value, or the

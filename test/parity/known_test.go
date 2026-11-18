@@ -15,10 +15,6 @@ package parity
 var known = map[string]string{
 	"neg_retry": "H5: -r -1 gives a nil response and a panic",
 
-	"redirect_limit": "H6: the redirect limit exits 0",
-
-	"fail_to_file": "H7: -f -o writes the error body",
-
 	"get_no_content_type":        "M1: every request gets Content-Type: application/json",
 	"get_no_content_type_chrome": "M1: every request gets Content-Type: application/json",
 	"form_content_type":          "M1: -d is labelled application/json",

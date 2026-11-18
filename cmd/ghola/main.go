@@ -107,6 +107,10 @@ func execute(ctx context.Context, args []string, do client.Doer, stream client.S
 			if !opts.Output.Silent {
 				fmt.Fprintf(os.Stderr, "Failed: %s\n", err)
 			}
+			// -f gives the same exit code on -o as on stdout.
+			if errors.Is(err, config.ErrHTTPStatus) {
+				return config.SendFailed.Int()
+			}
 			return config.WriteFileFailed.Int()
 		}
 		return config.NoError.Int()
@@ -145,7 +149,7 @@ func execute(ctx context.Context, args []string, do client.Doer, stream client.S
 
 	if err := output.ProcessResponse(w, os.Stderr, opts, req, rsp, elapsed); err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		if errors.Is(err, output.ErrNon2xx) {
+		if errors.Is(err, config.ErrHTTPStatus) {
 			return config.SendFailed.Int()
 		}
 		return config.WriteFileFailed.Int()

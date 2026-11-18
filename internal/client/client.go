@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"math/big"
 	"net/http"
@@ -155,6 +156,13 @@ func handleRedirect(status int, method, data, location, baseURL string) (newURL,
 	return resolved, newMethod, newData, true
 }
 
+// ErrTooManyRedirects is returned when -L reaches --max-redirs.
+var ErrTooManyRedirects = errors.New("too many redirects")
+
+func tooManyRedirects(opts *config.Options) error {
+	return fmt.Errorf("%w: maximum (%d) redirects followed", ErrTooManyRedirects, opts.Resilience.MaxRedirs)
+}
+
 // WithTimeout applies --timeout to ctx. The deadline covers the whole
 // transfer, the body included, as curl's --max-time does. The caller keeps
 // ctx until it has read the body, because FetchURL returns the body as a
@@ -244,9 +252,17 @@ redirectLoop:
 				continue
 			}
 
-			if opts.Resilience.Location && isRedirectStatus(status) && redirectsFollowed < opts.Resilience.MaxRedirs {
+			if opts.Resilience.Location && isRedirectStatus(status) {
 				loc := string(rsp.Header.Peek("Location"))
 				if newURL, newMethod, newData, ok := handleRedirect(status, effectiveMethod, effectiveData, loc, effectiveURL); ok {
+					// One more hop than --max-redirs is an error, as in curl
+					// (audit finding H6). A 3xx without a usable Location is
+					// the answer.
+					if redirectsFollowed >= opts.Resilience.MaxRedirs {
+						fasthttp.ReleaseRequest(req)
+						fasthttp.ReleaseResponse(rsp)
+						return nil, nil, tooManyRedirects(opts)
+					}
 					redirectsFollowed++
 					effectiveURL = newURL
 					effectiveMethod = newMethod

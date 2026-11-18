@@ -372,43 +372,6 @@ func TestFetchURL_RedirectLocationRelative(t *testing.T) {
 	}
 }
 
-func TestFetchURL_RedirectMaxRedirsExceededReturnsLastResponse(t *testing.T) {
-	var attempts int32
-	ln, do := newTestServer(func(ctx *fasthttp.RequestCtx) {
-		atomic.AddInt32(&attempts, 1)
-		ctx.SetStatusCode(302)
-		ctx.Response.Header.Set("Location", "/loop")
-		ctx.SetBodyString("redir")
-	})
-	defer ln.Close()
-
-	opts := &config.Options{
-		URL:         "http://test/start",
-		Method:      "GET",
-		Stealth:     config.StealthOptions{Agent: "ghola"},
-		Resilience:  config.ResilienceOptions{Retries: 0, Location: true, MaxRedirs: 1, RetryHTTP: false, Backoff: 1},
-		Output:      config.OutputOptions{Silent: true},
-		Concurrency: 1,
-	}
-
-	req, rsp, err := FetchURL(bg(), opts, do)
-	if err != nil {
-		t.Fatalf("FetchURL error: %v", err)
-	}
-	defer fasthttp.ReleaseRequest(req)
-	defer fasthttp.ReleaseResponse(rsp)
-
-	if atomic.LoadInt32(&attempts) != 2 {
-		t.Fatalf("attempts=%d, want 2", attempts)
-	}
-	if rsp.StatusCode() != 302 {
-		t.Fatalf("status=%d, want 302", rsp.StatusCode())
-	}
-	if string(rsp.Body()) != "redir" {
-		t.Fatalf("body=%q, want redir", rsp.Body())
-	}
-}
-
 func TestFetchURL_Redirect303RewritesToGET(t *testing.T) {
 	var attempts int32
 	ln, do := newTestServer(func(ctx *fasthttp.RequestCtx) {
