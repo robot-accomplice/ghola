@@ -10,6 +10,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/robot-accomplice/ghola/internal/profile"
 	flag "github.com/spf13/pflag"
@@ -85,6 +86,12 @@ type ResilienceOptions struct {
 	Backoff   int
 	RetryHTTP bool
 	Location  bool
+	// ConnectTimeout limits the connection phase (--connect-timeout).
+	ConnectTimeout time.Duration
+	// SpeedLimit and SpeedTime stop a transfer that is slower than
+	// SpeedLimit bytes per second for SpeedTime (--speed-limit, --speed-time).
+	SpeedLimit int64
+	SpeedTime  time.Duration
 	// LocationTrusted sends -u, Authorization and Cookie to every server in
 	// the redirect chain, as curl --location-trusted does.
 	LocationTrusted bool
@@ -224,6 +231,9 @@ func ParseFlags(args []string) (opts *Options, done bool, err error) {
 	fs.StringVar(&opts.Stealth.ClientCert, "cert", "", "Client certificate file")
 	fs.StringVar(&opts.Stealth.ClientKey, "key", "", "Private key file for the client certificate")
 
+	var limitFlags curlLimitFlags
+	limitFlags.register(fs)
+
 	fs.Usage = func() { writeUsage(os.Stdout, fs) }
 
 	if err := fs.Parse(args); err != nil {
@@ -257,6 +267,9 @@ func ParseFlags(args []string) (opts *Options, done bool, err error) {
 		return nil, false, fmt.Errorf("URL is mandatory")
 	}
 	opts.Stealth.AgentExplicit = fs.Changed("user-agent")
+	if err := limitFlags.apply(fs, &opts.Resilience); err != nil {
+		return nil, false, err
+	}
 	// curl --location-trusted is -L plus the credentials on every hop.
 	if opts.Resilience.LocationTrusted {
 		opts.Resilience.Location = true

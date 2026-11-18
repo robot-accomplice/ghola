@@ -274,6 +274,45 @@ var scenarios = []scenario{
 		}),
 		Check: all(exitNonzero, fasterThan(10000)),
 	},
+	{
+		ID: "max_time", Finding: "H3", What: "--max-time 2 stops a hung request, as curl -m 2",
+		Runs: map[string]func(e *Env) Spec{
+			"ghola": func(e *Env) Spec { return args("--max-time", "2", e.URL("/hang")) },
+			"curl":  func(e *Env) Spec { return args("-sS", "--max-time", "2", e.URL("/hang")) },
+		},
+		Check: all(exitNonzero, fasterThan(10000)),
+	},
+	{
+		ID: "connect_timeout", Finding: "H3", What: "--connect-timeout 2 stops a TLS handshake that never ends",
+		Runs: map[string]func(e *Env) Spec{
+			"ghola": func(e *Env) Spec { return args("--connect-timeout", "2", e.SilentURL()) },
+			"curl":  func(e *Env) Spec { return args("-sS", "--connect-timeout", "2", e.SilentURL()) },
+		},
+		Check: all(exitNonzero, fasterThan(10000)),
+	},
+	{
+		ID: "speed_limit_stdout", Finding: "H3", What: "--speed-limit stops a body that trickles in",
+		Runs: map[string]func(e *Env) Spec{
+			"ghola": func(e *Env) Spec { return args("--speed-limit", "1000", "--speed-time", "2", e.URL("/trickle")) },
+			"curl":  func(e *Env) Spec { return args("-sS", "--speed-limit", "1000", "--speed-time", "2", e.URL("/trickle")) },
+		},
+		Check: all(exitNonzero, fasterThan(10000)),
+	},
+	{
+		ID: "speed_limit_file", Finding: "H3", What: "--speed-limit stops a download to a file that trickles in",
+		Runs: map[string]func(e *Env) Spec{
+			"ghola": func(e *Env) Spec {
+				return toFile("ghola", e.URL("/trickle"), "--speed-limit", "1000", "--speed-time", "2")
+			},
+			"curl": func(e *Env) Spec {
+				return toFile("curl", e.URL("/trickle"), "--speed-limit", "1000", "--speed-time", "2")
+			},
+			"aria2": func(e *Env) Spec {
+				return toFile("aria2", e.URL("/trickle"), "--max-tries=1", "--lowest-speed-limit=1000")
+			},
+		},
+		Check: all(exitNonzero, fasterThan(20000)),
+	},
 
 	// ---- -n with requests that are not downloads ----
 	{
