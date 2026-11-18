@@ -243,7 +243,7 @@ func mightSegment(opts *config.Options) bool {
 func downloadSegmented(ctx context.Context, opts *config.Options, stream Streamer, url string, size int64, limiter *rateLimiter, progress *progressWriter) (err error) {
 	f, err := os.OpenFile(opts.Output.File, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
-		return fmt.Errorf("create output file: %w", err)
+		return fmt.Errorf("create output file: %w", config.WriteError(err))
 	}
 	defer func() {
 		f.Close()
@@ -252,7 +252,7 @@ func downloadSegmented(ctx context.Context, opts *config.Options, stream Streame
 		}
 	}()
 	if err := f.Truncate(size); err != nil {
-		return fmt.Errorf("preallocate output file: %w", err)
+		return fmt.Errorf("preallocate output file: %w", config.WriteError(err))
 	}
 
 	ranges := splitRanges(size, opts.Concurrency)
@@ -304,7 +304,7 @@ func fetchSegment(ctx context.Context, opts *config.Options, stream Streamer, ur
 	// Each segment uses its own offset writer; limiter and progress are shared
 	// across goroutines (both are mutex-guarded). The segment progress tap
 	// forwards bytes to its local sink while counting into the shared progress.
-	var w io.Writer = io.NewOffsetWriter(f, r.start)
+	w := config.MarkWrites(io.NewOffsetWriter(f, r.start))
 	if limiter != nil {
 		w = newRateLimitedWriter(w, limiter)
 	}
@@ -435,7 +435,7 @@ func (g singleGet) get(ctx context.Context, opts *config.Options, stream Streame
 	case err != nil:
 		return meta, opened, fmt.Errorf("download: %w", err)
 	case meta.StatusCode < 200 || meta.StatusCode >= 300:
-		return meta, opened, fmt.Errorf("download: non-2xx status %d", meta.StatusCode)
+		return meta, opened, fmt.Errorf("download: %w: %d", config.ErrHTTPStatus, meta.StatusCode)
 	}
 	return meta, opened, nil
 }
@@ -492,7 +492,7 @@ type lazyFile struct {
 func (l *lazyFile) open() error {
 	f, err := os.OpenFile(l.name, l.flags, 0644)
 	if err != nil {
-		return fmt.Errorf("open output file: %w", err)
+		return fmt.Errorf("open output file: %w", config.WriteError(err))
 	}
 	l.f = f
 	return nil
@@ -500,7 +500,10 @@ func (l *lazyFile) open() error {
 
 // Write is called only after open: checkedSink refuses a write before the
 // check passes.
-func (l *lazyFile) Write(p []byte) (int, error) { return l.f.Write(p) }
+func (l *lazyFile) Write(p []byte) (int, error) {
+	n, err := l.f.Write(p)
+	return n, config.WriteError(err)
+}
 
 func (l *lazyFile) Close() error {
 	if l.f == nil {

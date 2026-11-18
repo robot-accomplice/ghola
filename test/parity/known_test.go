@@ -13,11 +13,6 @@ package parity
 // The findings are in docs/audits/2026-11-12-v0.7.0-vs-curl-aria2-wget.md.
 // Recorded against v0.8.0 on 2026-11-15.
 var known = map[string]string{
-	"exit_refused": "M6: every network error exits 2",
-	"exit_dns":     "M6: every network error exits 2",
-	"exit_tls":     "M6: every network error exits 2",
-	"exit_timeout": "M6: every network error exits 2",
-
 	"neg_timeout":      "M7: a negative --timeout is accepted",
 	"zero_connections": "M7: -n 0 is accepted",
 	"header_no_colon":  "M7: a header without a colon is dropped without a message",

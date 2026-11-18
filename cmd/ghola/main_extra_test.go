@@ -198,7 +198,8 @@ func TestExecute_StreamingFileOutput(t *testing.T) {
 }
 
 // TestExecute_StreamingDownloadSilentError verifies that a streaming error
-// with -s (silent) returns WriteFileFailed without printing to stderr.
+// with -s (silent) returns SendFailed without printing to stderr. The error
+// comes from the transport, not from a write, so it is not curl's 23.
 func TestExecute_StreamingDownloadSilentError(t *testing.T) {
 	// Streamer that always errors.
 	errStream := client.Streamer(func(ctx context.Context, opts *config.Options, req *fasthttp.Request, sink io.Writer) (gholatransport.StreamMeta, error) {
@@ -208,8 +209,8 @@ func TestExecute_StreamingDownloadSilentError(t *testing.T) {
 	dir := t.TempDir()
 	out := filepath.Join(dir, "silent.bin")
 	code := execute(bg(), []string{"-s", "-o", out, "http://test"}, nil, errStream, os.Stdout)
-	if code != config.WriteFileFailed.Int() {
-		t.Errorf("exit code = %d, want WriteFileFailed (%d)", code, config.WriteFileFailed.Int())
+	if code != config.SendFailed.Int() {
+		t.Errorf("exit code = %d, want SendFailed (%d)", code, config.SendFailed.Int())
 	}
 }
 
@@ -238,7 +239,7 @@ func TestExecute_HAROutput(t *testing.T) {
 	}
 }
 
-// TestExecute_Non2xxFail verifies that a 404 with -f (--fail) returns SendFailed.
+// TestExecute_Non2xxFail verifies that a 404 with -f (--fail) returns HTTPError (curl 22).
 func TestExecute_Non2xxFail(t *testing.T) {
 	do, cleanup := testDoer(func(ctx *fasthttp.RequestCtx) {
 		ctx.SetStatusCode(http.StatusNotFound)
@@ -247,7 +248,7 @@ func TestExecute_Non2xxFail(t *testing.T) {
 	defer cleanup()
 
 	code := execute(bg(), []string{"-f", "http://test"}, do, nil, os.Stdout)
-	if code != config.SendFailed.Int() {
-		t.Errorf("exit code = %d, want SendFailed (%d)", code, config.SendFailed.Int())
+	if code != config.HTTPError.Int() {
+		t.Errorf("exit code = %d, want HTTPError (%d)", code, config.HTTPError.Int())
 	}
 }

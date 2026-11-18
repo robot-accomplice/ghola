@@ -1,6 +1,10 @@
 package config
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+	"io"
+)
 
 // ErrHTTPStatus is returned when --fail is set and the server answers with
 // a status that --fail refuses. The stdout path and the download path both
@@ -12,4 +16,27 @@ var ErrHTTPStatus = errors.New("non-2xx http status")
 // design decides which rule v1 keeps.
 func (o OutputOptions) FailsOn(status int) bool {
 	return o.Fail && (status < 200 || status >= 300)
+}
+
+// ErrWrite marks an error that happened while ghola wrote the output, to
+// stdout or to a file. It exits 23, as curl's write error.
+var ErrWrite = errors.New("write error")
+
+// WriteError marks err as a write error. It returns nil for nil.
+func WriteError(err error) error {
+	if err == nil || errors.Is(err, ErrWrite) {
+		return err
+	}
+	return fmt.Errorf("%w: %w", ErrWrite, err)
+}
+
+// MarkWrites returns w with its errors marked as write errors. An io.Copy
+// from a body to w can then tell a failed write from a failed read.
+func MarkWrites(w io.Writer) io.Writer { return markedWriter{w} }
+
+type markedWriter struct{ w io.Writer }
+
+func (m markedWriter) Write(p []byte) (int, error) {
+	n, err := m.w.Write(p)
+	return n, WriteError(err)
 }

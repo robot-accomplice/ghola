@@ -63,10 +63,10 @@ func ProcessResponse(w, ew io.Writer, opts *config.Options, req *fasthttp.Reques
 	}
 	if opts.Output.Include {
 		if _, err := w.Write(rsp.Header.Header()); err != nil {
-			return fmt.Errorf("write output: %w", err)
+			return fmt.Errorf("write output: %w", config.WriteError(err))
 		}
 	}
-	if _, err := io.Copy(w, body); err != nil {
+	if _, err := io.Copy(config.MarkWrites(w), body); err != nil {
 		return fmt.Errorf("copy response body: %w", err)
 	}
 
@@ -102,11 +102,11 @@ func bodyReader(opts *config.Options, rsp *fasthttp.Response) (io.Reader, error)
 func writeFile(name string, body io.Reader) error {
 	f, err := os.OpenFile(name, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
 	if err != nil {
-		return fmt.Errorf("write output file: %w", err)
+		return fmt.Errorf("write output file: %w", config.WriteError(err))
 	}
-	_, err = io.Copy(f, body)
+	_, err = io.Copy(config.MarkWrites(f), body)
 	if cerr := f.Close(); err == nil {
-		err = cerr
+		err = config.WriteError(cerr)
 	}
 	if err != nil {
 		return fmt.Errorf("write output file: %w", err)

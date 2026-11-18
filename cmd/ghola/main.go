@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -107,11 +106,7 @@ func execute(ctx context.Context, args []string, do client.Doer, stream client.S
 			if !opts.Output.Silent {
 				fmt.Fprintf(os.Stderr, "Failed: %s\n", err)
 			}
-			// -f gives the same exit code on -o as on stdout.
-			if errors.Is(err, config.ErrHTTPStatus) {
-				return config.SendFailed.Int()
-			}
-			return config.WriteFileFailed.Int()
+			return exitFor(err).Int()
 		}
 		return config.NoError.Int()
 	}
@@ -129,7 +124,7 @@ func execute(ctx context.Context, args []string, do client.Doer, stream client.S
 		if !opts.Output.Silent {
 			fmt.Fprintf(os.Stderr, "Failed: %s\n", err)
 		}
-		return config.SendFailed.Int()
+		return exitFor(err).Int()
 	}
 	defer fasthttp.ReleaseRequest(req)
 	defer fasthttp.ReleaseResponse(rsp)
@@ -143,16 +138,13 @@ func execute(ctx context.Context, args []string, do client.Doer, stream client.S
 	if opts.Output.HAR != "" {
 		if _, err := gholatransport.ReadBody(rsp); err != nil {
 			fmt.Fprintf(os.Stderr, "read response body: %v\n", err)
-			return config.WriteFileFailed.Int()
+			return exitFor(err).Int()
 		}
 	}
 
 	if err := output.ProcessResponse(w, os.Stderr, opts, req, rsp, elapsed); err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		if errors.Is(err, config.ErrHTTPStatus) {
-			return config.SendFailed.Int()
-		}
-		return config.WriteFileFailed.Int()
+		return exitFor(err).Int()
 	}
 
 	if opts.Output.HAR != "" {

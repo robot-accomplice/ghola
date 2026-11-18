@@ -318,11 +318,19 @@ func TestExitCode_Int(t *testing.T) {
 		code ExitCode
 		want int
 	}{
+		// curl's exit codes for the same causes (audit finding M6).
 		{NoError, 0},
-		{BadFlag, 1},
-		{SendFailed, 2},
-		{ReadFileFailed, 3},
-		{WriteFileFailed, 4},
+		{BadFlag, 2},
+		{CouldntResolveHost, 6},
+		{CouldntConnect, 7},
+		{HTTPError, 22},
+		{WriteFileFailed, 23},
+		{ReadFileFailed, 26},
+		{TimedOut, 28},
+		{TLSConnectFailed, 35},
+		{TooManyRedirects, 47},
+		{SendFailed, 55},
+		{PeerFailedVerification, 60},
 	}
 	for _, tt := range tests {
 		if got := tt.code.Int(); got != tt.want {
