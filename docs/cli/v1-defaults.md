@@ -4,7 +4,9 @@ Phase 0B, step 3 (`docs/plans/2026-11-15-parity-and-ux-plan.md`, section 5A).
 
 Decision D4 (A) applies: the native command uses ghola's defaults. `ghola curl`, `ghola wget` and `ghola aria2c` use the defaults of the tool they copy. So each item below changes the native command only.
 
-Each item gives the curl default, the ghola v0 default, and lettered options. The recommendation is option A. Jon decides each item.
+Each item gives the curl default, the ghola v0 default, and lettered options. The recommendation was option A.
+
+**Status (2026-11-18):** Jon decided all 12 items. Option A for items 1 to 8, 11 and 12. Option B for item 9 (no default timeouts) and item 10 (several URLs go on after a failure, as in curl). The spec (`docs/cli-v1.md`, step 4) uses these defaults.
 
 The curl facts come from the curl 8.18.0 manual (`curl --manual`), except where an item says otherwise.
 
@@ -14,6 +16,7 @@ The curl facts come from the curl 8.18.0 manual (`curl --manual`), except where 
 - ghola v0: off on stdout. On for a download to a file (`-o`), without `-L`. The two paths do not agree (M5 note).
 - A. On for every path. `--no-follow` turns it off. The H1 rule stays: `-u`, `Authorization` and `Cookie` go to the first host only, unless `--location-trusted`.
 - B. Off for every path, as in curl.
+- **DECIDED by Jon, 2026-11-18: A.**
 
 ## 2. Redirect limit
 
@@ -23,6 +26,7 @@ The curl facts come from the curl 8.18.0 manual (`curl --manual`), except where 
 - A. 20, as the browsers that `--impersonate` copies.
 - B. Keep 10.
 - C. 50, as in curl.
+- **DECIDED by Jon, 2026-11-18: A.**
 
 ## 3. Fail on HTTP errors
 
@@ -31,6 +35,7 @@ The curl facts come from the curl 8.18.0 manual (`curl --manual`), except where 
 - A. On. A status at or above the item 4 limit exits 22. On stdout, ghola writes the body (curl's `--fail-with-body`). On `-o`, ghola writes no file, so an error page does not replace a download. `--no-fail` writes the body and exits 0.
 - B. Off, as in curl: write the body and exit 0.
 - C. On, and write no body on stdout either (curl's `-f`).
+- **DECIDED by Jon, 2026-11-18: A.**
 
 ## 4. Which status is an HTTP error
 
@@ -39,6 +44,7 @@ The curl facts come from the curl 8.18.0 manual (`curl --manual`), except where 
 - With item 1 B or `--no-follow`, the v0 rule fails on every 301, 302 and 304. A 304 answer to a conditional request is a success.
 - A. 400 and above, as in curl.
 - B. Keep "not 2xx".
+- **DECIDED by Jon, 2026-11-18: A.**
 
 ## 5. Binary output to a terminal
 
@@ -46,6 +52,7 @@ The curl facts come from the curl 8.18.0 manual (`curl --manual`), except where 
 - ghola v0: writes the bytes to the terminal. No check.
 - A. Refuse, as in curl. The message names the override: `-o -`, or `-o <file>`.
 - B. Write the bytes, as v0 does.
+- **DECIDED by Jon, 2026-11-18: A.**
 
 ## 6. Retry transient errors
 
@@ -55,6 +62,7 @@ The curl facts come from the curl 8.18.0 manual (`curl --manual`), except where 
 - B. Off, as in curl.
 
 A retry of a POST can repeat a side effect, as H4 did. That is why option A excludes POST.
+- **DECIDED by Jon, 2026-11-18: A.**
 
 ## 7. Decompress responses
 
@@ -64,6 +72,7 @@ A retry of a POST can repeat a side effect, as H4 did. That is why option A excl
 - B. Off, as in curl.
 
 With `--impersonate`, the profile sets `Accept-Encoding`. Option A must decode what the profile asks for.
+- **DECIDED by Jon, 2026-11-18: A.**
 
 ## 8. Progress meter
 
@@ -72,6 +81,7 @@ With `--impersonate`, the profile sets `Accept-Encoding`. Option A must decode w
 - A. Show the meter on stderr only when stderr is a terminal, and only when the body does not go to that terminal. `--progress` forces it. `--no-progress` turns it off.
 - B. Keep v0: `-o` only.
 - C. As in curl.
+- **DECIDED by Jon, 2026-11-18: A.**
 
 ## 9. Timeouts
 
@@ -79,6 +89,7 @@ With `--impersonate`, the profile sets `Accept-Encoding`. Option A must decode w
 - ghola v0: no limit.
 - A. `--connect-timeout 30s` by default. No total limit, so a large download is not stopped.
 - B. No limit, as in curl.
+- **DECIDED by Jon, 2026-11-18: B.**
 
 ## 10. Several URLs: what a failure does
 
@@ -86,6 +97,7 @@ With `--impersonate`, the profile sets `Accept-Encoding`. Option A must decode w
 - ghola v0: stops at the first failure (M9).
 - A. Keep v0: stop at the first failure. `--keep-going` goes on, and exits with the first error.
 - B. As in curl.
+- **DECIDED by Jon, 2026-11-18: B.**
 
 ## 11. `--serve`
 
@@ -93,11 +105,13 @@ With `--impersonate`, the profile sets `Accept-Encoding`. Option A must decode w
 - scope-bca: its fallback is merged (scope-bca PR 235, `SERVE_ARGS_V1 = ["serve"]`).
 - A. No alias. `--serve` stops with an argument error that names `ghola serve`, as plan step 8 says for every v0 flag.
 - B. Keep `--serve` as a hidden alias in v1.
+- **DECIDED by Jon, 2026-11-18: A.**
 
 ## 12. The v1.0.0 tag and scope-bca
 
 - A. Tag v1.0.0 when ghola is ready. scope-bca already has its fallback.
 - B. Wait for a scope-bca release that holds the fallback.
+- **DECIDED by Jon, 2026-11-18: A.**
 
 ## Not in this list
 
