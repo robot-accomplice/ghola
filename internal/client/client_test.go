@@ -554,67 +554,6 @@ func TestFetchURL_CustomHeadersNoSpaceAfterColon(t *testing.T) {
 	defer fasthttp.ReleaseResponse(rsp)
 }
 
-func TestRunConcurrent_AllGoroutinesComplete(t *testing.T) {
-	var count int32
-	ln, do := newTestServer(func(ctx *fasthttp.RequestCtx) {
-		atomic.AddInt32(&count, 1)
-		ctx.SetStatusCode(200)
-		ctx.SetBodyString("ok")
-	})
-	defer ln.Close()
-
-	opts := &config.Options{
-		URL:         "http://test",
-		Method:      "GET",
-		Stealth:     config.StealthOptions{Agent: "ghola"},
-		Concurrency: 5,
-	}
-
-	var processed int32
-	RunConcurrent(bg(), opts, do, func(req *fasthttp.Request, rsp *fasthttp.Response) {
-		atomic.AddInt32(&processed, 1)
-		defer fasthttp.ReleaseRequest(req)
-		defer fasthttp.ReleaseResponse(rsp)
-	})
-
-	if atomic.LoadInt32(&count) != 5 {
-		// Cancellation happens as soon as the first request succeeds, so not all
-		// goroutines necessarily reach the network call before ctx is canceled.
-		if atomic.LoadInt32(&count) < 1 {
-			t.Errorf("server received %d requests, want at least 1", count)
-		}
-		if atomic.LoadInt32(&count) > 5 {
-			t.Errorf("server received %d requests, want at most 5", count)
-		}
-	}
-	if atomic.LoadInt32(&processed) != 1 {
-		t.Errorf("processed %d responses, want exactly 1", processed)
-	}
-}
-
-func TestRunConcurrent_AllFail(t *testing.T) {
-	failDoer := func(ctx context.Context, opts *config.Options, req *fasthttp.Request, resp *fasthttp.Response) error {
-		return fmt.Errorf("fail")
-	}
-
-	opts := &config.Options{
-		URL:         "http://test",
-		Method:      "GET",
-		Stealth:     config.StealthOptions{Agent: "ghola"},
-		Concurrency: 3,
-		Output:      config.OutputOptions{Silent: true},
-	}
-
-	var processed int32
-	RunConcurrent(bg(), opts, failDoer, func(req *fasthttp.Request, rsp *fasthttp.Response) {
-		atomic.AddInt32(&processed, 1)
-	})
-
-	if atomic.LoadInt32(&processed) != 0 {
-		t.Errorf("processed %d responses, want 0 when all fail", processed)
-	}
-}
-
 func TestFetchURL_ZeroRetries(t *testing.T) {
 	failDoer := func(ctx context.Context, opts *config.Options, req *fasthttp.Request, resp *fasthttp.Response) error {
 		return fmt.Errorf("fail")
@@ -694,45 +633,6 @@ func TestFetchURL_CancelDuringBackoff(t *testing.T) {
 	}
 	if elapsed > 500*time.Millisecond {
 		t.Errorf("FetchURL took %v; should abort during backoff sleep", elapsed)
-	}
-}
-
-func TestRunConcurrent_CancelsLosers(t *testing.T) {
-	var started int32
-	gate := make(chan struct{})
-
-	slowDoer := func(ctx context.Context, opts *config.Options, req *fasthttp.Request, resp *fasthttp.Response) error {
-		n := atomic.AddInt32(&started, 1)
-		if n == 1 {
-			resp.SetStatusCode(200)
-			resp.SetBodyString("winner")
-			close(gate)
-			return nil
-		}
-		<-gate
-		return fmt.Errorf("context cancelled")
-	}
-
-	opts := &config.Options{
-		URL:         "http://test",
-		Method:      "GET",
-		Stealth:     config.StealthOptions{Agent: "ghola"},
-		Concurrency: 5,
-		Output:      config.OutputOptions{Silent: true},
-	}
-
-	var processed int32
-	start := time.Now()
-	RunConcurrent(bg(), opts, slowDoer, func(req *fasthttp.Request, rsp *fasthttp.Response) {
-		atomic.AddInt32(&processed, 1)
-	})
-	elapsed := time.Since(start)
-
-	if atomic.LoadInt32(&processed) != 1 {
-		t.Errorf("processed = %d, want exactly 1", processed)
-	}
-	if elapsed > 2*time.Second {
-		t.Errorf("RunConcurrent took %v; losers should be cancelled quickly", elapsed)
 	}
 }
 

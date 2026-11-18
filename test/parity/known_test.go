@@ -13,9 +13,6 @@ package parity
 // The findings are in docs/audits/2026-11-12-v0.7.0-vs-curl-aria2-wget.md.
 // Recorded against v0.8.0 on 2026-11-15.
 var known = map[string]string{
-	"n_post":    "H4: -n repeats the POST",
-	"n_refused": "H4: -n drops errors and exits 0",
-
 	"redirect_limit": "H6: the redirect limit exits 0",
 
 	"fail_to_file": "H7: -f -o writes the error body",
