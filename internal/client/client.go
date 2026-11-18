@@ -212,15 +212,12 @@ redirectLoop:
 			}
 
 			if attempt > 0 {
-				wait := time.Duration(opts.Resilience.Backoff<<uint(attempt-1)) * time.Millisecond
+				wait := backoffWait(opts, attempt)
 				if haveNextWait {
 					wait = nextWait
 					haveNextWait = false
 				}
-				if !opts.Output.Silent {
-					fmt.Fprintf(os.Stderr, "Retry %d/%d in %v...\n", attempt, opts.Resilience.Retries, wait)
-				}
-				if err := sleepCtx(ctx, wait); err != nil {
+				if err := waitToRetry(ctx, opts, attempt, wait); err != nil {
 					lastErr = err
 					break
 				}
@@ -349,6 +346,20 @@ func resolveLocation(baseURL, location string) (string, bool) {
 	return resolved.String(), true
 }
 
+// backoffWait returns the wait before retry number attempt (1 for the first
+// retry): --backoff milliseconds, doubled for each retry after the first.
+func backoffWait(opts *config.Options, attempt int) time.Duration {
+	return time.Duration(opts.Resilience.Backoff<<uint(attempt-1)) * time.Millisecond
+}
+
+// waitToRetry announces retry number attempt on stderr and waits.
+func waitToRetry(ctx context.Context, opts *config.Options, attempt int, wait time.Duration) error {
+	if !opts.Output.Silent {
+		fmt.Fprintf(os.Stderr, "Retry %d/%d in %v...\n", attempt, opts.Resilience.Retries, wait)
+	}
+	return sleepCtx(ctx, wait)
+}
+
 func isRetryableHTTPStatus(status int) bool {
 	switch status {
 	case 429, 500, 502, 503, 504:
@@ -359,7 +370,11 @@ func isRetryableHTTPStatus(status int) bool {
 }
 
 func parseRetryAfter(rsp *fasthttp.Response) (time.Duration, bool) {
-	raw := string(rsp.Header.Peek("Retry-After"))
+	return retryAfter(string(rsp.Header.Peek("Retry-After")))
+}
+
+// retryAfter parses a Retry-After value: seconds, or an HTTP date.
+func retryAfter(raw string) (time.Duration, bool) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return 0, false

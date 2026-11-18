@@ -4,12 +4,16 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/robot-accomplice/ghola/internal/config"
+	gholatransport "github.com/robot-accomplice/ghola/internal/transport"
 	"github.com/valyala/fasthttp"
 )
 
@@ -147,4 +151,74 @@ func TestDownload_SegmentedSendsNoHEAD(t *testing.T) {
 	if got := log.count("GET"); got != 6 {
 		t.Errorf("requests = %q, want 6 GETs", log.reqs)
 	}
+}
+
+// TestDownload_RetriesARetryableStatus checks that -r with --retry-http
+// retries a 503 on the download path, as on stdout, and that the 503 body
+// never reaches the file. Before M5, two HEAD requests used up the 503
+// answers, so a download seemed to retry when it did not.
+func TestDownload_RetriesARetryableStatus(t *testing.T) {
+	var calls atomic.Int32
+	ln, streamer := newStreamTestServer(func(ctx *fasthttp.RequestCtx) {
+		if calls.Add(1) <= 2 {
+			ctx.SetStatusCode(fasthttp.StatusServiceUnavailable)
+			ctx.SetBodyString("busy")
+			return
+		}
+		ctx.SetBodyString("ok")
+	})
+	defer ln.Close()
+	opts := redirectOpts(t, "http://test/flaky", 1)
+	opts.Resilience.Retries, opts.Resilience.RetryHTTP, opts.Resilience.Backoff = 3, true, 1
+	if err := Download(context.Background(), opts, streamer); err != nil {
+		t.Fatalf("Download error: %v", err)
+	}
+	checkFile(t, opts.Output.File, []byte("ok"))
+	if got := calls.Load(); got != 3 {
+		t.Errorf("server got %d requests, want 3", got)
+	}
+}
+
+// TestDownload_RetriesAFailedConnection checks that -r retries a request
+// that failed before it had a response, as FetchURL does.
+func TestDownload_RetriesAFailedConnection(t *testing.T) {
+	good := blobServer(t, []byte("data"))
+	var calls atomic.Int32
+	streamer := func(ctx context.Context, opts *config.Options, req *fasthttp.Request, sink io.Writer) (gholatransport.StreamMeta, error) {
+		if calls.Add(1) == 1 {
+			return gholatransport.StreamMeta{}, errors.New("connection refused")
+		}
+		return good(ctx, opts, req, sink)
+	}
+	opts := redirectOpts(t, "http://test/data", 1)
+	opts.Resilience.Retries, opts.Resilience.Backoff = 1, 1
+	if err := Download(context.Background(), opts, streamer); err != nil {
+		t.Fatalf("Download error: %v", err)
+	}
+	checkFile(t, opts.Output.File, []byte("data"))
+}
+
+// TestDownload_RetryWaitsForRetryAfter checks that a download retry waits
+// for the server's Retry-After, as FetchURL does, and not only --backoff.
+func TestDownload_RetryWaitsForRetryAfter(t *testing.T) {
+	var calls atomic.Int32
+	ln, streamer := newStreamTestServer(func(ctx *fasthttp.RequestCtx) {
+		if calls.Add(1) == 1 {
+			ctx.Response.Header.Set("Retry-After", "1")
+			ctx.SetStatusCode(fasthttp.StatusServiceUnavailable)
+			return
+		}
+		ctx.SetBodyString("ok")
+	})
+	defer ln.Close()
+	opts := redirectOpts(t, "http://test/flaky", 1)
+	opts.Resilience.Retries, opts.Resilience.RetryHTTP, opts.Resilience.Backoff = 1, true, 1
+	start := time.Now()
+	if err := Download(context.Background(), opts, streamer); err != nil {
+		t.Fatalf("Download error: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed < 900*time.Millisecond {
+		t.Errorf("retry came after %v, want the 1 s Retry-After", elapsed)
+	}
+	checkFile(t, opts.Output.File, []byte("ok"))
 }

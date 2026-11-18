@@ -34,6 +34,7 @@ type StreamMeta struct {
 	Disposition   string // Content-Disposition
 	ContentRange  string // Content-Range, "" when absent
 	Location      string // Location, "" when absent
+	RetryAfter    string // Retry-After, "" when absent
 }
 
 // HeaderChecker is implemented by a sink that must see the response headers
@@ -314,6 +315,7 @@ func (t *simpleTransport) Stream(ctx context.Context, req *fasthttp.Request, sin
 		Disposition:   resp.Header.Get("Content-Disposition"),
 		ContentRange:  resp.Header.Get("Content-Range"),
 		Location:      resp.Header.Get("Location"),
+		RetryAfter:    resp.Header.Get("Retry-After"),
 	}
 	return meta, CopyBody(sink, meta, body)
 }
@@ -388,6 +390,7 @@ func (t *tlsClientTransport) Stream(ctx context.Context, req *fasthttp.Request, 
 		Disposition:   httpResp.Header.Get("Content-Disposition"),
 		ContentRange:  httpResp.Header.Get("Content-Range"),
 		Location:      httpResp.Header.Get("Location"),
+		RetryAfter:    httpResp.Header.Get("Retry-After"),
 	}
 	return meta, CopyBody(sink, meta, body)
 }

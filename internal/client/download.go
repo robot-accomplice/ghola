@@ -338,9 +338,35 @@ func downloadSingle(ctx context.Context, opts *config.Options, stream Streamer, 
 	}
 
 	_, meta, err := followRedirects(opts, url, func(url string) (gholatransport.StreamMeta, error) {
-		return plan.get(ctx, opts, stream, url)
+		return plan.getWithRetry(ctx, opts, stream, url)
 	})
 	return meta, err
+}
+
+// errRetryStatus refuses a response with a retryable status under
+// --retry-http while retries remain, so its body is not written.
+var errRetryStatus = errors.New("retryable HTTP status")
+
+// getWithRetry sends the GET for url up to 1 + --retry times, as FetchURL
+// does. It retries a request that failed before it had a response, and,
+// with --retry-http, a retryable status. It does not retry after the file
+// opened: a body that broke off is not written twice.
+func (g singleGet) getWithRetry(ctx context.Context, opts *config.Options, stream Streamer, url string) (gholatransport.StreamMeta, error) {
+	for attempt := 0; ; attempt++ {
+		g.retryStatus = opts.Resilience.RetryHTTP && attempt < opts.Resilience.Retries
+		meta, opened, err := g.get(ctx, opts, stream, url)
+		retry := errors.Is(err, errRetryStatus) || (err != nil && meta.StatusCode == 0 && !opened)
+		if !retry || attempt >= opts.Resilience.Retries {
+			return meta, err
+		}
+		wait := backoffWait(opts, attempt+1)
+		if d, ok := retryAfter(meta.RetryAfter); ok {
+			wait = d
+		}
+		if werr := waitToRetry(ctx, opts, attempt+1, wait); werr != nil {
+			return meta, werr
+		}
+	}
 }
 
 // singleGet is one single-stream download: how to open the file, the Range
@@ -351,11 +377,13 @@ type singleGet struct {
 	rangeHeader string
 	limiter     *rateLimiter
 	progress    *progressWriter
+	retryStatus bool // refuse a retryable status: a retry follows
 }
 
 // get sends one GET for url and writes an accepted body to the file. A
-// redirect answer gives errRedirect and writes nothing.
-func (g singleGet) get(ctx context.Context, opts *config.Options, stream Streamer, url string) (gholatransport.StreamMeta, error) {
+// redirect answer gives errRedirect and writes nothing. opened reports that
+// the file opened.
+func (g singleGet) get(ctx context.Context, opts *config.Options, stream Streamer, url string) (meta gholatransport.StreamMeta, opened bool, err error) {
 	f := &lazyFile{name: opts.Output.File, flags: g.flags}
 	defer f.Close()
 
@@ -387,23 +415,24 @@ func (g singleGet) get(ctx context.Context, opts *config.Options, stream Streame
 		sink = gw
 	}
 
-	meta, err := stream(ctx, opts, req, newCheckedSink(sink, g.check(opts, f)))
+	meta, err = stream(ctx, opts, req, newCheckedSink(sink, g.check(opts, f)))
 	if flush != nil {
 		if ferr := flush(); ferr != nil && err == nil {
 			err = ferr
 		}
 	}
+	opened = f.f != nil
 	switch {
 	case errors.Is(err, errRangeIgnored):
-		return meta, fmt.Errorf("download: server ignored resume Range (status 200); cannot continue at %d", g.offset)
+		return meta, opened, fmt.Errorf("download: server ignored resume Range (status 200); cannot continue at %d", g.offset)
 	case errors.Is(err, errRedirect):
-		return meta, err
+		return meta, opened, err
 	case err != nil:
-		return meta, fmt.Errorf("download: %w", err)
+		return meta, opened, fmt.Errorf("download: %w", err)
 	case meta.StatusCode < 200 || meta.StatusCode >= 300:
-		return meta, fmt.Errorf("download: non-2xx status %d", meta.StatusCode)
+		return meta, opened, fmt.Errorf("download: non-2xx status %d", meta.StatusCode)
 	}
-	return meta, nil
+	return meta, opened, nil
 }
 
 // check returns the header check of one GET. The file opens only for an
@@ -414,6 +443,9 @@ func (g singleGet) check(opts *config.Options, f *lazyFile) func(gholatransport.
 	return func(meta gholatransport.StreamMeta) error {
 		if isRedirect(meta) {
 			return errRedirect
+		}
+		if g.retryStatus && isRetryableHTTPStatus(meta.StatusCode) {
+			return fmt.Errorf("%w %d", errRetryStatus, meta.StatusCode)
 		}
 		if opts.Output.FailsOn(meta.StatusCode) {
 			return fmt.Errorf("%w: %d", config.ErrHTTPStatus, meta.StatusCode)

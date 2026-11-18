@@ -68,6 +68,7 @@ func deliverFasthttp(rsp *fasthttp.Response, sink io.Writer) (gholatransport.Str
 		Disposition:   string(rsp.Header.Peek("Content-Disposition")),
 		ContentRange:  string(rsp.Header.Peek("Content-Range")),
 		Location:      string(rsp.Header.Peek("Location")),
+		RetryAfter:    string(rsp.Header.Peek("Retry-After")),
 	}
 	return meta, gholatransport.CopyBody(sink, meta, bytes.NewReader(rsp.Body()))
 }
