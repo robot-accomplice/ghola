@@ -76,16 +76,7 @@ func newFetchState(opts *config.Options, do Doer) (*fetchState, error) {
 	}
 	s.jar = jar
 
-	proxySelector, err := gholaproxy.NewSelector(opts.ProxyCfg.Proxy, opts.ProxyCfg.Auth, opts.ProxyCfg.File, opts.ProxyCfg.Strategy)
-	if err != nil {
-		return nil, err
-	}
-	if opts.ProxyCfg.HealthCheck {
-		if err := proxySelector.HealthCheck(); err != nil {
-			return nil, err
-		}
-	}
-	selectedProxy, err := proxySelector.Select()
+	selectedProxy, err := selectProxy(opts)
 	if err != nil {
 		return nil, err
 	}
@@ -281,6 +272,23 @@ redirectLoop:
 		fasthttp.ReleaseResponse(rsp)
 		return nil, nil, lastErr
 	}
+}
+
+// selectProxy returns the proxy from --proxy or --proxy-file, or "" when
+// neither is set. Then the transport takes the proxy from the environment.
+// FetchURL and the download path both call it, so a proxy cannot reach one
+// path and miss the other (audit finding M8).
+func selectProxy(opts *config.Options) (string, error) {
+	selector, err := gholaproxy.NewSelector(opts.ProxyCfg.Proxy, opts.ProxyCfg.Auth, opts.ProxyCfg.File, opts.ProxyCfg.Strategy)
+	if err != nil {
+		return "", err
+	}
+	if opts.ProxyCfg.HealthCheck {
+		if err := selector.HealthCheck(); err != nil {
+			return "", err
+		}
+	}
+	return selector.Select()
 }
 
 func resolveUserAgent(opts *config.Options, activeProfile profile.BrowserProfile) string {

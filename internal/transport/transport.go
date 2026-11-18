@@ -77,9 +77,10 @@ type simpleTransport struct {
 }
 
 type tlsClientTransport struct {
-	client tlsclient.HttpClient
-	name   string
-	limits limits
+	client   tlsclient.HttpClient
+	name     string
+	limits   limits
+	envProxy bool // no --proxy: take the proxy from the environment per request
 }
 
 // buildTLSConfig assembles a *tls.Config from the TLS-related options, or
@@ -137,7 +138,7 @@ func New(opts *config.Options, selectedProxy string) (Transport, error) {
 		// Never auto-negotiate/transparently decompress: downloads must be
 		// byte-exact, and --compressed is handled explicitly by the caller.
 		DisableCompression:     true,
-		Proxy:                  http.ProxyFromEnvironment,
+		Proxy:                  func(r *http.Request) (*url.URL, error) { return proxyFromEnv(r.URL) },
 		MaxResponseHeaderBytes: maxHeaderBytes(opts.Resilience.BufferSize),
 	}
 	if selectedProxy != "" {
@@ -216,9 +217,10 @@ func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transpor
 	}
 
 	return &tlsClientTransport{
-		client: client,
-		name:   "tls-client",
-		limits: newLimits(opts.Resilience),
+		client:   client,
+		name:     "tls-client",
+		limits:   newLimits(opts.Resilience),
+		envProxy: selectedProxy == "",
 	}, nil
 }
 
@@ -380,11 +382,34 @@ func (t *tlsClientTransport) send(ctx context.Context, req *fasthttp.Request, se
 		return nil, nil, w.fail(err)
 	}
 	setHeaders(httpReq, req)
+	if err := t.useEnvProxy(httpReq.URL); err != nil {
+		return nil, nil, w.fail(err)
+	}
 	httpResp, err := t.client.Do(httpReq)
 	if err != nil {
 		return nil, nil, w.fail(err)
 	}
 	return httpResp, w, nil
+}
+
+// useEnvProxy sets the client's proxy from the environment for target, as
+// net/http does per request. tls-client reads no proxy variables itself.
+func (t *tlsClientTransport) useEnvProxy(target *url.URL) error {
+	if !t.envProxy {
+		return nil
+	}
+	p, err := proxyFromEnv(target)
+	if err != nil {
+		return err
+	}
+	want := ""
+	if p != nil {
+		want = p.String()
+	}
+	if want == t.client.GetProxy() {
+		return nil
+	}
+	return t.client.SetProxy(want)
 }
 
 func (t *tlsClientTransport) Name() string {
