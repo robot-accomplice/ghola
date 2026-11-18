@@ -3,6 +3,7 @@ package output
 import (
 	"bytes"
 	"compress/gzip"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -549,5 +550,37 @@ func TestProcessResponse_LimitRateStdout(t *testing.T) {
 	}
 	if !bytes.Equal(buf.Bytes(), body) {
 		t.Errorf("wrote %d bytes, want the %d body bytes", buf.Len(), len(body))
+	}
+}
+
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("broken pipe") }
+
+type failingReader struct{}
+
+func (failingReader) Read([]byte) (int, error) { return 0, errors.New("connection reset") }
+
+// TestProcessResponse_WriteErrorIsMarked checks that a failed write to stdout
+// is a write error (curl exit 23), and that a body that breaks off is not
+// (audit finding M6). Both come out of the same io.Copy.
+func TestProcessResponse_WriteErrorIsMarked(t *testing.T) {
+	req := fasthttp.AcquireRequest()
+	defer fasthttp.ReleaseRequest(req)
+
+	rsp := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseResponse(rsp)
+	rsp.SetBodyString("hello")
+	err := ProcessResponse(failingWriter{}, io.Discard, &config.Options{}, req, rsp, 0)
+	if !errors.Is(err, config.ErrWrite) {
+		t.Errorf("write to a broken stdout: err = %v, want ErrWrite", err)
+	}
+
+	broken := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseResponse(broken)
+	broken.SetBodyStream(failingReader{}, -1)
+	err = ProcessResponse(io.Discard, io.Discard, &config.Options{}, req, broken, 0)
+	if err == nil || errors.Is(err, config.ErrWrite) {
+		t.Errorf("broken body: err = %v, want an error that is not ErrWrite", err)
 	}
 }

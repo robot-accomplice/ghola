@@ -108,25 +108,25 @@ func TestExecute_Version(t *testing.T) {
 	}
 }
 
-func TestExecute_SendFailed(t *testing.T) {
+func TestExecute_DialErrorIsCouldntConnect(t *testing.T) {
 	failDoer := func(ctx context.Context, opts *config.Options, req *fasthttp.Request, resp *fasthttp.Response) error {
 		return &net.OpError{Op: "dial", Err: &os.SyscallError{Syscall: "connect", Err: os.ErrNotExist}}
 	}
 
 	code := execute(bg(), []string{"http://test"}, failDoer, nil, os.Stdout)
-	if code != config.SendFailed.Int() {
-		t.Errorf("exit code = %d, want %d (SendFailed)", code, config.SendFailed.Int())
+	if code != config.CouldntConnect.Int() {
+		t.Errorf("exit code = %d, want %d (CouldntConnect)", code, config.CouldntConnect.Int())
 	}
 }
 
-func TestExecute_SendFailedSilent(t *testing.T) {
+func TestExecute_DialErrorIsCouldntConnectSilent(t *testing.T) {
 	failDoer := func(ctx context.Context, opts *config.Options, req *fasthttp.Request, resp *fasthttp.Response) error {
 		return &net.OpError{Op: "dial", Err: &os.SyscallError{Syscall: "connect", Err: os.ErrNotExist}}
 	}
 
 	code := execute(bg(), []string{"-s", "http://test"}, failDoer, nil, os.Stdout)
-	if code != config.SendFailed.Int() {
-		t.Errorf("exit code = %d, want %d (SendFailed)", code, config.SendFailed.Int())
+	if code != config.CouldntConnect.Int() {
+		t.Errorf("exit code = %d, want %d (CouldntConnect)", code, config.CouldntConnect.Int())
 	}
 }
 

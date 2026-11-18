@@ -57,7 +57,7 @@ func TestExecute_ConnectionsReportsAFailure(t *testing.T) {
 	}
 }
 
-// -f gives the same exit code with -o as on stdout (SendFailed), and writes
+// -f gives the same exit code with -o as on stdout (HTTPError, curl 22), and writes
 // no file (audit finding H7).
 func TestExecute_FailToFileExitCode(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -66,8 +66,8 @@ func TestExecute_FailToFileExitCode(t *testing.T) {
 	defer srv.Close()
 
 	file := t.TempDir() + "/f"
-	if code := execute(context.Background(), []string{"-s", "-f", "-o", file, srv.URL}, nil, nil, nil); code != config.SendFailed.Int() {
-		t.Errorf("exit %d, want %d", code, config.SendFailed.Int())
+	if code := execute(context.Background(), []string{"-s", "-f", "-o", file, srv.URL}, nil, nil, nil); code != config.HTTPError.Int() {
+		t.Errorf("exit %d, want %d", code, config.HTTPError.Int())
 	}
 	if _, err := os.Stat(file); !os.IsNotExist(err) {
 		t.Errorf("the file exists (stat err %v)", err)

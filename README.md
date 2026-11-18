@@ -175,6 +175,25 @@ ghola -w https://example.com/report.pdf
 ghola -n 5 -o big.iso https://example.com/big.iso
 ```
 
+### Exit codes
+
+ghola uses curl's exit codes for the same causes, so a script written for curl reads them the same way.
+
+| Code | Cause |
+|------|-------|
+| 0 | Success |
+| 2 | Invalid or missing argument |
+| 6 | The host name did not resolve |
+| 7 | The connection failed (for example, refused) |
+| 22 | `-f` refused the HTTP status |
+| 23 | ghola could not write the output (stdout or the `-o` file) |
+| 26 | ghola could not read a local file (`-d @file`, `-T`, `-F name=@file`) |
+| 28 | A time limit ended the transfer (`--max-time`, `--connect-timeout`, `--speed-limit`) |
+| 35 | The TLS handshake failed |
+| 47 | `-L` reached `--max-redirs` |
+| 55 | The request failed for another cause |
+| 60 | The server certificate did not verify |
+
 ## Architecture
 
 Ghola is structured as a CLI entrypoint plus focused internal packages:

@@ -17,20 +17,40 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-// ExitCode represents a process exit status returned by ghola.
+// ExitCode represents a process exit status returned by ghola. The values
+// are curl's exit codes for the same causes (audit finding M6), so a script
+// written for curl reads them the same way.
 type ExitCode int
 
 const (
 	// NoError indicates successful execution.
-	NoError ExitCode = iota
-	// BadFlag indicates invalid or missing CLI arguments.
-	BadFlag
-	// SendFailed indicates the HTTP request could not be completed.
-	SendFailed
-	// ReadFileFailed indicates a local file could not be read (e.g. --upload-file).
-	ReadFileFailed
-	// WriteFileFailed indicates output could not be written to disk.
-	WriteFileFailed
+	NoError ExitCode = 0
+	// BadFlag indicates invalid or missing CLI arguments (curl 2).
+	BadFlag ExitCode = 2
+	// CouldntResolveHost indicates that DNS did not resolve the host (curl 6).
+	CouldntResolveHost ExitCode = 6
+	// CouldntConnect indicates that the TCP connection failed (curl 7).
+	CouldntConnect ExitCode = 7
+	// HTTPError indicates an HTTP status that -f refuses (curl 22).
+	HTTPError ExitCode = 22
+	// WriteFileFailed indicates output could not be written (curl 23).
+	WriteFileFailed ExitCode = 23
+	// ReadFileFailed indicates a local file could not be read, e.g.
+	// --upload-file or -d @file (curl 26).
+	ReadFileFailed ExitCode = 26
+	// TimedOut indicates --max-time, --connect-timeout or --speed-limit
+	// ended the transfer (curl 28).
+	TimedOut ExitCode = 28
+	// TLSConnectFailed indicates a TLS handshake failure (curl 35).
+	TLSConnectFailed ExitCode = 35
+	// TooManyRedirects indicates that -L reached --max-redirs (curl 47).
+	TooManyRedirects ExitCode = 47
+	// SendFailed indicates a request failure without a more exact code
+	// (curl 55).
+	SendFailed ExitCode = 55
+	// PeerFailedVerification indicates that the server certificate or its
+	// host name did not verify (curl 60).
+	PeerFailedVerification ExitCode = 60
 )
 
 // Int returns the ExitCode as a plain int for use with os.Exit.
