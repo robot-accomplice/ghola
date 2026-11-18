@@ -296,25 +296,12 @@ func resolveUserAgent(opts *config.Options, activeProfile profile.BrowserProfile
 func parseHeaderOverrides(headers []string) map[string]string {
 	overrides := make(map[string]string, len(headers))
 	for _, raw := range headers {
-		key, val, ok := parseHeader(raw)
+		key, val, ok := config.ParseHeader(raw)
 		if ok {
 			overrides[strings.ToLower(key)] = val
 		}
 	}
 	return overrides
-}
-
-func parseHeader(raw string) (string, string, bool) {
-	i := strings.IndexByte(raw, ':')
-	if i < 0 {
-		return "", "", false
-	}
-	key := strings.TrimSpace(raw[:i])
-	val := strings.TrimSpace(raw[i+1:])
-	if key == "" {
-		return "", "", false
-	}
-	return key, val, true
 }
 
 func isRedirectStatus(status int) bool {

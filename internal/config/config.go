@@ -290,6 +290,9 @@ func ParseFlags(args []string) (opts *Options, done bool, err error) {
 	if err := limitFlags.apply(fs, &opts.Resilience); err != nil {
 		return nil, false, err
 	}
+	if err := checkInput(opts); err != nil {
+		return nil, false, err
+	}
 	// curl --location-trusted is -L plus the credentials on every hop.
 	if opts.Resilience.LocationTrusted {
 		opts.Resilience.Location = true

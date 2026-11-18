@@ -275,7 +275,22 @@ func newHTTPRequest(ctx context.Context, req *fasthttp.Request) (*http.Request, 
 			httpReq.Header.Add(name, val)
 		}
 	}
+	noEngineUserAgent(httpReq.Header)
 	return httpReq, nil
+}
+
+// noEngineUserAgent stops net/http and fhttp from sending their own
+// User-Agent (Go-http-client) when the request has none. ghola sets a
+// User-Agent on every request, so a missing one was removed with
+// -H "User-Agent:" (audit finding M7). With the header present and empty,
+// net/http and fhttp over HTTP/2 send no User-Agent. fhttp over HTTP/1
+// sends an empty "User-Agent:" line: no value, so no library name. An empty
+// slice would remove that line too, but fhttp's HTTP/2 encoder reads
+// Values[0] and would panic.
+func noEngineUserAgent[H ~map[string][]string](h H) {
+	if _, ok := h["User-Agent"]; !ok {
+		h["User-Agent"] = []string{""}
+	}
 }
 
 // fillResponse copies a net/http or fhttp response into rsp. It does not
@@ -339,6 +354,7 @@ func orderedHeaders(httpReq *fhttp.Request, req *fasthttp.Request) {
 		httpReq.Header.Set(headerName, string(value))
 		headerOrder = append(headerOrder, strings.ToLower(headerName))
 	}
+	noEngineUserAgent(httpReq.Header)
 	if len(headerOrder) > 0 {
 		httpReq.Header[fhttp.HeaderOrderKey] = headerOrder
 		httpReq.Header[fhttp.PHeaderOrderKey] = []string{":method", ":authority", ":scheme", ":path"}
@@ -351,6 +367,7 @@ func plainHeaders(httpReq *fhttp.Request, req *fasthttp.Request) {
 	for key, value := range req.Header.All() {
 		httpReq.Header.Set(string(key), string(value))
 	}
+	noEngineUserAgent(httpReq.Header)
 }
 
 // send sends req under the curl limits (--connect-timeout, --speed-limit).
