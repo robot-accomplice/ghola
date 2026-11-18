@@ -180,6 +180,12 @@ func WithTimeout(ctx context.Context, opts *config.Options) (context.Context, co
 // The caller must release the returned Request and Response via
 // fasthttp.ReleaseRequest / ReleaseResponse.
 func FetchURL(ctx context.Context, opts *config.Options, do Doer) (*fasthttp.Request, *fasthttp.Response, error) {
+	// A negative count would run no attempt and return no response and no
+	// error (audit finding H5). The bridge reaches this point without the
+	// CLI's flag check.
+	if opts.Resilience.Retries < 0 {
+		return nil, nil, fmt.Errorf("retries cannot be negative: %d", opts.Resilience.Retries)
+	}
 	state, err := newFetchState(opts, do)
 	if err != nil {
 		return nil, nil, err
