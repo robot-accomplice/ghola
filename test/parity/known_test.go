@@ -13,12 +13,6 @@ package parity
 // The findings are in docs/audits/2026-11-12-v0.7.0-vs-curl-aria2-wget.md.
 // Recorded against v0.8.0 on 2026-11-15.
 var known = map[string]string{
-	"get_no_content_type":        "M1: every request gets Content-Type: application/json",
-	"get_no_content_type_chrome": "M1: every request gets Content-Type: application/json",
-	"form_content_type":          "M1: -d is labelled application/json",
-
-	"rate_stdout": "M3: --limit-rate does not apply to stdout",
-
 	"exit_refused": "M6: every network error exits 2",
 	"exit_dns":     "M6: every network error exits 2",
 	"exit_tls":     "M6: every network error exits 2",

@@ -318,24 +318,29 @@ func fetchSegment(ctx context.Context, opts *config.Options, stream Streamer, ur
 	return err
 }
 
-func downloadSingle(ctx context.Context, opts *config.Options, stream Streamer, url string, limiter *rateLimiter, progress *progressWriter) (gholatransport.StreamMeta, error) {
-	plan := singleGet{flags: os.O_CREATE | os.O_WRONLY, limiter: limiter, progress: progress}
-
+// singlePlan returns the open flags, the resume offset and the Range header
+// of a single-stream download.
+func singlePlan(opts *config.Options) (flags int, offset int64, rangeHeader string, err error) {
+	flags = os.O_CREATE | os.O_WRONLY
 	switch {
 	case opts.Output.ContinueAt != "":
-		off, err := resumeOffset(opts)
-		if err != nil {
-			return gholatransport.StreamMeta{}, err
+		if offset, err = resumeOffset(opts); err != nil {
+			return 0, 0, "", err
 		}
-		plan.offset = off
-		plan.flags |= os.O_APPEND
-		plan.rangeHeader = fmt.Sprintf("bytes=%d-", off)
+		return flags | os.O_APPEND, offset, fmt.Sprintf("bytes=%d-", offset), nil
 	case opts.Output.Range != "":
-		plan.rangeHeader = "bytes=" + strings.TrimPrefix(opts.Output.Range, "bytes=")
-		plan.flags |= os.O_TRUNC
+		return flags | os.O_TRUNC, 0, "bytes=" + strings.TrimPrefix(opts.Output.Range, "bytes="), nil
 	default:
-		plan.flags |= os.O_TRUNC
+		return flags | os.O_TRUNC, 0, "", nil
 	}
+}
+
+func downloadSingle(ctx context.Context, opts *config.Options, stream Streamer, url string, limiter *rateLimiter, progress *progressWriter) (gholatransport.StreamMeta, error) {
+	flags, offset, rangeHeader, err := singlePlan(opts)
+	if err != nil {
+		return gholatransport.StreamMeta{}, err
+	}
+	plan := singleGet{flags: flags, offset: offset, rangeHeader: rangeHeader, limiter: limiter, progress: progress}
 
 	_, meta, err := followRedirects(opts, url, func(url string) (gholatransport.StreamMeta, error) {
 		return plan.getWithRetry(ctx, opts, stream, url)

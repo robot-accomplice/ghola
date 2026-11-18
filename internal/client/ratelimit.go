@@ -8,6 +8,8 @@ import (
 	"io"
 	"sync"
 	"time"
+
+	"github.com/robot-accomplice/ghola/internal/config"
 )
 
 // progressInterval is the minimum time between progress line updates.
@@ -58,6 +60,41 @@ func (rl *rateLimiter) wait(n int) {
 	}
 }
 
+// chunk returns the most bytes that one wait may ask for. The bucket holds
+// at most one second of bytes, so a larger request could never pass.
+func (rl *rateLimiter) chunk() int {
+	return int(min(rateLimitChunk, rl.bytesPerSec))
+}
+
+// LimitReader returns r throttled to --limit-rate, or r when the flag is not
+// set. The stdout path uses it, so the limit applies there as it does to a
+// download to a file (audit finding M3).
+func LimitReader(r io.Reader, opts *config.Options) (io.Reader, error) {
+	if opts.Output.LimitRate == "" {
+		return r, nil
+	}
+	bps, err := config.ParseRate(opts.Output.LimitRate)
+	if err != nil {
+		return nil, fmt.Errorf("parse --limit-rate: %w", err)
+	}
+	return &rateLimitedReader{r: r, rl: newRateLimiter(bps)}, nil
+}
+
+// rateLimitedReader throttles reads through a rateLimiter.
+type rateLimitedReader struct {
+	r  io.Reader
+	rl *rateLimiter
+}
+
+func (rr *rateLimitedReader) Read(p []byte) (int, error) {
+	if n := rr.rl.chunk(); len(p) > n {
+		p = p[:n]
+	}
+	n, err := rr.r.Read(p)
+	rr.rl.wait(n)
+	return n, err
+}
+
 // rateLimitedWriter wraps an io.Writer and throttles writes through a shared
 // rateLimiter. Safe for concurrent use from multiple goroutines (segments).
 type rateLimitedWriter struct {
@@ -74,10 +111,7 @@ func (rw *rateLimitedWriter) Write(p []byte) (int, error) {
 	// Without this cap, any --limit-rate below rateLimitChunk (32 KB/s)
 	// would cause wait to loop forever because allowance is capped at
 	// bytesPerSec and can never reach n.
-	maxChunk := rateLimitChunk
-	if int64(maxChunk) > rw.rl.bytesPerSec {
-		maxChunk = int(rw.rl.bytesPerSec)
-	}
+	maxChunk := rw.rl.chunk()
 	written := 0
 	for len(p) > 0 {
 		n := len(p)
@@ -153,10 +187,10 @@ func (p *progressWriter) report(now time.Time) {
 		rate = float64(p.written) / secs
 	}
 	if p.total > 0 {
-		fmt.Fprintf(p.w, "%6.1f%%  %d/%d bytes  %.1f MB/s   ",
+		fmt.Fprintf(p.w, "\r%6.1f%%  %d/%d bytes  %.1f MB/s   ",
 			100*float64(p.written)/float64(p.total), p.written, p.total, rate/1e6)
 	} else {
-		fmt.Fprintf(p.w, "%d bytes  %.1f MB/s   ", p.written, rate/1e6)
+		fmt.Fprintf(p.w, "\r%d bytes  %.1f MB/s   ", p.written, rate/1e6)
 	}
 }
 

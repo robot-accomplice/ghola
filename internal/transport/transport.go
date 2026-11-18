@@ -234,8 +234,8 @@ func (t *simpleTransport) Do(ctx context.Context, req *fasthttp.Request, rsp *fa
 // send sends req under the curl limits (--connect-timeout, --speed-limit).
 // The caller must pass resp.Body through w.body.
 func (t *simpleTransport) send(ctx context.Context, req *fasthttp.Request) (*http.Response, *watch, error) {
-	w := t.limits.start(ctx)
-	ctx = httptrace.WithClientTrace(w.ctx, &httptrace.ClientTrace{GotConn: func(httptrace.GotConnInfo) { w.connected() }})
+	ctx, w := t.limits.start(ctx)
+	ctx = httptrace.WithClientTrace(ctx, &httptrace.ClientTrace{GotConn: func(httptrace.GotConnInfo) { w.connected() }})
 	httpReq, err := newHTTPRequest(ctx, req)
 	if err != nil {
 		return nil, nil, w.fail(err)
@@ -356,8 +356,8 @@ func plainHeaders(httpReq *fhttp.Request, req *fasthttp.Request) {
 // send sends req under the curl limits (--connect-timeout, --speed-limit).
 // The caller must pass httpResp.Body through w.body.
 func (t *tlsClientTransport) send(ctx context.Context, req *fasthttp.Request, setHeaders func(*fhttp.Request, *fasthttp.Request)) (*fhttp.Response, *watch, error) {
-	w := t.limits.start(ctx)
-	ctx = fhttptrace.WithClientTrace(w.ctx, &fhttptrace.ClientTrace{GotConn: func(fhttptrace.GotConnInfo) { w.connected() }})
+	ctx, w := t.limits.start(ctx)
+	ctx = fhttptrace.WithClientTrace(ctx, &fhttptrace.ClientTrace{GotConn: func(fhttptrace.GotConnInfo) { w.connected() }})
 	httpReq, err := fhttp.NewRequestWithContext(ctx, string(req.Header.Method()), req.URI().String(), bytes.NewReader(req.Body()))
 	if err != nil {
 		return nil, nil, w.fail(err)

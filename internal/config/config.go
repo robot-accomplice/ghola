@@ -187,7 +187,7 @@ func ParseFlags(args []string) (opts *Options, done bool, err error) {
 	fs.StringVarP(&opts.User, "user", "u", "", "Server user and password <user:password>")
 	fs.StringVarP(&opts.Stealth.Agent, "user-agent", "A", DefaultAgent, "Send User-Agent <name>")
 	fs.StringVarP(&opts.Method, "request", "X", DefaultMethod, "HTTP request method")
-	fs.StringSliceVarP(&opts.Headers, "header", "H", []string{DefaultContentType}, "Pass custom headers")
+	fs.StringSliceVarP(&opts.Headers, "header", "H", nil, "Pass custom headers")
 	fs.BoolVarP(&opts.Output.Verbose, "verbose", "v", false, "verbose mode")
 
 	fs.IntVarP(&opts.Stealth.Drift, "drift", "D", 0, "Temporal Drift (ms jitter)")
@@ -319,6 +319,7 @@ func ParseFlags(args []string) (opts *Options, done bool, err error) {
 		return nil, false, fmt.Errorf("--form cannot be combined with --data-urlencode")
 	}
 
+	addDefaultContentType(opts)
 	if (opts.Data != "" || opts.DataBinary != "" || len(opts.Form) > 0 || len(opts.DataURLEncode) > 0) && !fs.Changed("request") {
 		opts.Method = fasthttp.MethodPost
 	}
@@ -342,6 +343,10 @@ func applyChainShortcuts(opts *Options) {
 		return
 	}
 	opts.Headers = append(opts.Headers, "X-Chain: "+info.Header)
+	// A chain shortcut is for JSON-RPC, so its body is JSON.
+	if !hasHeader(opts.Headers, "Content-Type") {
+		opts.Headers = append(opts.Headers, jsonContentType)
+	}
 	if opts.URL == "" && info.DefaultRPC != "" {
 		opts.URL = info.DefaultRPC
 	}
