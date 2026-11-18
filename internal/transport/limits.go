@@ -45,10 +45,10 @@ type watch struct {
 	// function, not the context: the context goes to the request only.
 	causeOf func() error
 	cancel  context.CancelCauseFunc
-	bytes  atomic.Int64
-	once   sync.Once
-	conn   *time.Timer
-	done   chan struct{}
+	bytes   atomic.Int64
+	once    sync.Once
+	conn    *time.Timer
+	done    chan struct{}
 }
 
 // start returns the request context and the watch for one request. The
