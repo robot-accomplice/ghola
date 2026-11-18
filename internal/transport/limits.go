@@ -41,20 +41,23 @@ func newLimits(r config.ResilienceOptions) limits {
 // watch is the limit state of one request. Both transports use it, so a limit
 // cannot reach one stack and miss the other.
 type watch struct {
-	ctx    context.Context
-	cancel context.CancelCauseFunc
-	bytes  atomic.Int64
-	once   sync.Once
-	conn   *time.Timer
-	done   chan struct{}
+	// causeOf reports why the request context ended. The watch keeps this
+	// function, not the context: the context goes to the request only.
+	causeOf func() error
+	cancel  context.CancelCauseFunc
+	bytes   atomic.Int64
+	once    sync.Once
+	conn    *time.Timer
+	done    chan struct{}
 }
 
-// start returns the watch for one request. The request must use w.ctx, call
-// w.connected when the connection is ready (the GotConn trace event), pass
-// its body through w.body, and pass a Do error through w.fail.
-func (l limits) start(ctx context.Context) *watch {
+// start returns the request context and the watch for one request. The
+// request must use the returned context, call w.connected when the
+// connection is ready (the GotConn trace event), pass its body through
+// w.body, and pass a Do error through w.fail.
+func (l limits) start(ctx context.Context) (context.Context, *watch) {
 	ctx, cancel := context.WithCancelCause(ctx)
-	w := &watch{ctx: ctx, cancel: cancel, done: make(chan struct{})}
+	w := &watch{causeOf: func() error { return context.Cause(ctx) }, cancel: cancel, done: make(chan struct{})}
 	if l.connect > 0 {
 		w.conn = time.AfterFunc(l.connect, func() {
 			cancel(fmt.Errorf("%w after %d milliseconds", ErrConnectTimeout, l.connect.Milliseconds()))
@@ -66,7 +69,7 @@ func (l limits) start(ctx context.Context) *watch {
 		// its headers for 3 s: curl stops after --speed-time with exit 28).
 		go w.checkSpeed(l)
 	}
-	return w
+	return ctx, w
 }
 
 // connected stops the connect timer.
@@ -87,7 +90,7 @@ func (w *watch) stop() {
 
 // cause returns the limit error that ended the request, or err.
 func (w *watch) cause(err error) error {
-	if c := context.Cause(w.ctx); errors.Is(c, ErrConnectTimeout) || errors.Is(c, ErrTooSlow) {
+	if c := w.causeOf(); errors.Is(c, ErrConnectTimeout) || errors.Is(c, ErrTooSlow) {
 		return c
 	}
 	return err

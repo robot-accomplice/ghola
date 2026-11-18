@@ -45,7 +45,7 @@ Attribution: the direction for Ghola's browser-like fetching work was inspired b
 | `-u <user:pass>` | **Basic Auth** -- native HTTP basic authentication. |
 | `-T <file>` | **Upload** -- send a local file as the request body. |
 | `-o <file>` | **Output** -- write response body to a file. |
-| `-H <header>` | **Custom headers** -- repeatable. Default: `Content-Type: application/json`. |
+| `-H <header>` | **Custom headers** -- repeatable. A GET has no `Content-Type`. `-d`, `--data-binary` and `--data-urlencode` send `application/x-www-form-urlencoded`, as in curl. `--chain` sends `application/json`. A `Content-Type` from `-H` wins. |
 | `-X <method>` | **HTTP method** -- defaults to GET, auto-switches to POST when `-d` is used. |
 | `-i` | **Include headers** in output. |
 | `-v` | **Verbose** -- show ghost signature and extra diagnostics. |
@@ -160,7 +160,7 @@ ghola --impersonate chrome --proxy http://user:pass@proxy.local:8080 https://exa
 ghola --profile-list
 
 # POST with data and verbose ghost signing
-ghola -vG -d '{"query": "balance"}' https://rpc.example.com
+ghola -vG -H 'Content-Type: application/json' -d '{"query": "balance"}' https://rpc.example.com
 
 # Snoop mode -- check security posture
 ghola -S https://example.com

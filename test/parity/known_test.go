@@ -13,10 +13,6 @@ package parity
 // The findings are in docs/audits/2026-11-12-v0.7.0-vs-curl-aria2-wget.md.
 // Recorded against v0.8.0 on 2026-11-15.
 var known = map[string]string{
-	"get_no_content_type":        "M1: every request gets Content-Type: application/json",
-	"get_no_content_type_chrome": "M1: every request gets Content-Type: application/json",
-	"form_content_type":          "M1: -d is labelled application/json",
-
 	"progress_not_tty": "M4: the meter prints when stderr is not a terminal",
 	"progress_total":   "M4: the total comes from the compressed length",
 
