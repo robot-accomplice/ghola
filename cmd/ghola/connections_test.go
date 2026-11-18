@@ -8,6 +8,8 @@ import (
 	"os"
 	"sync/atomic"
 	"testing"
+
+	"github.com/robot-accomplice/ghola/internal/config"
 )
 
 // -n is for segmented downloads. On stdout it raced n copies of the same
@@ -52,5 +54,22 @@ func TestExecute_ConnectionsReportsAFailure(t *testing.T) {
 	defer out.Close()
 	if code := execute(context.Background(), []string{"-n", "3", dead}, nil, nil, out); code == 0 {
 		t.Error("exit 0 for a refused connection")
+	}
+}
+
+// -f gives the same exit code with -o as on stdout (SendFailed), and writes
+// no file (audit finding H7).
+func TestExecute_FailToFileExitCode(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "missing", http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	file := t.TempDir() + "/f"
+	if code := execute(context.Background(), []string{"-s", "-f", "-o", file, srv.URL}, nil, nil, nil); code != config.SendFailed.Int() {
+		t.Errorf("exit %d, want %d", code, config.SendFailed.Int())
+	}
+	if _, err := os.Stat(file); !os.IsNotExist(err) {
+		t.Errorf("the file exists (stat err %v)", err)
 	}
 }
