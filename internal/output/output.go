@@ -4,7 +4,6 @@ package output
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -17,9 +16,6 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-// ErrNon2xx is returned when --fail is set and the server responds with a non-2xx status.
-var ErrNon2xx = errors.New("non-2xx http status")
-
 // ProcessResponse writes the HTTP response to the appropriate destination
 // (file or stdout) based on opts. The body goes to w exactly as the server
 // sent it, without a buffer (audit findings H2 and M2). -i puts the header
@@ -27,10 +23,8 @@ var ErrNon2xx = errors.New("non-2xx http status")
 // the timing line) goes to ew. It returns a non-nil error if the body cannot
 // be read or written.
 func ProcessResponse(w, ew io.Writer, opts *config.Options, req *fasthttp.Request, rsp *fasthttp.Response, elapsed time.Duration) error {
-	httpOk := rsp.StatusCode() >= 200 && rsp.StatusCode() < 300
-
-	if opts.Output.Fail && !httpOk {
-		return fmt.Errorf("%w: %d %s", ErrNon2xx, rsp.StatusCode(), fasthttp.StatusMessage(rsp.StatusCode()))
+	if opts.Output.FailsOn(rsp.StatusCode()) {
+		return fmt.Errorf("%w: %d %s", config.ErrHTTPStatus, rsp.StatusCode(), fasthttp.StatusMessage(rsp.StatusCode()))
 	}
 
 	body, err := bodyReader(opts, rsp)
