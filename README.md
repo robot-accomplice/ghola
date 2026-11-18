@@ -192,6 +192,7 @@ ghola uses curl's exit codes for the same causes, so a script written for curl r
 | 35 | The TLS handshake failed |
 | 47 | `-L` reached `--max-redirs` |
 | 55 | The request failed for another cause |
+| 56 | The connection failed after it was ready (for example, a reset, or a TLS alert after the handshake) |
 | 60 | The server certificate did not verify |
 
 ## Architecture
