@@ -31,30 +31,35 @@ func TestProxyFromEnv(t *testing.T) {
 		{"NO_PROXY IPv6", map[string]string{"HTTP_PROXY": "http://p:1", "NO_PROXY": "::1"}, "http://[::1]:80/", "", false},
 	}
 	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if tc.cased && runtime.GOOS == "windows" {
-				t.Skip("Windows environment names are not case-sensitive")
-			}
-			// Clear all first, then set: on Windows HTTP_PROXY and
-			// http_proxy are one variable.
-			for _, n := range []string{"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "NO_PROXY", "no_proxy", "REQUEST_METHOD"} {
-				t.Setenv(n, "")
-			}
-			for n, v := range tc.env {
-				t.Setenv(n, v)
-			}
-			target, _ := url.Parse(tc.target)
-			p, err := proxyFromEnv(target)
-			if err != nil {
-				t.Fatal(err)
-			}
-			got := ""
-			if p != nil {
-				got = p.String()
-			}
-			if got != tc.want {
-				t.Errorf("proxy = %q, want %q", got, tc.want)
-			}
-		})
+		t.Run(tc.name, func(t *testing.T) { checkProxyCase(t, tc.env, tc.target, tc.want, tc.cased) })
+	}
+}
+
+// checkProxyCase sets env, and checks the proxy that proxyFromEnv gives for
+// target.
+func checkProxyCase(t *testing.T, env map[string]string, target, want string, cased bool) {
+	t.Helper()
+	if cased && runtime.GOOS == "windows" {
+		t.Skip("Windows environment names are not case-sensitive")
+	}
+	// Clear all first, then set: on Windows HTTP_PROXY and
+	// http_proxy are one variable.
+	for _, n := range []string{"HTTP_PROXY", "http_proxy", "HTTPS_PROXY", "https_proxy", "NO_PROXY", "no_proxy", "REQUEST_METHOD"} {
+		t.Setenv(n, "")
+	}
+	for n, v := range env {
+		t.Setenv(n, v)
+	}
+	u, _ := url.Parse(target)
+	p, err := proxyFromEnv(u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := ""
+	if p != nil {
+		got = p.String()
+	}
+	if got != want {
+		t.Errorf("proxy = %q, want %q", got, want)
 	}
 }
