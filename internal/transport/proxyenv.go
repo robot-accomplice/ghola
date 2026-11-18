@@ -33,7 +33,7 @@ func proxyFromEnv(target *url.URL) (*url.URL, error) {
 	}
 	// A value without a scheme is an HTTP proxy, as in curl.
 	if !strings.Contains(raw, "://") {
-		raw = "http://" + raw
+		raw = defaultProxyScheme + "://" + raw
 	}
 	p, err := url.Parse(raw)
 	if err != nil {
@@ -41,6 +41,9 @@ func proxyFromEnv(target *url.URL) (*url.URL, error) {
 	}
 	return p, nil
 }
+
+// defaultProxyScheme is the scheme of a proxy value without one, as in curl.
+const defaultProxyScheme = "http"
 
 func firstEnv(names ...string) string {
 	for _, n := range names {
