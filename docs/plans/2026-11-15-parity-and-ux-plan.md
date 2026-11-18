@@ -191,6 +191,7 @@ Parity claims are not possible while the basic fetch is wrong. Fix these first, 
    - Open, for the v1 flag design (D4 defaults): ghola's `-f` refuses any non-2xx status, and curl's `-f` refuses only 400 and above. `config.OutputOptions.FailsOn` holds ghola's rule in one place. Also, `-o` without `-f` writes an error body and exits non-zero, and curl writes it and exits 0.
 7. M1: send no default `Content-Type` on GET. Send `application/x-www-form-urlencoded` for `-d`, as curl does.
 8. M3 to M9: rate limit on stdout, progress meter, the extra HEAD request, exit codes, input checks, proxy variables, URL handling.
+   - Status (2026-11-18, branch `fix/m4-progress-meter`): M4 done. A download to a file prints the meter only when stderr is a terminal (`golang.org/x/term`), as Wget2 and aria2 do. curl prints it to a file too, so here ghola is quieter than curl. The total comes from the response that is written, not from the probe. With `--compressed` the total is not known, so the meter shows only the byte count. The meter prints a final line at the end. `progress_not_tty` and `progress_total` pass.
 9. Exit codes: adopt curl's exit code numbers for the same causes (6, 7, 22, 23, 28, 35, 47, 60, and the others). This is a breaking change, so it goes into the same major version as D2.
 
 ### Phase 2: curl HTTP parity

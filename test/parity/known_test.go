@@ -19,9 +19,6 @@ var known = map[string]string{
 
 	"rate_stdout": "M3: --limit-rate does not apply to stdout",
 
-	"progress_not_tty": "M4: the meter prints when stderr is not a terminal",
-	"progress_total":   "M4: the total comes from the compressed length",
-
 	"no_head": "M5: each -o download sends HEAD first",
 
 	"exit_refused": "M6: every network error exits 2",

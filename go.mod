@@ -8,7 +8,8 @@ require (
 	github.com/spf13/pflag v1.0.10
 	github.com/tidwall/gjson v1.19.0
 	github.com/valyala/fasthttp v1.73.0
-	golang.org/x/sys v0.49.0
+	golang.org/x/sys v0.50.0
+	golang.org/x/term v0.48.0
 )
 
 require (

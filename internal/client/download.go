@@ -19,7 +19,18 @@ import (
 	"github.com/robot-accomplice/ghola/internal/profile"
 	gholatransport "github.com/robot-accomplice/ghola/internal/transport"
 	"github.com/valyala/fasthttp"
+	"golang.org/x/term"
 )
+
+// meterOut returns where the progress meter goes: stderr when it is a
+// terminal, else nil. A log file or a pipe gets no meter lines (audit
+// finding M4). Tests replace it.
+var meterOut = func() io.Writer {
+	if term.IsTerminal(int(os.Stderr.Fd())) {
+		return os.Stderr
+	}
+	return nil
+}
 
 // byteRange is an inclusive [start, end] byte range for a Range request.
 type byteRange struct {
@@ -84,10 +95,11 @@ func Download(ctx context.Context, opts *config.Options, stream Streamer) error 
 		limiter = newRateLimiter(bps)
 	}
 
-	// Build shared progress writer (suppressed under --silent).
+	// Build shared progress writer (suppressed under --silent, and when
+	// stderr is not a terminal).
 	var progress *progressWriter
-	if !opts.Output.Silent {
-		progress = newProgressWriter(io.Discard, os.Stderr, meta.ContentLength)
+	if out := meterOut(); out != nil && !opts.Output.Silent {
+		progress = newProgressWriter(io.Discard, out, meta.ContentLength)
 	}
 
 	segmented := canSegment(opts, meta)
@@ -375,6 +387,9 @@ func downloadSingle(ctx context.Context, opts *config.Options, stream Streamer, 
 				return err
 			}
 		}
+		if progress != nil {
+			progress.setTotal(meterTotal(opts, meta))
+		}
 		return f.open()
 	}
 	meta, err := stream(ctx, opts, req, newCheckedSink(sink, check))
@@ -393,6 +408,17 @@ func downloadSingle(ctx context.Context, opts *config.Options, stream Streamer, 
 		return fmt.Errorf("download: non-2xx status %d", meta.StatusCode)
 	}
 	return nil
+}
+
+// meterTotal returns the meter's total for the accepted response, or -1 when
+// it is not known. The meter counts the bytes written to the file. With
+// --compressed they are decoded bytes, and Content-Length counts the
+// compressed bytes, so the decoded total is not known.
+func meterTotal(opts *config.Options, meta gholatransport.StreamMeta) int64 {
+	if opts.Stealth.Compressed {
+		return -1
+	}
+	return meta.ContentLength
 }
 
 // lazyFile is the output file of a single-stream download. It opens only
