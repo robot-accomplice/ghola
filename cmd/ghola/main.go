@@ -98,6 +98,21 @@ func execute(ctx context.Context, args []string, do client.Doer, stream client.S
 		opts.Data = config.URLEncodeData(opts.DataURLEncode)
 	}
 
+	// Several URLs go one after the other, as in curl (audit finding M9).
+	// The first failure stops the run and gives the exit code.
+	for _, u := range opts.URLs {
+		one := *opts
+		one.URL = u
+		if code := fetch(ctx, &one, do, stream, w); code != config.NoError.Int() {
+			return code
+		}
+	}
+	return config.NoError.Int()
+}
+
+// fetch sends the request for opts.URL and writes the response. It returns
+// the exit code. --max-time covers each URL on its own, as in curl.
+func fetch(ctx context.Context, opts *config.Options, do client.Doer, stream client.Streamer, w *os.File) int {
 	ctx, cancel := client.WithTimeout(ctx, opts)
 	defer cancel()
 

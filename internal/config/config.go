@@ -134,6 +134,7 @@ type ProxyOptions struct {
 // Options holds every user-configurable setting parsed from CLI flags.
 type Options struct {
 	URL           string
+	URLs          []string // every URL on the command line, in order; URL is the first
 	Method        string
 	Data          string
 	DataBinary    string
@@ -280,10 +281,7 @@ func ParseFlags(args []string) (opts *Options, done bool, err error) {
 		return opts, true, nil
 	}
 
-	if fs.NArg() > 0 {
-		opts.URL = fs.Arg(0)
-	}
-
+	takeURLs(opts, fs.Args())
 	applyChainShortcuts(opts)
 
 	if opts.URL == "" && !opts.Serve {
@@ -294,6 +292,9 @@ func ParseFlags(args []string) (opts *Options, done bool, err error) {
 		return nil, false, err
 	}
 	if err := checkInput(opts); err != nil {
+		return nil, false, err
+	}
+	if err := checkOneOutput(opts); err != nil {
 		return nil, false, err
 	}
 	// curl --location-trusted is -L plus the credentials on every hop.
@@ -375,6 +376,7 @@ func applyChainShortcuts(opts *Options) {
 	}
 	if opts.URL == "" && info.DefaultRPC != "" {
 		opts.URL = info.DefaultRPC
+		opts.URLs = []string{opts.URL}
 	}
 }
 
