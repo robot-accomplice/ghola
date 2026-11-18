@@ -52,7 +52,7 @@ func TestExecute_ConnectionsReportsAFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer out.Close()
-	if code := execute(context.Background(), []string{"-n", "3", dead}, nil, nil, out); code == 0 {
+	if execute(context.Background(), []string{"-n", "3", dead}, nil, nil, out) == 0 {
 		t.Error("exit 0 for a refused connection")
 	}
 }
