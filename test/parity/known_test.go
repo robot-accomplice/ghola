@@ -13,8 +13,6 @@ package parity
 // The findings are in docs/audits/2026-11-12-v0.7.0-vs-curl-aria2-wget.md.
 // Recorded against v0.8.0 on 2026-11-15.
 var known = map[string]string{
-	"no_head": "M5: each -o download sends HEAD first",
-
 	"exit_refused": "M6: every network error exits 2",
 	"exit_dns":     "M6: every network error exits 2",
 	"exit_tls":     "M6: every network error exits 2",

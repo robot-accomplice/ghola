@@ -24,8 +24,15 @@ import (
 // Accept-Ranges: bytes. Returns a Streamer wired to it.
 func blobServer(t *testing.T, data []byte) Streamer {
 	t.Helper()
-	ln := fasthttputil.NewInmemoryListener()
-	srv := &fasthttp.Server{Handler: func(ctx *fasthttp.RequestCtx) {
+	ln, streamer := newStreamTestServer(blobHandler(t, data))
+	t.Cleanup(func() { ln.Close() })
+	return streamer
+}
+
+// blobHandler serves `data`, honoring Range requests and advertising
+// Accept-Ranges: bytes.
+func blobHandler(t *testing.T, data []byte) fasthttp.RequestHandler {
+	return func(ctx *fasthttp.RequestCtx) {
 		ctx.Response.Header.Set("Accept-Ranges", "bytes")
 		rng := string(ctx.Request.Header.Peek("Range"))
 		if rng == "" {
@@ -41,18 +48,6 @@ func blobServer(t *testing.T, data []byte) Streamer {
 		ctx.Response.Header.Set("Content-Range",
 			"bytes "+itoa(start)+"-"+itoa(end)+"/"+itoa(len(data)))
 		ctx.SetBody(data[start : end+1])
-	}}
-	go srv.Serve(ln) //nolint:errcheck
-	t.Cleanup(func() { ln.Close() })
-	c := &fasthttp.Client{StreamResponseBody: true, Dial: func(addr string) (net.Conn, error) { return ln.Dial() }}
-	return func(ctx context.Context, opts *config.Options, req *fasthttp.Request, sink io.Writer) (gholatransport.StreamMeta, error) {
-		rsp := fasthttp.AcquireResponse()
-		defer fasthttp.ReleaseResponse(rsp)
-		rsp.StreamBody = true
-		if err := c.Do(req, rsp); err != nil {
-			return gholatransport.StreamMeta{}, err
-		}
-		return deliverFasthttp(rsp, sink)
 	}
 }
 
@@ -83,6 +78,15 @@ func TestDownload_SingleStreamWritesFullFile(t *testing.T) {
 }
 
 func itoa(n int) string { return strconv.Itoa(n) }
+
+func atoiT(t *testing.T, s string) int {
+	t.Helper()
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		t.Fatalf("atoi %q: %v", s, err)
+	}
+	return n
+}
 
 func TestSplitRanges(t *testing.T) {
 	cases := []struct {
