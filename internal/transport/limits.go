@@ -21,7 +21,8 @@ var ErrConnectTimeout = errors.New("connection timed out")
 var ErrTooSlow = errors.New("operation too slow")
 
 // speedTick is how often the speed check samples the byte count. A test
-// can make it shorter.
+// can make it shorter before it builds a transport: newLimits copies it, so
+// a running check never reads it.
 var speedTick = time.Second
 
 // limits holds curl's per-transfer limits other than --max-time, which the
@@ -30,10 +31,11 @@ type limits struct {
 	connect    time.Duration
 	speedLimit int64 // bytes per second
 	speedTime  time.Duration
+	tick       time.Duration
 }
 
 func newLimits(r config.ResilienceOptions) limits {
-	return limits{connect: r.ConnectTimeout, speedLimit: r.SpeedLimit, speedTime: r.SpeedTime}
+	return limits{connect: r.ConnectTimeout, speedLimit: r.SpeedLimit, speedTime: r.SpeedTime, tick: speedTick}
 }
 
 // watch is the limit state of one request. Both transports use it, so a limit
@@ -101,9 +103,9 @@ func (w *watch) fail(err error) error {
 // checkSpeed stops the transfer when fewer than speedLimit bytes per second
 // arrived over the last speedTime. It keeps one sample for each tick.
 func (w *watch) checkSpeed(l limits) {
-	ticker := time.NewTicker(speedTick)
+	ticker := time.NewTicker(l.tick)
 	defer ticker.Stop()
-	window := int(l.speedTime / speedTick)
+	window := int(l.speedTime / l.tick)
 	if window < 1 {
 		window = 1
 	}
