@@ -31,8 +31,14 @@ func setHeaders(req *fasthttp.Request, opts *config.Options, active profile.Brow
 
 	trusted := sendsCredentials(opts, target)
 	for _, h := range opts.Headers {
-		key, val, ok := parseHeader(h)
+		key, val, ok := config.ParseHeader(h)
 		if !ok || (!trusted && isCredentialHeader(key)) {
+			continue
+		}
+		// -H "Name:" removes the header, as in curl (audit finding M7).
+		// overrides keeps the profile and the defaults from setting it.
+		if val == "" {
+			req.Header.Del(key)
 			continue
 		}
 		req.Header.Set(key, val)
