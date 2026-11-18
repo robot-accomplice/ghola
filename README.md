@@ -40,7 +40,7 @@ Attribution: the direction for Ghola's browser-like fetching work was inspired b
 
 | Flag | Description |
 | ------ | ------------- |
-| `-n <int>` | **Concurrent connections** via goroutines (first successful response wins). |
+| `-n <int>` | **Segmented download** -- split a download to a file (`-o`) into this many parallel ranges. It does not repeat a request. |
 | `-w, --wget` | **Wget mode** -- auto-saves to local file using the inferred remote filename. |
 | `-u <user:pass>` | **Basic Auth** -- native HTTP basic authentication. |
 | `-T <file>` | **Upload** -- send a local file as the request body. |
@@ -171,8 +171,8 @@ ghola -c base -r 3 https://rpc.base.org
 # Download a file (wget mode)
 ghola -w https://example.com/report.pdf
 
-# Concurrent connections with drift jitter
-ghola -n 5 -D 200 https://api.example.com/data
+# Download a large file in 5 parallel ranges
+ghola -n 5 -o big.iso https://example.com/big.iso
 ```
 
 ## Architecture
