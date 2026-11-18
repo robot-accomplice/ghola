@@ -68,3 +68,10 @@ func TestParseFlags_NegativeLimitsAreRejected(t *testing.T) {
 		}
 	}
 }
+
+// -r -1 is an input error before any request (audit finding H5).
+func TestParseFlags_NegativeRetryIsRejected(t *testing.T) {
+	if _, _, err := ParseFlags([]string{"-r", "-1", "http://example.com"}); err == nil {
+		t.Fatal("-r -1: no error")
+	}
+}

@@ -30,8 +30,11 @@ func (c *curlLimitFlags) register(fs *flag.FlagSet) {
 	fs.IntVar(&c.speedTime, "speed-time", 0, "Seconds below --speed-limit before the transfer stops (default 30)")
 }
 
-// apply checks the flags and writes them into r.
+// apply checks the flags and the retry count, and writes the flags into r.
 func (c *curlLimitFlags) apply(fs *flag.FlagSet, r *ResilienceOptions) error {
+	if r.Retries < 0 {
+		return fmt.Errorf("-r/--retry cannot be negative")
+	}
 	if c.maxTime < 0 || c.connectTimeout < 0 || c.speedLimit < 0 || c.speedTime < 0 {
 		return fmt.Errorf("--max-time, --connect-timeout, --speed-limit and --speed-time cannot be negative")
 	}

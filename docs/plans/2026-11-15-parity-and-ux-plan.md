@@ -185,6 +185,7 @@ Parity claims are not possible while the basic fetch is wrong. Fix these first, 
 4. H4: make `-n` apply only to segmented downloads. Report every failed request and set the exit code.
    - Status (2026-11-18, branch `fix/h4-concurrency`): done. `RunConcurrent` (race n copies of the request, keep the first answer) is removed. Without `-o`, `-n` sends one request and prints a note on stderr, so a failure gives the normal error exit. A GET with a body (`-X GET -d`) is not segmented. `n_post` and `n_refused` pass.
 5. H5: reject a negative `-r`.
+   - Status (2026-11-18, branch `fix/h5-negative-retry`): done. `-r -1` is an argument error. `FetchURL` also refuses a negative count, because the bridge passes its JSON `retries` field there without the flag check. Before the fix, `"retries": -1` crashed the bridge process with a nil-pointer panic.
 6. H6 and H7: the redirect-limit exit code, and `-f -o` writes no file.
 7. M1: send no default `Content-Type` on GET. Send `application/x-www-form-urlencoded` for `-d`, as curl does.
 8. M3 to M9: rate limit on stdout, progress meter, the extra HEAD request, exit codes, input checks, proxy variables, URL handling.

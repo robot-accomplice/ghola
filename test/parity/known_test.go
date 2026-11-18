@@ -13,8 +13,6 @@ package parity
 // The findings are in docs/audits/2026-11-12-v0.7.0-vs-curl-aria2-wget.md.
 // Recorded against v0.8.0 on 2026-11-15.
 var known = map[string]string{
-	"neg_retry": "H5: -r -1 gives a nil response and a panic",
-
 	"redirect_limit": "H6: the redirect limit exits 0",
 
 	"fail_to_file": "H7: -f -o writes the error body",
