@@ -69,6 +69,38 @@ def fetch(url, dest):
         f.write(data)
 
 
+def keep(name, item, rows, seen):
+    """Download one search result into the cache and add it to rows.
+    Return False when the file is skipped (a repeat repository) or fails."""
+    repo, commit, url = raw_url(item)
+    if (name, repo) in seen:
+        return False
+    file = f"{len(rows):05d}"
+    try:
+        fetch(url, os.path.join(CACHE, file))
+    except OSError as e:
+        print(f"fetch failed: {url}: {e}", file=sys.stderr)
+        return False
+    seen.add((name, repo))
+    rows.append({"query": name, "repo": repo, "path": item["path"], "commit": commit, "file": file})
+    return True
+
+
+def run_query(name, q, limit, rows, seen):
+    """Keep up to limit files from one search. Return the number kept."""
+    kept = 0
+    for page in range(1, 11):  # code search returns at most 1000 results
+        items = search(q, page)
+        time.sleep(SEARCH_GAP)
+        for item in items:
+            if kept >= limit:
+                break
+            kept += keep(name, item, rows, seen)
+        if kept >= limit or len(items) < PAGE:
+            break
+    return kept
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--per-query", type=int, default=200, help="files to keep for each query")
@@ -78,25 +110,7 @@ def main():
     rows = []
     seen = set()  # one file for each repository and query group
     for name, q in QUERIES:
-        kept = 0
-        for page in range(1, 11):  # code search returns at most 1000 results
-            items = search(q, page)
-            time.sleep(SEARCH_GAP)
-            for item in items:
-                repo, commit, url = raw_url(item)
-                if (name, repo) in seen or kept >= args.per_query:
-                    continue
-                file = f"{len(rows):05d}"
-                try:
-                    fetch(url, os.path.join(CACHE, file))
-                except OSError as e:
-                    print(f"fetch failed: {url}: {e}", file=sys.stderr)
-                    continue
-                seen.add((name, repo))
-                rows.append({"query": name, "repo": repo, "path": item["path"], "commit": commit, "file": file})
-                kept += 1
-            if kept >= args.per_query or len(items) < PAGE:
-                break
+        kept = run_query(name, q, args.per_query, rows, seen)
         print(f"{name}: {kept} files", file=sys.stderr)
 
     with open(MANIFEST, "w", newline="", encoding="utf-8") as f:

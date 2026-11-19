@@ -93,6 +93,28 @@ def program(tok):
     return PROGRAMS.get(name)
 
 
+def long_option(tool, arg, longs):
+    """Return the name of a --long option, marked when the inventory lacks it."""
+    name = arg.split("=", 1)[0]
+    # The help lists a boolean once; its --no- form is implied.
+    known = name in longs[tool] or (name.startswith("--no-") and "--" + name[5:] in longs[tool])
+    return name if known else name + " (unknown)"
+
+
+def short_options(tool, letters, shorts):
+    """Return the long names of a short letter group, such as "fsSL", and
+    whether the next token is the value of its last letter."""
+    if tool == "wget" and len(letters) == 2 and letters[0] == "n" and letters[1] in WGET_N_OPTIONS:
+        return {WGET_N_OPTIONS[letters[1]]}, False
+    found = set()
+    for i, ch in enumerate(letters):
+        long, takes = shorts[tool].get(ch, ("-" + ch + " (unknown)", False))
+        found.add(long)
+        if takes:
+            return found, i == len(letters) - 1  # else the value follows the letter
+    return found, False
+
+
 def parse(tool, args, shorts, longs):
     """Return the set of long option names in args, or None if not a command."""
     found = set()
@@ -101,33 +123,18 @@ def parse(tool, args, shorts, longs):
     for a in args:
         if takes_value:
             takes_value = False
-            continue
-        if a == "--":
+        elif a == "--":
             break
-        if a.startswith("--") and len(a) > 2:
-            name = a.split("=", 1)[0]
-            # The help lists a boolean once; its --no- form is implied.
-            known = name in longs[tool] or (name.startswith("--no-") and "--" + name[5:] in longs[tool])
-            found.add(name if known else name + " (unknown)")
-            # A long option without "=" may take the next token. Skip it only
-            # when the next token is not an option, which is the same thing
-            # for the count.
-            continue
-        if a.startswith("-") and "$" in a:
-            continue  # a shell variable, such as -$1: not a fixed option
-        if a.startswith("-") and len(a) > 1 and not a[1].isdigit():
-            letters = a[1:]
-            if tool == "wget" and len(letters) == 2 and letters[0] == "n" and letters[1] in WGET_N_OPTIONS:
-                found.add(WGET_N_OPTIONS[letters[1]])
-                continue
-            for i, ch in enumerate(letters):
-                long, takes = shorts[tool].get(ch, ("-" + ch + " (unknown)", False))
-                found.add(long)
-                if takes:
-                    takes_value = i == len(letters) - 1  # the value is the next token
-                    break
-            continue
-        if URLISH.search(a):
+        elif a.startswith("--") and len(a) > 2:
+            # A long option without "=" may take the next token. The count
+            # does not need the value, so the token is not skipped.
+            found.add(long_option(tool, a, longs))
+        elif a.startswith("-") and "$" in a:
+            pass  # a shell variable, such as -$1: not a fixed option
+        elif a.startswith("-") and len(a) > 1 and not a[1].isdigit():
+            opts, takes_value = short_options(tool, a[1:], shorts)
+            found |= opts
+        elif URLISH.search(a):
             urlish = True
     return found if urlish else None
 
