@@ -25,3 +25,6 @@ scope/target/
 
 # Parity harness records
 test/parity/out/
+
+# Flag-use corpus (other people's code; scripts/flag_corpus.py)
+.flag-corpus/

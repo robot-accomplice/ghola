@@ -1,0 +1,340 @@
+source,tool,option,short,files,share
+copy-as-curl,curl,--header,-H,108,0.812
+copy-as-curl,curl,--data-raw,,47,0.353
+copy-as-curl,curl,--cookie,-b,36,0.271
+copy-as-curl,curl,--compressed,,32,0.241
+copy-as-curl,curl,--request,-X,22,0.165
+copy-as-curl,curl,--silent,-s,20,0.150
+copy-as-curl,curl,--data,-d,13,0.098
+copy-as-curl,curl,--output,-o,12,0.090
+copy-as-curl,curl,--location,-L,11,0.083
+copy-as-curl,curl,--url,,9,0.068
+copy-as-curl,curl,--insecure,-k,8,0.060
+copy-as-curl,curl,--write-out,-w,7,0.053
+copy-as-curl,curl,--show-error,-S,6,0.045
+copy-as-curl,curl,--head,-I,5,0.038
+copy-as-curl,curl,--show-headers,-i,5,0.038
+copy-as-curl,curl,--verbose,-v,5,0.038
+copy-as-curl,curl,--fail,-f,4,0.030
+copy-as-curl,curl,--max-time,-m,4,0.030
+copy-as-curl,curl,--proxy,-x,4,0.030
+copy-as-curl,curl,--user-agent,-A,4,0.030
+copy-as-curl,curl,--connect-timeout,,3,0.023
+copy-as-curl,curl,--data-binary,,3,0.023
+copy-as-curl,curl,--form,-F,3,0.023
+copy-as-curl,curl,--remote-name,-O,3,0.023
+copy-as-curl,curl,--user,-u,3,0.023
+copy-as-curl,curl,--data-urlencode,,2,0.015
+copy-as-curl,curl,--dns-servers,,2,0.015
+copy-as-curl,curl,--limit-rate,,2,0.015
+copy-as-curl,curl,--path-as-is,,2,0.015
+copy-as-curl,curl,--retry,,2,0.015
+copy-as-curl,curl,--tlsv1.3,,2,0.015
+copy-as-curl,curl,"--compressed"""""" (unknown)",,1,0.008
+copy-as-curl,curl,--compressed` (unknown),,1,0.008
+copy-as-curl,curl,--cookie-jar,-c,1,0.008
+copy-as-curl,curl,--disable,-q,1,0.008
+copy-as-curl,curl,--dump-header,-D,1,0.008
+copy-as-curl,curl,--globoff,-g,1,0.008
+copy-as-curl,curl,--http1.1,,1,0.008
+copy-as-curl,curl,--http2,,1,0.008
+copy-as-curl,curl,--ipv4,-4,1,0.008
+copy-as-curl,curl,--ipv6,-6,1,0.008
+copy-as-curl,curl,--json,,1,0.008
+copy-as-curl,curl,--no-buffer,-N,1,0.008
+copy-as-curl,curl,--proto,,1,0.008
+copy-as-curl,curl,--tlsv1.2,,1,0.008
+github,aria2,--max-connection-per-server,-x,252,0.646
+github,aria2,--out,-o,226,0.579
+github,aria2,--dir,-d,202,0.518
+github,aria2,--split,-s,192,0.492
+github,aria2,--continue,-c,135,0.346
+github,aria2,--min-split-size,-k,120,0.308
+github,aria2,--console-log-level,,99,0.254
+github,aria2,--file-allocation,,36,0.092
+github,aria2,--quiet,-q,32,0.082
+github,aria2,--allow-overwrite,,29,0.074
+github,aria2,--summary-interval,,27,0.069
+github,aria2,--max-tries,-m,23,0.059
+github,aria2,--auto-file-renaming,,17,0.044
+github,aria2,--checksum,,16,0.041
+github,aria2,--header,,16,0.041
+github,aria2,--seed-time,,16,0.041
+github,aria2,--retry-wait,,15,0.038
+github,aria2,--force-sequential,-Z,13,0.033
+github,aria2,--check-certificate,,12,0.031
+github,aria2,--no-conf,,11,0.028
+github,aria2,--enable-rpc,,10,0.026
+github,aria2,--max-concurrent-downloads,-j,10,0.026
+github,aria2,--rpc-listen-all,,8,0.021
+github,aria2,--conf-path,,7,0.018
+github,aria2,--log-level,,7,0.018
+github,aria2,--rpc-allow-origin-all,,7,0.018
+github,aria2,--timeout,-t,7,0.018
+github,aria2,--input-file,-i,6,0.015
+github,aria2,--max-download-limit,,6,0.015
+github,aria2,--on-download-complete,,6,0.015
+github,aria2,--user-agent,-U,5,0.013
+github,aria2,--always-resume,,4,0.010
+github,aria2,--bt-enable-lpd,,4,0.010
+github,aria2,--conditional-get,,4,0.010
+github,aria2,--enable-dht,,4,0.010
+github,aria2,--gid,,4,0.010
+github,aria2,--on-download-error,,4,0.010
+github,aria2,--remote-time,-R,4,0.010
+github,aria2,--bt-metadata-only,,3,0.008
+github,aria2,--bt-save-metadata,,3,0.008
+github,aria2,--conf (unknown),,3,0.008
+github,aria2,--disable-ipv6,,3,0.008
+github,aria2,--download-result,,3,0.008
+github,aria2,--enable-http-pipelining,,3,0.008
+github,aria2,--external-downloader-args (unknown),,3,0.008
+github,aria2,--hash-check-only,,3,0.008
+github,aria2,--http-accept-gzip,,3,0.008
+github,aria2,--log,-l,3,0.008
+github,aria2,--save-session,,3,0.008
+github,aria2,--async-dns-server,,2,0.005
+github,aria2,--bt-seed-unverified,,2,0.005
+github,aria2,--check-integrity,-V,2,0.005
+github,aria2,--connect-timeout,,2,0.005
+github,aria2,--daemon,-D,2,0.005
+github,aria2,--dht-file-path,,2,0.005
+github,aria2,--dht-listen-port,,2,0.005
+github,aria2,--dry-run,,2,0.005
+github,aria2,--ftp-user,,2,0.005
+github,aria2,--http-user,,2,0.005
+github,aria2,--human-readable,,2,0.005
+github,aria2,--index-out,-O,2,0.005
+github,aria2,--listen-port,,2,0.005
+github,aria2,--load-cookies,,2,0.005
+github,aria2,--referer,,2,0.005
+github,aria2,--rpc-save-upload-metadata,,2,0.005
+github,aria2,--show-files,-S,2,0.005
+github,aria2,--all-proxy,,1,0.003
+github,aria2,--async-dns,,1,0.003
+github,aria2,--bt-max-peers,,1,0.003
+github,aria2,--bt-prioritize-piece,,1,0.003
+github,aria2,--bt-stop-timeout,,1,0.003
+github,aria2,--bt-tracker,,1,0.003
+github,aria2,--bt-tracker-timeout,,1,0.003
+github,aria2,--ca-certificate,,1,0.003
+github,aria2,--certificate,,1,0.003
+github,aria2,--dht-entry-point,,1,0.003
+github,aria2,--download-archive (unknown),,1,0.003
+github,aria2,--enable-color,,1,0.003
+github,aria2,--enable-dht6,,1,0.003
+github,aria2,--ftp-passwd,,1,0.003
+github,aria2,--ftp-password (unknown),,1,0.003
+github,aria2,--http-passwd,,1,0.003
+github,aria2,--http-password (unknown),,1,0.003
+github,aria2,--http-proxy,,1,0.003
+github,aria2,--lowest-speed-limit,,1,0.003
+github,aria2,--max-file-not-found,,1,0.003
+github,aria2,--max-overall-download-limit,,1,0.003
+github,aria2,--max-overall-upload-limit,,1,0.003
+github,aria2,--max-upload-limit,-u,1,0.003
+github,aria2,--no-check-formats (unknown),,1,0.003
+github,aria2,--output (unknown),,1,0.003
+github,aria2,--playlist-end (unknown),,1,0.003
+github,aria2,--playlist-start (unknown),,1,0.003
+github,aria2,--private-key,,1,0.003
+github,aria2,--rpc-secret,,1,0.003
+github,aria2,--rpc-token (unknown),,1,0.003
+github,aria2,--rpc-url (unknown),,1,0.003
+github,aria2,--save-session-interval,,1,0.003
+github,aria2,--seed-ratio,,1,0.003
+github,aria2,--select-file,,1,0.003
+github,aria2,--server-stat-if,,1,0.003
+github,aria2,--server-stat-of,,1,0.003
+github,aria2,--show-console-readout,,1,0.003
+github,aria2,--stderr,,1,0.003
+github,aria2,--uri-selector,,1,0.003
+github,curl,--silent,-s,770,0.644
+github,curl,--location,-L,601,0.503
+github,curl,--output,-o,594,0.497
+github,curl,--fail,-f,564,0.472
+github,curl,--show-error,-S,261,0.218
+github,curl,--header,-H,134,0.112
+github,curl,--request,-X,123,0.103
+github,curl,--head,-I,119,0.099
+github,curl,--data,-d,92,0.077
+github,curl,--list-only,-l,76,0.064
+github,curl,--remote-name,-O,72,0.060
+github,curl,--proto,,68,0.057
+github,curl,--tlsv1.2,,66,0.055
+github,curl,--retry,,47,0.039
+github,curl,--no-buffer,-N,41,0.034
+github,curl,--write-out,-w,40,0.033
+github,curl,--max-time,-m,31,0.026
+github,curl,--insecure,-k,29,0.024
+github,curl,--progress-bar,-#,28,0.023
+github,curl,--retry-delay,,26,0.022
+github,curl,--user,-u,24,0.020
+github,curl,--verbose,-v,24,0.020
+github,curl,--form,-F,17,0.014
+github,curl,--connect-timeout,,16,0.013
+github,curl,--user-agent,-A,15,0.013
+github,curl,--data-binary,,13,0.011
+github,curl,--continue-at,-C,11,0.009
+github,curl,--show-headers,-i,11,0.009
+github,curl,--data-urlencode,,10,0.008
+github,curl,--cookie,-b,9,0.008
+github,curl,--compressed,,8,0.007
+github,curl,--get,-G,7,0.006
+github,curl,--dump-header,-D,6,0.005
+github,curl,--proto-redir,,6,0.005
+github,curl,--remote-header-name,-J,6,0.005
+github,curl,--retry-all-errors,,6,0.005
+github,curl,--resolve,,5,0.004
+github,curl,--retry-connrefused,,5,0.004
+github,curl,--url,,5,0.004
+github,curl,--cookie-jar,-c,4,0.003
+github,curl,--create-dirs,,4,0.003
+github,curl,--data-raw,,4,0.003
+github,curl,--proxy,-x,4,0.003
+github,curl,--upload (unknown),,4,0.003
+github,curl,--upload-file,-T,4,0.003
+github,curl,--disable,-q,3,0.003
+github,curl,--range,-r,3,0.003
+github,curl,--remote-time,-R,3,0.003
+github,curl,--unix-socket,,3,0.003
+github,curl,--cacert,,2,0.002
+github,curl,--connect-to,,2,0.002
+github,curl,--fail-with-body,,2,0.002
+github,curl,--include (unknown),,2,0.002
+github,curl,--max-filesize,,2,0.002
+github,curl,--output-dir,,2,0.002
+github,curl,--remote-name-all,,2,0.002
+github,curl,--digest,,1,0.001
+github,curl,--globoff,-g,1,0.001
+github,curl,--http1.1,,1,0.001
+github,curl,--ipv4,-4,1,0.001
+github,curl,--json,,1,0.001
+github,curl,--netrc-file,,1,0.001
+github,curl,--next,-:,1,0.001
+github,curl,--no-progress-meter,,1,0.001
+github,curl,--noproxy,,1,0.001
+github,curl,--output-document (unknown),,1,0.001
+github,curl,--path-as-is,,1,0.001
+github,curl,--post (unknown),,1,0.001
+github,curl,--referer,-e,1,0.001
+github,curl,--socks5-hostname,,1,0.001
+github,curl,--speed-time,-y,1,0.001
+github,curl,--ssl-no-revoke,,1,0.001
+github,curl,--ssl-revoke-best-effort,,1,0.001
+github,curl,--time-cond,-z,1,0.001
+github,curl,--tlsv1,-1,1,0.001
+github,wget,--output-document,-O,710,0.705
+github,wget,--quiet,-q,546,0.542
+github,wget,--no-check-certificate,,98,0.097
+github,wget,--spider,,93,0.092
+github,wget,--no-verbose,,83,0.082
+github,wget,--tries,-t,78,0.077
+github,wget,--continue,-c,57,0.057
+github,wget,--directory-prefix,-P,33,0.033
+github,wget,--header,,25,0.025
+github,wget,--progress,,20,0.020
+github,wget,--recursive,-r,20,0.020
+github,wget,--timeout,-T,17,0.017
+github,wget,--timestamping,-N,17,0.017
+github,wget,--mirror,-m,16,0.016
+github,wget,--no-host-directories,,16,0.016
+github,wget,--no-parent,,16,0.016
+github,wget,--cut-dirs,,13,0.013
+github,wget,--content-disposition,,12,0.012
+github,wget,--input-file,-i,12,0.012
+github,wget,--server-response,-S,12,0.012
+github,wget,--show-progress,,12,0.012
+github,wget,--convert-links,-k,11,0.011
+github,wget,--page-requisites,-p,11,0.011
+github,wget,--accept,-A,10,0.010
+github,wget,--force-directories,-x,10,0.010
+github,wget,--level,-l,10,0.010
+github,wget,--no-clobber,,9,0.009
+github,wget,--password,,8,0.008
+github,wget,--retry-connrefused,,8,0.008
+github,wget,--user,,8,0.008
+github,wget,--user-agent,-U,8,0.008
+github,wget,--waitretry,,8,0.008
+github,wget,--adjust-extension,-E,7,0.007
+github,wget,--http-password,,7,0.007
+github,wget,--http-user,,7,0.007
+github,wget,--no-cookies,,7,0.007
+github,wget,--post-data,,7,0.007
+github,wget,-n (unknown),,7,0.007
+github,wget,--execute,-e,6,0.006
+github,wget,--limit-rate,,6,0.006
+github,wget,--background,-b,5,0.005
+github,wget,--ftp-user (unknown),,5,0.005
+github,wget,--load-cookies,,5,0.005
+github,wget,--no-directories,,5,0.005
+github,wget,--output-file,-o,5,0.005
+github,wget,--reject,-R,5,0.005
+github,wget,--span-hosts,-H,5,0.005
+github,wget,--debug,-d,4,0.004
+github,wget,--ftp-password (unknown),,4,0.004
+github,wget,--verbose,-v,4,0.004
+github,wget,--wait,-w,4,0.004
+github,wget,--force-progress,,3,0.003
+github,wget,--keep-session-cookies,,3,0.003
+github,wget,--read-timeout,,3,0.003
+github,wget,--save-cookies,,3,0.003
+github,wget,-` (unknown),,3,0.003
+github,wget,-- (unknown),,2,0.002
+github,wget,--append-output,-a,2,0.002
+github,wget,--domains,-D,2,0.002
+github,wget,--include-directories,-I,2,0.002
+github,wget,--inet4-only,-4,2,0.002
+github,wget,--no-config,,2,0.002
+github,wget,--post-file,,2,0.002
+github,wget,--restrict-file-names,,2,0.002
+github,wget,--trust-server-names,,2,0.002
+github,wget,-s (unknown),,2,0.002
+github,wget,-u (unknown),,2,0.002
+github,wget,-+ (unknown),,1,0.001
+github,wget,--ask-password,,1,0.001
+github,wget,--auth-no-challenge,,1,0.001
+github,wget,--backup-converted,-K,1,0.001
+github,wget,--body-data,,1,0.001
+github,wget,--body-file,,1,0.001
+github,wget,--ca-certificate,,1,0.001
+github,wget,--connect-timeout,,1,0.001
+github,wget,--content-on-error,,1,0.001
+github,wget,--exclude-directories,-X,1,0.001
+github,wget,--follow-ftp (unknown),,1,0.001
+github,wget,--ftps-implicit (unknown),,1,0.001
+github,wget,--https-only,,1,0.001
+github,wget,--include (unknown),,1,0.001
+github,wget,--limit-size (unknown),,1,0.001
+github,wget,--method,,1,0.001
+github,wget,--no-host (unknown),,1,0.001
+github,wget,--no-passive-ftp (unknown),,1,0.001
+github,wget,--random-wait,,1,0.001
+github,wget,--retr-symlinks (unknown),,1,0.001
+github,wget,--secure-protocol,,1,0.001
+github,wget,--trust-server-name (unknown),,1,0.001
+github,wget,-2 (unknown),,1,0.001
+repo-docs,curl,--data,-d,1,0.500
+repo-docs,curl,--fail,-f,1,0.500
+repo-docs,curl,--header,-H,1,0.500
+repo-docs,curl,--location,-L,1,0.500
+repo-docs,curl,--request,-X,1,0.500
+repo-docs,curl,--show-error,-S,1,0.500
+repo-docs,curl,--silent,-s,1,0.500
+repo-docs,ghola,--output,-o,3,1.000
+repo-docs,ghola,--connections,-n,2,0.667
+repo-docs,ghola,--chain,-c,1,0.333
+repo-docs,ghola,--continue-at,-C,1,0.333
+repo-docs,ghola,--cookie-jar,,1,0.333
+repo-docs,ghola,--data,-d,1,0.333
+repo-docs,ghola,--ghost,-G,1,0.333
+repo-docs,ghola,--header,-H,1,0.333
+repo-docs,ghola,--impersonate,,1,0.333
+repo-docs,ghola,--location,-L,1,0.333
+repo-docs,ghola,--proxy,,1,0.333
+repo-docs,ghola,--retry,-r,1,0.333
+repo-docs,ghola,--snoop,-S,1,0.333
+repo-docs,ghola,--stealth-headers,,1,0.333
+repo-docs,ghola,--timeout,,1,0.333
+repo-docs,ghola,--verbose,-v,1,0.333
+repo-docs,ghola,--wget,-w,1,0.333

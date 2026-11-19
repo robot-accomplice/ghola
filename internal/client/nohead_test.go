@@ -148,7 +148,7 @@ func TestDownload_SegmentedSendsNoHEAD(t *testing.T) {
 		t.Errorf("requests = %q, want no HEAD", log.reqs)
 	}
 	// The probe hop, the probe, and 4 segments.
-	if got := log.count("GET"); got != 6 {
+	if log.count("GET") != 6 {
 		t.Errorf("requests = %q, want 6 GETs", log.reqs)
 	}
 }
