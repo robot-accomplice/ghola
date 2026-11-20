@@ -30,8 +30,10 @@ var jobs = map[string]bool{
 // their arguments.
 var compatJobs = map[string]bool{JobCurl: true, JobWget: true, JobAria2c: true}
 
-// transferJobs take the transfer options (scope "all").
-var transferJobs = map[string]bool{JobFetch: true, JobDownload: true, JobMirror: true}
+// transferJobs take the transfer options (scope "all"). inspect makes a
+// request as a fetch does, so it takes the fetch options too (with
+// --impersonate or --proxy, for example).
+var transferJobs = map[string]bool{JobFetch: true, JobDownload: true, JobMirror: true, JobInspect: true}
 
 // Command is a parsed command line.
 type Command struct {
@@ -200,7 +202,7 @@ func (p *parser) inScope(o *Option) error {
 		return nil
 	case !transferJobs[job]:
 		return usagef("--%s does not apply to ghola %s", o.Name, job)
-	case o.Scope == "all" || o.Scope == job || (o.Scope == "fetch" && job == JobFetch):
+	case o.Scope == "all" || o.Scope == job || (o.Scope == "fetch" && (job == JobFetch || job == JobInspect)):
 		return nil
 	case o.Scope == "fetch":
 		return usagef("--%s works only when ghola fetches a URL (ghola URL), not with ghola %s", o.Name, job)

@@ -32,7 +32,7 @@ The first word picks the job. Without a job word, ghola fetches.
 Rules:
 1. The job word must be the first argument.
 2. Options can come before or after the URLs, as in curl. `--` ends the options.
-3. Each option has a scope: `all` (fetch, download and mirror), or one job. An option outside its scope is an argument error that names the job where it works.
+3. Each option has a scope: `all` (fetch, download, mirror and inspect), or one job. `ghola inspect` also takes the fetch options, because it makes a request as a fetch does (for example with `--impersonate` or `--proxy`). An option outside its scope is an argument error that names the job where it works.
 
 ## 2. Short letters
 

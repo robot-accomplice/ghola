@@ -147,3 +147,11 @@ func TestParse_ProxyTLS(t *testing.T) {
 		t.Errorf("values = %v", c.Values)
 	}
 }
+
+// inspect makes a request as a fetch does, so it takes the fetch options.
+func TestParse_InspectTakesFetchOptions(t *testing.T) {
+	if c := parse(t, "inspect", "--impersonate", "chrome", "-r", "0", "u"); c.Last("impersonate") != "chrome" {
+		t.Errorf("values = %v", c.Values)
+	}
+	parseErr(t, "inspect", "-n", "4", "u") // a download option stays out
+}
