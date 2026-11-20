@@ -87,6 +87,9 @@ type OutputOptions struct {
 	Verbose bool
 	Fail    bool
 	Include bool
+	// CondTime: the request has a --cond-time condition. A 304 then
+	// writes no file, as curl -z does.
+	CondTime bool
 	// SaveHeaders is the --save-headers path ("-" is stdout). HeaderOut is
 	// that file, which ghola opens once for the whole command.
 	SaveHeaders  string

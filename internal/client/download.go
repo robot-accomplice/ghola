@@ -113,6 +113,9 @@ func Download(ctx context.Context, opts *config.Options, stream Streamer) error 
 		return err
 	}
 	meta, err := fetchToFile(ctx, opts, stream, limiter, progress)
+	if errors.Is(err, errNotModified) {
+		return nil // the --cond-time condition is not met: the file stays as it is
+	}
 	if err != nil {
 		return err // the state file stays, so a resume can check the version
 	}
@@ -156,6 +159,10 @@ func fetchToFile(ctx context.Context, opts *config.Options, stream Streamer, lim
 	}
 	return downloadSingle(ctx, opts, stream, url, limiter, progress)
 }
+
+// errNotModified stops a download at a 304 to a --cond-time request,
+// before the file opens.
+var errNotModified = errors.New("not modified")
 
 // errRedirect stops a request at a redirect answer, before a body byte is
 // written. followRedirects then sends the next request.
@@ -492,6 +499,9 @@ func (g singleGet) check(opts *config.Options, f *lazyFile) func(gholatransport.
 		}
 		if g.retryStatus && isRetryableHTTPStatus(opts, meta.StatusCode) {
 			return fmt.Errorf("%w %d", errRetryStatus, meta.StatusCode)
+		}
+		if opts.Output.CondTime && meta.StatusCode == fasthttp.StatusNotModified {
+			return errNotModified
 		}
 		if opts.Output.FailsOn(meta.StatusCode) {
 			return fmt.Errorf("%w: %d", config.ErrHTTPStatus, meta.StatusCode)

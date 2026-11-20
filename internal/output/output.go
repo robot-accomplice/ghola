@@ -47,6 +47,10 @@ func ProcessResponse(w, ew io.Writer, opts *config.Options, req *fasthttp.Reques
 	}
 
 	if opts.Output.File != "" {
+		if opts.Output.CondTime && rsp.StatusCode() == fasthttp.StatusNotModified {
+			printTiming(ew, opts, elapsed)
+			return nil // the condition is not met: no file, as curl -z
+		}
 		if err := writeFile(opts.Output, opts.Output.File, body); err != nil {
 			return err
 		}

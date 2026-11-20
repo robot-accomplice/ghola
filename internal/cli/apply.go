@@ -3,11 +3,14 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/robot-accomplice/ghola/internal/config"
 	"github.com/robot-accomplice/ghola/internal/glob"
@@ -37,6 +40,7 @@ var setters = map[string]setter{
 	"output-name":        func(o *config.Options, v string, _ *Command) error { o.Output.RemoteHeader = v == "header"; return nil },
 	"output-remote-time": func(o *config.Options, v string, _ *Command) error { o.Output.RemoteTime = v == "true"; return nil },
 	"output-select":      func(o *config.Options, v string, _ *Command) error { o.Output.JQ = v; return nil },
+	"cond-time":          func(*config.Options, string, *Command) error { return nil }, // read in Apply
 	"save-headers":       func(o *config.Options, v string, _ *Command) error { o.Output.SaveHeaders = v; return nil },
 	"show-headers":       func(o *config.Options, v string, _ *Command) error { o.Output.Include = v == "true"; return nil },
 	"quiet":              func(o *config.Options, v string, _ *Command) error { o.Output.Silent = v == "true"; return nil },
@@ -170,6 +174,7 @@ func Apply(c *Command) (*config.Options, error) {
 	if err := applyNetrc(o, c); err != nil {
 		return nil, &UsageError{Msg: err.Error()}
 	}
+	applyCondTime(o, c.Last("cond-time"), os.Stderr)
 	if err := addQuery(o, c.Values["query"]); err != nil {
 		return nil, &UsageError{Msg: err.Error()}
 	}
@@ -320,6 +325,51 @@ func applyNetrc(o *config.Options, c *Command) error {
 		o.User = e.Login + ":" + e.Password
 	}
 	return nil
+}
+
+// condTimeFormats are the date forms of --cond-time, besides the HTTP
+// date. curl reads more forms; these are the common ones.
+var condTimeFormats = []string{time.RFC1123, time.RFC1123Z, time.RFC850, time.ANSIC, time.RFC3339, "2006-01-02 15:04:05", "2006-01-02"}
+
+// applyCondTime adds the --cond-time condition: If-Modified-Since the time
+// of a file or a date, or If-Unmodified-Since with a leading "-". As in
+// curl -z, a value that is not a file or a date sends no condition, with
+// a warning: on the first run of "-z f -o f", f does not exist yet. A
+// header that -H sets wins.
+func applyCondTime(o *config.Options, value string, warn io.Writer) {
+	if value == "" {
+		return
+	}
+	name := "If-Modified-Since"
+	if rest, ok := strings.CutPrefix(value, "-"); ok {
+		name, value = "If-Unmodified-Since", rest
+	}
+	t, ok := condTime(value)
+	if !ok {
+		if !o.Output.Silent {
+			fmt.Fprintf(warn, "Warning: --cond-time: %q is not a file or a date; the request has no condition\n", value)
+		}
+		return
+	}
+	for _, h := range o.Headers {
+		if k, _, _ := strings.Cut(h, ":"); strings.EqualFold(strings.TrimSpace(k), name) {
+			return
+		}
+	}
+	o.Headers = append(o.Headers, name+": "+t.UTC().Format(http.TimeFormat))
+	o.Output.CondTime = true
+}
+
+func condTime(value string) (time.Time, bool) {
+	if fi, err := os.Stat(value); err == nil {
+		return fi.ModTime(), true
+	}
+	for _, f := range condTimeFormats {
+		if t, err := time.Parse(f, value); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
 }
 
 // setJSON sends a JSON body: Content-Type and Accept are
