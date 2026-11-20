@@ -110,7 +110,6 @@ func writeFile(name string, body io.Reader) error {
 
 // printVerbose writes the -v lines to ew.
 func printVerbose(ew io.Writer, opts *config.Options, req *fasthttp.Request) {
-	fmt.Fprintf(ew, "Ghost Signature: %s\n", req.Header.Peek("X-Ghola-Identity"))
 	if opts.Stealth.Impersonate != "" {
 		fmt.Fprintf(ew, "Profile: %s\n", opts.Stealth.Impersonate)
 		fmt.Fprintln(ew, "Transport: tls-client (pure Go)")

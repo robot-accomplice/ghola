@@ -118,56 +118,6 @@ func TestFetchURL_PostWithBody(t *testing.T) {
 	}
 }
 
-func TestFetchURL_GhostSign(t *testing.T) {
-	ln, do := newTestServer(func(ctx *fasthttp.RequestCtx) {
-		ghost := string(ctx.Request.Header.Peek("X-Ghola-Identity"))
-		if ghost == "" {
-			t.Error("X-Ghola-Identity header missing")
-		}
-		if len(ghost) != 64 {
-			t.Errorf("ghost hash length = %d, want 64 hex chars", len(ghost))
-		}
-		ctx.SetStatusCode(200)
-	})
-	defer ln.Close()
-
-	opts := &config.Options{
-		URL:     "http://test",
-		Method:  "GET",
-		Stealth: config.StealthOptions{Agent: "ghola", Ghost: true},
-	}
-
-	req, rsp, err := FetchURL(bg(), opts, do)
-	if err != nil {
-		t.Fatalf("FetchURL error: %v", err)
-	}
-	defer fasthttp.ReleaseRequest(req)
-	defer fasthttp.ReleaseResponse(rsp)
-}
-
-func TestFetchURL_NoGhostByDefault(t *testing.T) {
-	ln, do := newTestServer(func(ctx *fasthttp.RequestCtx) {
-		if len(ctx.Request.Header.Peek("X-Ghola-Identity")) > 0 {
-			t.Error("X-Ghola-Identity should not be set when ghost=false")
-		}
-		ctx.SetStatusCode(200)
-	})
-	defer ln.Close()
-
-	opts := &config.Options{
-		URL:     "http://test",
-		Method:  "GET",
-		Stealth: config.StealthOptions{Agent: "ghola", Ghost: false},
-	}
-
-	req, rsp, err := FetchURL(bg(), opts, do)
-	if err != nil {
-		t.Fatalf("FetchURL error: %v", err)
-	}
-	defer fasthttp.ReleaseRequest(req)
-	defer fasthttp.ReleaseResponse(rsp)
-}
-
 func TestFetchURL_BasicAuth(t *testing.T) {
 	ln, do := newTestServer(func(ctx *fasthttp.RequestCtx) {
 		auth := string(ctx.Request.Header.Peek("Authorization"))
@@ -348,7 +298,7 @@ func TestFetchURL_RedirectLocationRelative(t *testing.T) {
 	opts := &config.Options{
 		URL:         "http://test/start",
 		Method:      "GET",
-		Stealth:     config.StealthOptions{Agent: "ghola", Ghost: false},
+		Stealth:     config.StealthOptions{Agent: "ghola"},
 		Resilience:  config.ResilienceOptions{Retries: 0, Location: true, MaxRedirs: 5, RetryHTTP: false, Backoff: 1},
 		Output:      config.OutputOptions{Silent: true, Fail: false, Include: false, Snoop: false},
 		Concurrency: 1,

@@ -1,13 +1,10 @@
-// Package client provides the HTTP request engine for ghola, including
-// retry with exponential backoff, temporal drift jitter, ghost identity
-// signing, and concurrent request execution with clean shutdown.
+// Package client provides the request engine for ghola: retries with
+// exponential backoff, redirects, the cookie jar, and downloads to a file.
 package client
 
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
@@ -101,7 +98,7 @@ func newFetchState(opts *config.Options, do Doer) (*fetchState, error) {
 	return s, nil
 }
 
-// prepareRequest sets URI, body, headers, auth, cookies, and ghost signature
+// prepareRequest sets URI, body, headers, auth and cookies
 // on the request object for a single attempt.
 func (s *fetchState) prepareRequest(req *fasthttp.Request, opts *config.Options, effectiveURL, effectiveMethod, effectiveData string) {
 	req.SetRequestURI(effectiveURL)
@@ -442,10 +439,4 @@ func applyDrift(ctx context.Context, driftMs int) error {
 		return fmt.Errorf("drift jitter: %w", err)
 	}
 	return sleepCtx(ctx, time.Duration(n.Int64())*time.Millisecond)
-}
-
-func applyGhostSign(req *fasthttp.Request, rawURL string) {
-	id := fmt.Sprintf("%d-%s", time.Now().Unix(), rawURL)
-	hash := sha256.Sum256([]byte(id))
-	req.Header.Set("X-Ghola-Identity", hex.EncodeToString(hash[:]))
 }

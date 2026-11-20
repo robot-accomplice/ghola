@@ -98,7 +98,6 @@ func TestProcessResponse_Verbose(t *testing.T) {
 	defer fasthttp.ReleaseRequest(req)
 	defer fasthttp.ReleaseResponse(rsp)
 
-	req.Header.Set("X-Ghola-Identity", "abc123")
 	rsp.Header.SetStatusCode(200)
 	rsp.SetBodyString("data")
 
@@ -109,9 +108,6 @@ func TestProcessResponse_Verbose(t *testing.T) {
 	err := ProcessResponse(&buf, &errBuf, opts, req, rsp, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
-	}
-	if !strings.Contains(errBuf.String(), "Ghost Signature: abc123") {
-		t.Errorf("stderr missing ghost signature, got %q", errBuf.String())
 	}
 	if buf.String() != "data" {
 		t.Errorf("stdout = %q, want only the body", buf.String())

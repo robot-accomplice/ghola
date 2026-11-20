@@ -230,15 +230,14 @@ func TestResumeOffset_AutoMissing(t *testing.T) {
 	}
 }
 
-// TestBuildDownloadRequest_GhostAndImpersonate covers the ghost-sign and
+// TestBuildDownloadRequest_Impersonate covers the
 // impersonation branches in buildDownloadRequest.
-func TestBuildDownloadRequest_GhostAndImpersonate(t *testing.T) {
+func TestBuildDownloadRequest_Impersonate(t *testing.T) {
 	req := fasthttp.AcquireRequest()
 	defer fasthttp.ReleaseRequest(req)
 
 	opts := &config.Options{
 		Stealth: config.StealthOptions{
-			Ghost:          true,
 			Impersonate:    "chrome",
 			StealthHeaders: true,
 			Compressed:     true,
@@ -249,7 +248,6 @@ func TestBuildDownloadRequest_GhostAndImpersonate(t *testing.T) {
 	if len(req.Body()) == 0 {
 		t.Errorf("expected body to be set")
 	}
-	// Ghost signing adds a custom header; verify the request was built.
 	if string(req.Header.Method()) != fasthttp.MethodGet {
 		t.Errorf("method = %q, want GET", req.Header.Method())
 	}

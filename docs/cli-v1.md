@@ -354,7 +354,7 @@ v1.0.0 removes the v0 flags (plan step 8). A v0 flag stops with an argument erro
 | `-D / --drift MS` | --wait-jitter DURATION |  |
 | `-f / --fail` | (default) | Use --no-fail to turn it off. The rule is now status 400 and above. |
 | `-F / --form` | --form | No short letter (1.4% of curl files). |
-| `-G / --ghost` | (removed) | See open question 1. |
+| `-G / --ghost` | (removed) | It sent an X-Ghola-Identity header that marked each request as coming from ghola. |
 | `--har` | --har |  |
 | `-H / --header` | -H / --header |  |
 | `-h / --help` | -h / --help |  |

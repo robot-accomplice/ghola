@@ -109,7 +109,6 @@ type OutputOptions struct {
 type StealthOptions struct {
 	Impersonate    string
 	StealthHeaders bool
-	Ghost          bool
 	Drift          int
 	Agent          string
 	AgentExplicit  bool
