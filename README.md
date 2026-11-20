@@ -44,7 +44,7 @@ Attribution: the direction for Ghola's browser-like fetching work was inspired b
 | `-w, --wget` | **Wget mode** -- auto-saves to local file using the inferred remote filename. |
 | `-u <user:pass>` | **Basic Auth** -- native HTTP basic authentication. |
 | `-T <file>` | **Upload** -- send a local file as the request body. |
-| `-o <file>` | **Output** -- write response body to a file. |
+| `-o <file>` | **Output** -- write response body to a file. `-o -` writes to stdout, as in curl. Without `-o -`, ghola refuses binary data (a NUL byte) to a terminal with exit 23, as curl does, so the bytes cannot change the terminal state. |
 | `-H <header>` | **Custom headers** -- repeatable. A GET has no `Content-Type`. `-d`, `--data-binary` and `--data-urlencode` send `application/x-www-form-urlencoded`, as in curl. `--chain` sends `application/json`. A `Content-Type` from `-H` wins. |
 | `-X <method>` | **HTTP method** -- defaults to GET, auto-switches to POST when `-d` is used. |
 | `-i` | **Include headers** in output. |
