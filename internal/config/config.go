@@ -232,6 +232,8 @@ type Options struct {
 	// PathAsIs sends the URL path without removing ./ and ../
 	// (--url-path-as-is).
 	PathAsIs bool
+	// HSTS is the --hsts cache file.
+	HSTS string
 	// RequestTarget replaces the path and query in the request line
 	// (--request-target), such as * for OPTIONS.
 	RequestTarget string

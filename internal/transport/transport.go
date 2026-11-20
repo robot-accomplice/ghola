@@ -187,6 +187,11 @@ func New(opts *config.Options, selectedProxy string) (Transport, error) {
 		return nil, err
 	}
 	t := protocolTransport{network: tr, opts: opts, proxy: selectedProxy}
+	if opts.HSTS != "" {
+		if t.hsts, err = loadHSTS(opts.HSTS); err != nil {
+			return nil, err
+		}
+	}
 	if selectedProxy != "" && opts.ProxyCfg.Bypass != nil {
 		// A host in --proxy-bypass goes direct, also after a redirect.
 		if t.direct, err = newNetwork(opts, ""); err != nil {

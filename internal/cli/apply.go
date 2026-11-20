@@ -63,6 +63,7 @@ var setters = map[string]setter{
 		o.Output.Template = t
 		return err
 	},
+	"hsts":         func(o *config.Options, v string, _ *Command) error { o.HSTS = v; return nil },
 	"save-headers": func(o *config.Options, v string, _ *Command) error { o.Output.SaveHeaders = v; return nil },
 	"show-headers": func(o *config.Options, v string, _ *Command) error { o.Output.Include = v == "true"; return nil },
 	"quiet":        func(o *config.Options, v string, _ *Command) error { o.Output.Silent = v == "true"; return nil },

@@ -84,7 +84,7 @@ func TestApply_Units(t *testing.T) {
 // An option of a phase that is not built is refused with its phase, so no
 // option is accepted and then ignored.
 func TestApply_UnbuiltOptionIsRefused(t *testing.T) {
-	for _, args := range [][]string{{"--hsts", "cache.txt", "u"}, {"--doh", "https://dns.example/q", "u"}, {"--http", "2", "u"}, {"--proxy-tls-ca", "x", "u"}} {
+	for _, args := range [][]string{{"--alt-svc", "cache.txt", "u"}, {"--doh", "https://dns.example/q", "u"}, {"--http", "2", "u"}, {"--proxy-tls-ca", "x", "u"}} {
 		if _, err := Apply(apply(t, args...)); err == nil || !strings.Contains(err.Error(), "not built yet") {
 			t.Errorf("%q: err = %v", args, err)
 		}

@@ -37,6 +37,8 @@ type protocolTransport struct {
 	// direct serves the hosts in --proxy-bypass when --proxy is set. nil
 	// without both.
 	direct Transport
+	// hsts is the --hsts cache, nil without it.
+	hsts *hstsCache
 }
 
 // networkFor returns the network transport for u: direct for a host in
@@ -76,6 +78,9 @@ func (t protocolTransport) Name() string { return t.network.Name() }
 // the context, where both stacks read it.
 func (t protocolTransport) prepare(ctx context.Context, req *fasthttp.Request) context.Context {
 	req.URI().DisablePathNormalizing = t.opts.PathAsIs
+	if t.hsts != nil {
+		t.hsts.upgrade(req.URI()) // before the scheme picks the protocol
+	}
 	if t.opts.RequestTarget != "" {
 		ctx = context.WithValue(ctx, requestTargetKey{}, t.opts.RequestTarget)
 	}
@@ -83,6 +88,14 @@ func (t protocolTransport) prepare(ctx context.Context, req *fasthttp.Request) c
 }
 
 type requestTargetKey struct{}
+
+// recordHSTS keeps the Strict-Transport-Security of an answer in --hsts.
+func (t protocolTransport) recordHSTS(req *fasthttp.Request, header string) error {
+	if t.hsts == nil {
+		return nil
+	}
+	return t.hsts.record(req.URI(), header)
+}
 
 // applyRequestTarget sets the --request-target of ctx on u: Go writes
 // u.Opaque as the request target.
@@ -96,7 +109,10 @@ func (t protocolTransport) Do(ctx context.Context, req *fasthttp.Request, rsp *f
 	ctx = t.prepare(ctx, req)
 	a, ok, err := t.serve(ctx, req)
 	if !ok {
-		return t.networkFor(req.URI()).Do(ctx, req, rsp)
+		if err := t.networkFor(req.URI()).Do(ctx, req, rsp); err != nil {
+			return err
+		}
+		return t.recordHSTS(req, string(rsp.Header.Peek("Strict-Transport-Security")))
 	}
 	if err != nil {
 		return err
@@ -109,7 +125,11 @@ func (t protocolTransport) Stream(ctx context.Context, req *fasthttp.Request, si
 	ctx = t.prepare(ctx, req)
 	a, ok, err := t.serve(ctx, req)
 	if !ok {
-		return t.networkFor(req.URI()).Stream(ctx, req, sink)
+		meta, err := t.networkFor(req.URI()).Stream(ctx, req, sink)
+		if err == nil {
+			err = t.recordHSTS(req, meta.Header.Get("Strict-Transport-Security"))
+		}
+		return meta, err
 	}
 	if err != nil {
 		return StreamMeta{}, err
