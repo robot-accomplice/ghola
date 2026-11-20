@@ -72,7 +72,28 @@ func (t protocolTransport) serve(ctx context.Context, req *fasthttp.Request) (a 
 
 func (t protocolTransport) Name() string { return t.network.Name() }
 
+// prepare applies --url-path-as-is to req, and puts --request-target in
+// the context, where both stacks read it.
+func (t protocolTransport) prepare(ctx context.Context, req *fasthttp.Request) context.Context {
+	req.URI().DisablePathNormalizing = t.opts.PathAsIs
+	if t.opts.RequestTarget != "" {
+		ctx = context.WithValue(ctx, requestTargetKey{}, t.opts.RequestTarget)
+	}
+	return ctx
+}
+
+type requestTargetKey struct{}
+
+// applyRequestTarget sets the --request-target of ctx on u: Go writes
+// u.Opaque as the request target.
+func applyRequestTarget(ctx context.Context, u *url.URL) {
+	if target, ok := ctx.Value(requestTargetKey{}).(string); ok {
+		u.Opaque, u.RawQuery = target, ""
+	}
+}
+
 func (t protocolTransport) Do(ctx context.Context, req *fasthttp.Request, rsp *fasthttp.Response) error {
+	ctx = t.prepare(ctx, req)
 	a, ok, err := t.serve(ctx, req)
 	if !ok {
 		return t.networkFor(req.URI()).Do(ctx, req, rsp)
@@ -85,6 +106,7 @@ func (t protocolTransport) Do(ctx context.Context, req *fasthttp.Request, rsp *f
 }
 
 func (t protocolTransport) Stream(ctx context.Context, req *fasthttp.Request, sink io.Writer) (StreamMeta, error) {
+	ctx = t.prepare(ctx, req)
 	a, ok, err := t.serve(ctx, req)
 	if !ok {
 		return t.networkFor(req.URI()).Stream(ctx, req, sink)

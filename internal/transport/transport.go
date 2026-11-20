@@ -395,6 +395,7 @@ func newHTTPRequest(ctx context.Context, req *fasthttp.Request) (*http.Request, 
 	if err != nil {
 		return nil, err
 	}
+	applyRequestTarget(ctx, httpReq.URL)
 	for key, value := range req.Header.All() {
 		name := string(key)
 		val := string(value)
@@ -505,6 +506,7 @@ func (t *tlsClientTransport) send(ctx context.Context, req *fasthttp.Request, se
 	if err != nil {
 		return nil, nil, w.fail(err)
 	}
+	applyRequestTarget(ctx, httpReq.URL)
 	setHeaders(httpReq, req)
 	httpReq = httpReq.WithContext(withTarget(httpReq.Context(), httpReq.URL))
 	client, err := t.clientFor(httpReq)

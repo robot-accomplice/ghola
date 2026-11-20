@@ -210,6 +210,12 @@ type Options struct {
 	User        string
 	Concurrency int
 	Chain       string
+	// PathAsIs sends the URL path without removing ./ and ../
+	// (--url-path-as-is).
+	PathAsIs bool
+	// RequestTarget replaces the path and query in the request line
+	// (--request-target), such as * for OPTIONS.
+	RequestTarget string
 
 	Output     OutputOptions
 	Stealth    StealthOptions
