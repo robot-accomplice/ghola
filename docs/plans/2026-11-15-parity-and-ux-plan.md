@@ -222,6 +222,7 @@ Parity claims are not possible while the basic fetch is wrong. Fix these first, 
 10. Several URLs: more than one URL, `-:/--next`, URL globbing (`{a,b}` and `[1-9]`), `-Z/--parallel`, `--parallel-max`.
 11. HSTS and Alt-Svc caches: `--hsts`, `--alt-svc`.
 12. Config file: read `-K/--config` in curl's syntax, and `~/.config/ghola/config`.
+   - Status (2026-11-20, branch `feat/curlrc`): the reader for curl's `-K` syntax is done as a package (`internal/curlrc`, config text to arguments), not yet on the command line: `ghola curl -K` uses it after the parser build. Separators, quotes, escapes, comments and unquoted values match curl 8.18.0 (checked 2026-11-20 with a server that echoes the credentials). The ghola config file (`~/.config/ghola/config`, spec section 8) follows with the parser.
 
 ### Phase 3: aria2 download-manager parity
 
