@@ -163,8 +163,8 @@ func (s *sshServer) scp(ch ssh.Channel, cmd string) {
 			return
 		}
 		fmt.Fprintf(ch, "C0644 %d %s\n", len(b), filepath.Base(p))
-		ch.Read(buf) //nolint:errcheck
-		ch.Write(b)  //nolint:errcheck
+		ch.Read(buf)        //nolint:errcheck
+		ch.Write(b)         //nolint:errcheck
 		ch.Write([]byte{0}) //nolint:errcheck
 		ch.Read(buf)        //nolint:errcheck
 		status(0)
@@ -174,12 +174,12 @@ func (s *sshServer) scp(ch ssh.Channel, cmd string) {
 		var size int64
 		var name string
 		fmt.Fscanf(ch, "%s %d %s\n", &mode, &size, &name) //nolint:errcheck
-		ch.Write([]byte{0})                                //nolint:errcheck
+		ch.Write([]byte{0})                               //nolint:errcheck
 		b := make([]byte, size)
-		io.ReadFull(ch, b)  //nolint:errcheck
-		ch.Read(buf)        //nolint:errcheck
+		io.ReadFull(ch, b)        //nolint:errcheck
+		ch.Read(buf)              //nolint:errcheck
 		os.WriteFile(p, b, 0o644) //nolint:errcheck
-		ch.Write([]byte{0}) //nolint:errcheck
+		ch.Write([]byte{0})       //nolint:errcheck
 		status(0)
 	}
 }
