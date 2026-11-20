@@ -419,7 +419,7 @@ func TestProcessResponse_Timing(t *testing.T) {
 
 	// The timing line is metadata: it goes to stderr (audit finding H2).
 	var buf, errBuf bytes.Buffer
-	opts := &config.Options{Output: config.OutputOptions{Timing: true}}
+	opts := &config.Options{Output: config.OutputOptions{Verbose: true}} // -v writes the total time (v0 --timing)
 	err := ProcessResponse(&buf, &errBuf, opts, req, rsp, 150*time.Millisecond)
 	if err != nil {
 		t.Fatalf("ProcessResponse: %v", err)

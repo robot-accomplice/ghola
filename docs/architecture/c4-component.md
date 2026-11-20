@@ -14,7 +14,7 @@ graph TB
         output["internal/output<br/><i>Output</i><br/>Response rendering,<br/>file/stdout dispatch,<br/>snoop mode report"]
     end
 
-    cmd -->|"ParseFlags(args)"| cfg
+    cmd -->|"cli.Parse, cli.Apply"| cfg
     cmd -->|"FetchURL / RunConcurrent"| client
     cmd -->|"ProcessResponse / RunSnoop"| output
     client -.->|"passes *Request, *Response"| output
@@ -25,7 +25,8 @@ graph TB
 | Package | Responsibility | Key Types/Functions |
 |---------|---------------|---------------------|
 | `cmd/ghola` | Process entrypoint. Wires config, client, and output together. Only place that calls `os.Exit`. | `main()`, `run()` |
-| `internal/config` | CLI flag parsing into a strongly-typed `Options` struct. All validation happens here. | `Options`, `ParseFlags()`, `ExitCode` |
+| `internal/cli` | The v1 command line: jobs, the option table generated from `docs/cli/v1-options.csv`, value checks, and the errors that teach. `Apply` maps a command onto `config.Options`. | `Parse()`, `Apply()`, `Help()` |
+| `internal/config` | The strongly-typed `Options` struct, the checks that follow parsing (`Finish`), and the exit codes. | `Options`, `Finish()`, `ExitCode` |
 | `internal/client` | HTTP transport layer. Handles retries, drift jitter, ghost identity signing, basic auth, and concurrent execution. Accepts a `Doer` interface for testability. | `FetchURL()`, `RunConcurrent()`, `Doer` |
 | `internal/output` | Response rendering to stdout or file. Snoop mode security posture report. Accepts `io.Writer` for testability. | `ProcessResponse()`, `RunSnoop()` |
 

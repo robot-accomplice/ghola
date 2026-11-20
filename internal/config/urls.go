@@ -38,8 +38,8 @@ func checkOneOutput(opts *Options) error {
 		return nil
 	}
 	o := opts.Output
-	if o.File != "" || o.RemoteName || o.WgetMode || o.RemoteHeader || o.HAR != "" {
-		return fmt.Errorf("-o, -O, -w, -J and --har take one URL: got %d URLs", len(opts.URLs))
+	if o.File != "" || o.RemoteName || o.RemoteHeader || o.HAR != "" {
+		return fmt.Errorf("-o, ghola download, --output-name and --har take one URL: got %d URLs", len(opts.URLs))
 	}
 	return nil
 }

@@ -131,7 +131,7 @@ func printVerbose(ew io.Writer, opts *config.Options, req *fasthttp.Request) {
 }
 
 func printTiming(ew io.Writer, opts *config.Options, elapsed time.Duration) {
-	if opts.Output.Timing {
+	if opts.Output.Verbose { // -v writes the total time (v0 --timing)
 		fmt.Fprintf(ew, "Total: %s\n", elapsed.Truncate(time.Millisecond))
 	}
 }

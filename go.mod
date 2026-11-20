@@ -13,7 +13,6 @@ require (
 	github.com/klauspost/compress v1.20.4
 	github.com/pkg/sftp v1.13.12
 	github.com/spf13/afero v1.15.0
-	github.com/spf13/pflag v1.1.0
 	github.com/tidwall/gjson v1.20.4
 	github.com/valyala/fasthttp v1.79.0
 	golang.org/x/crypto v0.59.0
