@@ -84,26 +84,35 @@ func TestParity(t *testing.T) {
 			continue
 		}
 		t.Run(sc.ID, func(t *testing.T) {
-			ref := map[string]*Result{}
-			for _, name := range toolOrder {
-				mk, tl := sc.Runs[name], tools[name]
-				if mk == nil || tl == nil {
-					continue
-				}
-				ref[name] = runOne(t, srv, out, sc, tl, mk)
-				results = append(results, ref[name])
-			}
-			for _, name := range compatOrder {
-				c := compatTools[name]
-				if mk, tl, r := sc.Runs[c.of], tools[name], ref[c.of]; mk != nil && tl != nil && r != nil {
-					got := runOne(t, srv, out, sc, tl, mk)
-					judgeCompat(t, sc, got, r)
-					results = append(results, got)
-				}
-			}
+			results = append(results, runScenario(t, srv, out, sc, tools)...)
 		})
 	}
 	writeRecords(t, out, tools, results)
+}
+
+// runScenario runs each tool on one scenario, then each compatibility
+// command on the arguments of the tool it copies.
+func runScenario(t *testing.T, srv *server, out string, sc scenario, tools map[string]*tool) []*Result {
+	t.Helper()
+	var results []*Result
+	ref := map[string]*Result{}
+	for _, name := range toolOrder {
+		mk, tl := sc.Runs[name], tools[name]
+		if mk == nil || tl == nil {
+			continue
+		}
+		ref[name] = runOne(t, srv, out, sc, tl, mk)
+		results = append(results, ref[name])
+	}
+	for _, name := range compatOrder {
+		c := compatTools[name]
+		if mk, tl, r := sc.Runs[c.of], tools[name], ref[c.of]; mk != nil && tl != nil && r != nil {
+			got := runOne(t, srv, out, sc, tl, mk)
+			judgeCompat(t, sc, got, r)
+			results = append(results, got)
+		}
+	}
+	return results
 }
 
 // runOne runs one tool on one scenario, checks the result, and judges it.

@@ -43,9 +43,6 @@ type compatFlag struct {
 	value bool
 }
 
-func flag(args ...string) compatFlag   { return compatFlag{args: args} }
-func valued(args ...string) compatFlag { return compatFlag{args: args, value: true} }
-
 // Compat is the native form of a compatibility command line.
 type Compat struct {
 	Args []string // native arguments, the tool's defaults first
@@ -212,9 +209,14 @@ func joinOutput(dir, file string) string {
 // jobOptions are options that start another job in the tool they come
 // from, with the native job that does it.
 var jobOptions = map[string]string{
-	"-r": "ghola mirror", "--recursive": "ghola mirror", "-m": "ghola mirror", "--mirror": "ghola mirror",
-	"-i": "ghola download --input", "--input-file": "ghola download --input",
+	"-r": mirrorJob, "--recursive": mirrorJob, "-m": mirrorJob, "--mirror": mirrorJob,
+	"-i": inputJob, "--input-file": inputJob,
 }
+
+const (
+	mirrorJob = "ghola mirror"
+	inputJob  = "ghola download --input"
+)
 
 // notMapped names an option that the command cannot run. When the option
 // table names a native option for it, the message says so.
