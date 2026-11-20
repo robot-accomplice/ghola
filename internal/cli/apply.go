@@ -76,6 +76,11 @@ var setters = map[string]setter{
 		o.Output.Checksum = d
 		return err
 	},
+	"rate-max-total": func(o *config.Options, v string, _ *Command) error {
+		_, err := config.ParseRate(v)
+		o.Output.RateTotalValue = v
+		return err
+	},
 	"save-headers": func(o *config.Options, v string, _ *Command) error { o.Output.SaveHeaders = v; return nil },
 	"show-headers": func(o *config.Options, v string, _ *Command) error { o.Output.Include = v == "true"; return nil },
 	"quiet":        func(o *config.Options, v string, _ *Command) error { o.Output.Silent = v == "true"; return nil },

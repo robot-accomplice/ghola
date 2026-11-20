@@ -241,6 +241,13 @@ func transfer(ctx context.Context, opts *config.Options, do client.Doer, stream 
 	if f, ok := opts.Output.TraceOut.(*os.File); ok && f != os.Stderr {
 		defer f.Close()
 	}
+	if v := opts.Output.RateTotalValue; v != "" {
+		bps, err := config.ParseRate(v) // Apply checked it
+		if err != nil {
+			return argError(err)
+		}
+		opts.Output.RateTotal = client.NewSharedLimiter(bps) // one limit for every transfer
+	}
 	// Parallel --jobs share these files: each block is one locked write.
 	opts.Output.HeaderOut = locked(opts.Output.HeaderOut)
 	opts.Output.TraceOut = locked(opts.Output.TraceOut)

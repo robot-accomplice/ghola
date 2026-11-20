@@ -92,14 +92,11 @@ func Download(ctx context.Context, opts *config.Options, stream Streamer) error 
 	}
 
 	// Build shared limiter (aggregate cap across all segments).
-	var limiter *rateLimiter
-	if opts.Output.LimitRate != "" {
-		bps, perr := config.ParseRate(opts.Output.LimitRate)
-		if perr != nil {
-			return fmt.Errorf("parse --limit-rate: %w", perr)
-		}
-		limiter = newRateLimiter(bps)
+	bps, err := limitRate(opts)
+	if err != nil {
+		return err
 	}
+	limiter := limiterFor(bps, opts.Output.RateTotal) // --limit-rate and --rate-max-total
 
 	// Build shared progress writer (suppressed under --silent, and when
 	// stderr is not a terminal). The total comes from the response.
@@ -108,7 +105,7 @@ func Download(ctx context.Context, opts *config.Options, stream Streamer) error 
 		progress = newProgressWriter(io.Discard, out, -1)
 	}
 
-	stream, err := withCookieJar(withHeaderSave(withInfo(stream, opts), opts), opts)
+	stream, err = withCookieJar(withHeaderSave(withInfo(stream, opts), opts), opts)
 	if err != nil {
 		return err
 	}

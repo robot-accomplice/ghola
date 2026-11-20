@@ -112,6 +112,11 @@ type OutputOptions struct {
 	TraceOut   io.Writer
 	TraceASCII bool
 	TraceTime  bool
+	// RateTotal is the --rate-max-total limiter, which every transfer of
+	// the command shares. main makes it; nil without the option.
+	RateTotal RateShare
+	// RateTotalValue is the --rate-max-total value.
+	RateTotalValue string
 	// Checksum is the --checksum digest that the body must match.
 	Checksum *Digest
 	// SaveHeaders is the --save-headers path ("-" is stdout). HeaderOut is
@@ -284,6 +289,12 @@ type NetOptions struct {
 	UnixSocket string
 	// DoH resolves names with DNS over HTTPS at this URL (--doh).
 	DoH string
+}
+
+// RateShare is a speed limit that several transfers share
+// (--rate-max-total). Wait blocks until n bytes may pass.
+type RateShare interface {
+	Wait(n int)
 }
 
 // Version is set at build time via -ldflags.
