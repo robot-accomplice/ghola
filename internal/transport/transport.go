@@ -141,6 +141,16 @@ func buildTLSConfig(opts *config.Options) (*tls.Config, error) {
 
 // New constructs the current transport backend.
 func New(opts *config.Options, selectedProxy string) (Transport, error) {
+	tr, err := newNetwork(opts, selectedProxy)
+	if err != nil {
+		return nil, err
+	}
+	return fileTransport{network: tr}, nil
+}
+
+// newNetwork builds the network transport: tls-client with --impersonate,
+// else net/http.
+func newNetwork(opts *config.Options, selectedProxy string) (Transport, error) {
 	if strings.TrimSpace(opts.Stealth.Impersonate) != "" {
 		return newTLSClientTransport(opts, selectedProxy)
 	}

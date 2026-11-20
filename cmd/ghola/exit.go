@@ -28,6 +28,10 @@ func exitFor(err error) config.ExitCode {
 		return config.WriteFileFailed
 	case errors.Is(err, client.ErrTooManyRedirects):
 		return config.TooManyRedirects
+	case errors.Is(err, client.ErrRedirectScheme):
+		return config.UnsupportedProtocol
+	case errors.Is(err, gholatransport.ErrFileRead):
+		return config.FileCouldntRead
 	case errors.Is(err, gholatransport.ErrBadEncoding):
 		return config.BadContentEncoding
 	case isTimeout(err):

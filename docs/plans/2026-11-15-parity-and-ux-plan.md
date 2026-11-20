@@ -255,6 +255,8 @@ wget's short flags conflict with curl's in many places (for example `-O`, `-c`, 
 
 For each protocol in the chosen scope: upload, download, resume, list, and the same exit codes as curl. Each protocol gets harness scenarios first, as in the other phases.
 
+- Status (2026-11-20, branch `feat/file-urls`): FILE done. `transport.New` puts a file transport in front of both stacks, so stdout and `-o` read `file://` the same way. It answers like HTTP (200, 206 with `Content-Range`, `Last-Modified`), so resume, `-n` and `-R` work. A folder lists its names. `-T` (PUT) writes the file. A missing file exits 37. Security: a redirect may go only to http or https (exit 1 otherwise, as in curl), because a server must not send ghola to a local file; the bridge accepts only http and https URLs. WebSocket, FTP(S), SFTP and SCP are still open.
+
 ## 6. Better experience than all three
 
 Each item has a check. None of these changes a curl default (D4).
