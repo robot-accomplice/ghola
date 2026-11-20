@@ -70,6 +70,26 @@ func TestFromCurl_OutputRules(t *testing.T) {
 	}
 }
 
+// curl --noproxy and aria2c --no-proxy set the bypass list.
+func TestCompat_ProxyBypass(t *testing.T) {
+	for tool, args := range map[string][]string{
+		"curl":   fromCurl(t, "--noproxy", "a.example,b.example", "u").Args,
+		"aria2c": strings.Fields(native(t, FromAria2c, "--no-proxy=a.example,b.example", "u")),
+	} {
+		cmd, err := Parse(args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		o, err := Apply(cmd)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if b := o.ProxyCfg.Bypass; b == nil || *b != "a.example,b.example" {
+			t.Errorf("%s: bypass = %v", tool, b)
+		}
+	}
+}
+
 // -K reads a config file in curl's syntax.
 func TestFromCurl_Config(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "k.txt")

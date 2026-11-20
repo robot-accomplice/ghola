@@ -115,6 +115,7 @@ type tlsClientTransport struct {
 	// The main client then dials with the rules (and SOCKS from the
 	// environment), and an HTTP proxy from the environment is refused.
 	rulesDirect bool
+	bypass      *string // --proxy-bypass; nil reads no_proxy
 }
 
 // buildTLSConfig assembles a *tls.Config from the TLS-related options, or
@@ -160,7 +161,14 @@ func New(opts *config.Options, selectedProxy string) (Transport, error) {
 	if err != nil {
 		return nil, err
 	}
-	return protocolTransport{network: tr, opts: opts, proxy: selectedProxy}, nil
+	t := protocolTransport{network: tr, opts: opts, proxy: selectedProxy}
+	if selectedProxy != "" && opts.ProxyCfg.Bypass != nil {
+		// A host in --proxy-bypass goes direct, also after a redirect.
+		if t.direct, err = newNetwork(opts, ""); err != nil {
+			return nil, err
+		}
+	}
+	return t, nil
 }
 
 // newNetwork builds the network transport: tls-client with --impersonate,
@@ -192,10 +200,10 @@ func newNetwork(opts *config.Options, selectedProxy string) (Transport, error) {
 		// Never auto-negotiate/transparently decompress: downloads must be
 		// byte-exact, and --compressed is handled explicitly by the caller.
 		DisableCompression: true,
-		Proxy:              httpProxyFromEnv,
+		Proxy:              httpProxyFromEnv(opts.ProxyCfg.Bypass),
 		// With no --proxy, a SOCKS proxy from the environment goes through
 		// the shared SOCKS dialer. --proxy replaces both below.
-		DialContext:            envDialer(base),
+		DialContext:            envDialer(base, opts.ProxyCfg.Bypass),
 		MaxResponseHeaderBytes: maxHeaderBytes(opts.Resilience.BufferSize),
 	}
 	if selectedProxy != "" {
@@ -290,7 +298,7 @@ func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transpor
 	} else if rules != nil {
 		// The rules need ghola's dial function, so this client cannot take
 		// an HTTP proxy from the environment: clientFor refuses one.
-		options = append(options, tlsclient.WithDialContext(envDialer(base)))
+		options = append(options, tlsclient.WithDialContext(envDialer(base, opts.ProxyCfg.Bypass)))
 	}
 	if !opts.Stealth.HTTP3 {
 		options = append(options, tlsclient.WithDisableHttp3())
@@ -305,10 +313,11 @@ func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transpor
 		name:        "tls-client",
 		limits:      newLimits(opts.Resilience),
 		envProxy:    selectedProxy == "",
+		bypass:      opts.ProxyCfg.Bypass,
 		rulesDirect: selectedProxy == "" && rules != nil,
 	}
 	if t.envProxy && !t.rulesDirect {
-		socksOptions := append(options[:len(options):len(options)], tlsclient.WithDialContext(envDialer(base)))
+		socksOptions := append(options[:len(options):len(options)], tlsclient.WithDialContext(envDialer(base, opts.ProxyCfg.Bypass)))
 		if t.socksClient, err = tlsclient.NewHttpClient(tlsclient.NewNoopLogger(), socksOptions...); err != nil {
 			return nil, err
 		}
@@ -487,15 +496,15 @@ func (t *tlsClientTransport) clientFor(req *fhttp.Request) (tlsclient.HttpClient
 		return t.client, nil
 	}
 	if t.rulesDirect {
-		if p, err := proxyFromEnv(req.URL); err != nil || (p != nil && !isSOCKS(p)) {
+		if p, err := proxyFromEnv(req.URL, t.bypass); err != nil || (p != nil && !isSOCKS(p)) {
 			return nil, errors.Join(ErrRulesNeedDirect, err)
 		}
 		return t.client, nil
 	}
-	if p, err := envSOCKS(req.Context()); err != nil || p != nil {
+	if p, err := envSOCKS(req.Context(), t.bypass); err != nil || p != nil {
 		return t.socksClient, err
 	}
-	p, err := proxyFromEnv(req.URL)
+	p, err := proxyFromEnv(req.URL, t.bypass)
 	if err != nil {
 		return nil, err
 	}

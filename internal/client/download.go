@@ -390,11 +390,15 @@ var errRetryStatus = errors.New("retryable HTTP status")
 // with --retry-http, a retryable status. It does not retry after the file
 // opened: a body that broke off is not written twice.
 func (g singleGet) getWithRetry(ctx context.Context, opts *config.Options, stream Streamer, url string) (gholatransport.StreamMeta, error) {
+	start := time.Now() // --retry-max-time counts from the first attempt
 	for attempt := 0; ; attempt++ {
-		g.retryStatus = opts.Resilience.RetryHTTP && attempt < opts.Resilience.Retries
+		allow := attempt < opts.Resilience.Retries && retryTimeLeft(opts, start)
+		// A refused status is retried whatever the time: its body is gone.
+		g.retryStatus = opts.Resilience.RetryHTTP && allow
 		meta, opened, err := g.get(ctx, opts, stream, url)
-		retry := errors.Is(err, errRetryStatus) || (err != nil && meta.StatusCode == 0 && !opened)
-		if !retry || attempt >= opts.Resilience.Retries {
+		retry := errors.Is(err, errRetryStatus) ||
+			(allow && err != nil && meta.StatusCode == 0 && !opened && retryTimeLeft(opts, start))
+		if !retry {
 			return meta, err
 		}
 		wait := backoffWait(opts, attempt+1)

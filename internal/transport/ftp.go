@@ -125,17 +125,9 @@ func (t protocolTransport) dialFTP(ctx context.Context, u *url.URL) (*ftp.Server
 // --proxy or the environment names, or direct. An HTTP proxy is refused.
 func (t protocolTransport) tunnelDialer(u *url.URL) (dialFunc, error) {
 	direct := (&net.Dialer{}).DialContext
-	var p *url.URL
-	if t.proxy != "" {
-		var err error
-		if p, err = url.Parse(t.proxy); err != nil {
-			return nil, err
-		}
-	} else {
-		var err error
-		if p, err = proxyFromEnv(u); err != nil {
-			return nil, err
-		}
+	p, err := t.proxyFor(u)
+	if err != nil {
+		return nil, err
 	}
 	switch {
 	case p == nil:

@@ -95,20 +95,26 @@ var setters = map[string]setter{
 	"wait-jitter":     setWaitJitter,
 	"retry-max":       setInt(func(o *config.Options) *int { return &o.Resilience.Retries }),
 	"retry-delay":     setRetryDelay,
-	"tls-verify":      func(o *config.Options, v string, _ *Command) error { o.Stealth.Insecure = v == "false"; return nil },
-	"tls-ca":          func(o *config.Options, v string, _ *Command) error { o.Stealth.CACert = v; return nil },
-	"tls-cert":        func(o *config.Options, v string, _ *Command) error { o.Stealth.ClientCert = v; return nil },
-	"tls-key":         func(o *config.Options, v string, _ *Command) error { o.Stealth.ClientKey = v; return nil },
-	"tls-min":         func(o *config.Options, v string, _ *Command) error { o.Stealth.TLSMin = v; return nil },
-	"tls-max":         func(o *config.Options, v string, _ *Command) error { o.Stealth.TLSMax = v; return nil },
-	"tls-ca-dir":      func(o *config.Options, v string, _ *Command) error { o.Stealth.CADir = v; return nil },
-	"tls-pin":         func(o *config.Options, _ string, c *Command) error { o.Stealth.Pins = c.Values["tls-pin"]; return nil },
-	"user":            func(o *config.Options, v string, _ *Command) error { o.User = v; return nil },
-	"proxy":           func(o *config.Options, v string, _ *Command) error { o.ProxyCfg.Proxy = v; return nil },
-	"proxy-user":      func(o *config.Options, v string, _ *Command) error { o.ProxyCfg.Auth = v; return nil },
-	"proxy-file":      func(o *config.Options, v string, _ *Command) error { o.ProxyCfg.File = v; return nil },
-	"proxy-strategy":  func(o *config.Options, v string, _ *Command) error { o.ProxyCfg.Strategy = v; return nil },
-	"proxy-check":     func(o *config.Options, v string, _ *Command) error { o.ProxyCfg.HealthCheck = v == "true"; return nil },
+	"retry-max-time": func(o *config.Options, v string, _ *Command) error {
+		d, err := ParseDuration(v)
+		o.Resilience.RetryMaxTime = d
+		return err
+	},
+	"tls-verify":     func(o *config.Options, v string, _ *Command) error { o.Stealth.Insecure = v == "false"; return nil },
+	"tls-ca":         func(o *config.Options, v string, _ *Command) error { o.Stealth.CACert = v; return nil },
+	"tls-cert":       func(o *config.Options, v string, _ *Command) error { o.Stealth.ClientCert = v; return nil },
+	"tls-key":        func(o *config.Options, v string, _ *Command) error { o.Stealth.ClientKey = v; return nil },
+	"tls-min":        func(o *config.Options, v string, _ *Command) error { o.Stealth.TLSMin = v; return nil },
+	"tls-max":        func(o *config.Options, v string, _ *Command) error { o.Stealth.TLSMax = v; return nil },
+	"tls-ca-dir":     func(o *config.Options, v string, _ *Command) error { o.Stealth.CADir = v; return nil },
+	"tls-pin":        func(o *config.Options, _ string, c *Command) error { o.Stealth.Pins = c.Values["tls-pin"]; return nil },
+	"user":           func(o *config.Options, v string, _ *Command) error { o.User = v; return nil },
+	"proxy":          func(o *config.Options, v string, _ *Command) error { o.ProxyCfg.Proxy = v; return nil },
+	"proxy-user":     func(o *config.Options, v string, _ *Command) error { o.ProxyCfg.Auth = v; return nil },
+	"proxy-file":     func(o *config.Options, v string, _ *Command) error { o.ProxyCfg.File = v; return nil },
+	"proxy-strategy": func(o *config.Options, v string, _ *Command) error { o.ProxyCfg.Strategy = v; return nil },
+	"proxy-bypass":   func(o *config.Options, v string, _ *Command) error { o.ProxyCfg.Bypass = &v; return nil },
+	"proxy-check":    func(o *config.Options, v string, _ *Command) error { o.ProxyCfg.HealthCheck = v == "true"; return nil },
 	"cookie": func(o *config.Options, _ string, c *Command) error {
 		o.Stealth.Cookies = c.Values["cookie"]
 		return nil

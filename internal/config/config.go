@@ -153,6 +153,9 @@ type ResilienceOptions struct {
 	Backoff   int
 	RetryHTTP bool
 	Location  bool
+	// RetryMaxTime stops retries once this time has passed since the
+	// first attempt (--retry-max-time). 0 is no limit.
+	RetryMaxTime time.Duration
 	// ConnectTimeout limits the connection phase (--connect-timeout).
 	ConnectTimeout time.Duration
 	// SpeedLimit and SpeedTime stop a transfer that is slower than
@@ -176,6 +179,10 @@ type ProxyOptions struct {
 	File        string
 	Strategy    string
 	HealthCheck bool
+	// Bypass is the --proxy-bypass list of hosts that go direct, in
+	// no_proxy's format. nil reads no_proxy; it then applies only to a
+	// proxy from the environment, as before.
+	Bypass *string
 }
 
 // Options holds every user-configurable setting parsed from CLI flags.

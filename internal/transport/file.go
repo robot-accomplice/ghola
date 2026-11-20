@@ -34,6 +34,18 @@ type protocolTransport struct {
 	network Transport
 	opts    *config.Options
 	proxy   string // the --proxy URL, "" for the environment
+	// direct serves the hosts in --proxy-bypass when --proxy is set. nil
+	// without both.
+	direct Transport
+}
+
+// networkFor returns the network transport for u: direct for a host in
+// --proxy-bypass, else the one with the proxy.
+func (t protocolTransport) networkFor(u *fasthttp.URI) Transport {
+	if t.direct != nil && bypassed(&url.URL{Host: string(u.Host())}, t.opts.ProxyCfg.Bypass) {
+		return t.direct
+	}
+	return t.network
 }
 
 // serve answers req when its protocol is not HTTP. ok is false for HTTP.
@@ -63,7 +75,7 @@ func (t protocolTransport) Name() string { return t.network.Name() }
 func (t protocolTransport) Do(ctx context.Context, req *fasthttp.Request, rsp *fasthttp.Response) error {
 	a, ok, err := t.serve(ctx, req)
 	if !ok {
-		return t.network.Do(ctx, req, rsp)
+		return t.networkFor(req.URI()).Do(ctx, req, rsp)
 	}
 	if err != nil {
 		return err
@@ -75,7 +87,7 @@ func (t protocolTransport) Do(ctx context.Context, req *fasthttp.Request, rsp *f
 func (t protocolTransport) Stream(ctx context.Context, req *fasthttp.Request, sink io.Writer) (StreamMeta, error) {
 	a, ok, err := t.serve(ctx, req)
 	if !ok {
-		return t.network.Stream(ctx, req, sink)
+		return t.networkFor(req.URI()).Stream(ctx, req, sink)
 	}
 	if err != nil {
 		return StreamMeta{}, err
