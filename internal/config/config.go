@@ -25,6 +25,9 @@ type ExitCode int
 const (
 	// NoError indicates successful execution.
 	NoError ExitCode = 0
+	// UnsupportedProtocol indicates a protocol that ghola does not follow,
+	// for example a redirect to file:// (curl 1).
+	UnsupportedProtocol ExitCode = 1
 	// BadFlag indicates invalid or missing CLI arguments (curl 2).
 	BadFlag ExitCode = 2
 	// CouldntResolveHost indicates that DNS did not resolve the host (curl 6).
@@ -38,6 +41,15 @@ const (
 	// ReadFileFailed indicates a local file could not be read, e.g.
 	// --upload-file or -d @file (curl 26).
 	ReadFileFailed ExitCode = 26
+	// FileCouldntRead indicates a file:// URL whose file could not be read
+	// (curl 37).
+	FileCouldntRead ExitCode = 37
+	// FTPLoginDenied indicates that the FTP server refused the login
+	// (curl 67).
+	FTPLoginDenied ExitCode = 67
+	// RemoteFileNotFound indicates that the FTP file does not exist
+	// (curl 78).
+	RemoteFileNotFound ExitCode = 78
 	// TimedOut indicates --max-time, --connect-timeout or --speed-limit
 	// ended the transfer (curl 28).
 	TimedOut ExitCode = 28
@@ -54,6 +66,9 @@ const (
 	// PeerFailedVerification indicates that the server certificate or its
 	// host name did not verify (curl 60).
 	PeerFailedVerification ExitCode = 60
+	// BadContentEncoding indicates a Content-Encoding that --compressed
+	// cannot decode (curl 61).
+	BadContentEncoding ExitCode = 61
 )
 
 // Int returns the ExitCode as a plain int for use with os.Exit.
@@ -79,6 +94,9 @@ type OutputOptions struct {
 	RemoteHeader bool   // -J: use Content-Disposition filename
 	RemoteTime   bool   // -R: set mtime from Last-Modified
 	LimitRate    string // --limit-rate: aggregate bytes/sec cap (e.g. "500k", "2M")
+	// Stdout is -o -: write the body to stdout, also binary data to a
+	// terminal, as in curl. File is then "".
+	Stdout bool
 }
 
 // StealthOptions controls browser impersonation and identity features.
@@ -351,6 +369,9 @@ func ParseFlags(args []string) (opts *Options, done bool, err error) {
 		opts.Method = fasthttp.MethodPost
 	}
 
+	if opts.Output.File == "-" {
+		opts.Output.File, opts.Output.Stdout = "", true
+	}
 	if opts.Output.WgetMode && opts.Output.File == "" {
 		inferWgetFilename(opts)
 	}

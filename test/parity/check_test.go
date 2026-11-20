@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -21,6 +22,14 @@ type Env struct {
 
 // URL is a plain-HTTP URL for path inside this run's prefix.
 func (e *Env) URL(path string) string { return e.s.plain.URL + "/s/" + e.key + path }
+
+// FileURL is the file:// URL of a local copy of /file/1m.
+func (e *Env) FileURL() string {
+	return "file:///" + strings.TrimPrefix(filepath.ToSlash(e.s.localFile), "/")
+}
+
+// FTPURL is the URL of a file in /pub on the harness FTP server.
+func (e *Env) FTPURL(name string) string { return "ftp://" + e.s.ftpAddr + "/pub/" + name }
 
 // TLSURL is the same path on the TLS server. Its certificate is self-signed.
 func (e *Env) TLSURL(path string) string { return e.s.tls.URL + "/s/" + e.key + path }

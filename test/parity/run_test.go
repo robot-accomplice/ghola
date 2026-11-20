@@ -33,6 +33,9 @@ type Spec struct {
 	Args []string
 	Env  []string // added to a clean environment
 	Seed []byte   // if set, written to the file "f" before the run
+	// SeedFiles are more files to write in the working directory before the
+	// run, for example the state file that an earlier ghola run left.
+	SeedFiles map[string][]byte
 }
 
 type fileInfo struct {
@@ -77,6 +80,11 @@ func execute(tl *tool, spec Spec, dir string) (*Result, error) {
 	}
 	if spec.Seed != nil {
 		if err := os.WriteFile(filepath.Join(r.work, "f"), spec.Seed, 0o644); err != nil {
+			return nil, err
+		}
+	}
+	for name, b := range spec.SeedFiles {
+		if err := os.WriteFile(filepath.Join(r.work, name), b, 0o644); err != nil {
 			return nil, err
 		}
 	}

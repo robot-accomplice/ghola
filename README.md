@@ -44,7 +44,11 @@ Attribution: the direction for Ghola's browser-like fetching work was inspired b
 | `-w, --wget` | **Wget mode** -- auto-saves to local file using the inferred remote filename. |
 | `-u <user:pass>` | **Basic Auth** -- native HTTP basic authentication. |
 | `-T <file>` | **Upload** -- send a local file as the request body. |
-| `-o <file>` | **Output** -- write response body to a file. |
+| `file:///path` | **Local files** -- a `file://` URL reads a local file (a folder lists its names), with `-o`, `-C -`, `-r` ranges and `-T` uploads, as in curl. A redirect never goes to `file://`, and the bridge refuses it. |
+| `ftp://` `ftps://` | **FTP** -- download (with `-o`, `-C -` and ranges through `REST`), list a folder (a path that ends in `/`) and upload (`-T`). The login is anonymous unless the URL or `-u` gives a user. `ftps://` is implicit TLS with the HTTPS TLS options. A SOCKS proxy carries FTP; an HTTP proxy is refused, so ghola never goes direct without a word. |
+| `sftp://` `scp://` | **SSH** -- download (with ranges and resume), list a folder (sftp) and upload (`-T`). `/~/` starts at the home folder. The login uses the password of the URL or `-u`, else the keys in `~/.ssh` and the ssh-agent. The host key must be in `~/.ssh/known_hosts` (exit 60 otherwise); `-k` skips the check, as in curl. A SOCKS proxy carries SSH; an HTTP proxy is refused. |
+| `-o <file>` | **Output** -- write response body to a file. While the download runs, `<file>.ghola` records the `ETag` or `Last-Modified` of the remote version. ghola removes it when the download is done. `-o -` writes to stdout, as in curl. Without `-o -`, ghola refuses binary data (a NUL byte) to a terminal with exit 23, as curl does, so the bytes cannot change the terminal state. |
+| `-C -` | **Resume** a partial file. With a `<file>.ghola` state file, the request sends `If-Range`: when the remote file changed, the server sends the new version and ghola writes it from byte 0, so old and new bytes are never joined. Without a state file (a partial file from another tool), ghola resumes as curl does. |
 | `-H <header>` | **Custom headers** -- repeatable. A GET has no `Content-Type`. `-d`, `--data-binary` and `--data-urlencode` send `application/x-www-form-urlencoded`, as in curl. `--chain` sends `application/json`. A `Content-Type` from `-H` wins. |
 | `-X <method>` | **HTTP method** -- defaults to GET, auto-switches to POST when `-d` is used. |
 | `-i` | **Include headers** in output. |
@@ -60,9 +64,10 @@ Attribution: the direction for Ghola's browser-like fetching work was inspired b
 | `--connect-timeout <s>` | **Connect timeout** in seconds: DNS, TCP, proxy CONNECT and TLS only. |
 | `--speed-limit <B/s>` | **Stall check** -- stop when slower than this many bytes per second for `--speed-time` (default 30 s). |
 | `--speed-time <s>` | **Stall window** in seconds for `--speed-limit` (default limit 1 byte per second). |
-| `--cookie-jar <file>` | **Persistent cookies** -- save and reuse cookies across runs. |
+| `--compressed` | **Decompression** -- ask for `gzip, deflate, br, zstd` and decode the body, on stdout and with `-o`. The `Content-Encoding` header decides: a `.gz` file sent as it is stays a `.gz` file. |
+| `--cookie-jar <file>` | **Persistent cookies** -- save and reuse cookies across runs, on stdout and with `-o`. A new jar uses the Netscape format, so curl (`-b`, `-c`) and wget (`--load-cookies`) read it, and ghola reads theirs. A v0 JSON jar is read and written back as JSON. The jar follows RFC 6265: a server can set a cookie only for its own domain, never for a public suffix, and a cookie without `Domain` goes back only to its host. |
 | `--cookie <name=value>` | **Seed cookies** -- add one or more cookies to the request session. |
-| `--proxy <url>` | **Single proxy** -- route traffic through an HTTP proxy. |
+| `--proxy <url>` | **Single proxy** -- route traffic through a proxy: `http://`, `https://`, `socks4://`, `socks4a://`, `socks5://` or `socks5h://`, as in curl. `socks4` and `socks5` resolve the host name in ghola; `socks4a` and `socks5h` let the proxy resolve it. `socks5://user:pass@host` sends credentials. Without `--proxy`, ghola reads `http_proxy`, `https_proxy`, `ALL_PROXY` and `no_proxy`, as curl does, and a SOCKS URL there works the same way. |
 | `--proxy-file <path>` | **Proxy pool** -- load proxies from a newline-delimited file. |
 | `--proxy-strategy <mode>` | **Proxy selection** -- choose from `sticky`, `random`, or `round-robin`. |
 | `--profile-list` | **List profiles** -- print the built-in impersonation profiles and exit. |
@@ -182,6 +187,7 @@ ghola uses curl's exit codes for the same causes, so a script written for curl r
 | Code | Cause |
 |------|-------|
 | 0 | Success |
+| 1 | A redirect went to a protocol that ghola does not follow (for example `file://`) |
 | 2 | Invalid or missing argument |
 | 6 | The host name did not resolve |
 | 7 | The connection failed (for example, refused) |
@@ -190,10 +196,14 @@ ghola uses curl's exit codes for the same causes, so a script written for curl r
 | 26 | ghola could not read a local file (`-d @file`, `-T`, `-F name=@file`) |
 | 28 | A time limit ended the transfer (`--max-time`, `--connect-timeout`, `--speed-limit`) |
 | 35 | The TLS handshake failed |
+| 37 | ghola could not read the file of a `file://` URL |
+| 67 | The FTP server refused the login |
+| 78 | The FTP file does not exist |
 | 47 | `-L` reached `--max-redirs` |
 | 55 | The request failed for another cause |
 | 56 | The connection failed after it was ready (for example, a reset, or a TLS alert after the handshake) |
-| 60 | The server certificate did not verify |
+| 60 | The server certificate did not verify, or the SSH host key is not in `~/.ssh/known_hosts` |
+| 61 | `--compressed` got a `Content-Encoding` that it cannot decode |
 
 ## Architecture
 

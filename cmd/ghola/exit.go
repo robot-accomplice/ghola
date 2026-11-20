@@ -28,13 +28,25 @@ func exitFor(err error) config.ExitCode {
 		return config.WriteFileFailed
 	case errors.Is(err, client.ErrTooManyRedirects):
 		return config.TooManyRedirects
+	case errors.Is(err, client.ErrRedirectScheme):
+		return config.UnsupportedProtocol
+	case errors.Is(err, gholatransport.ErrFileRead):
+		return config.FileCouldntRead
+	case errors.Is(err, gholatransport.ErrLoginDenied):
+		return config.FTPLoginDenied
+	case errors.Is(err, gholatransport.ErrRemoteNotFound):
+		return config.RemoteFileNotFound
+	case errors.Is(err, gholatransport.ErrNoHTTPProxy):
+		return config.UnsupportedProtocol
+	case errors.Is(err, gholatransport.ErrBadEncoding):
+		return config.BadContentEncoding
 	case isTimeout(err):
 		return config.TimedOut
 	case errors.Is(err, gholatransport.ErrRecv):
 		return config.RecvFailed
 	case errors.As(err, &dnsErr):
 		return config.CouldntResolveHost
-	case isCertError(err):
+	case isCertError(err), errors.Is(err, gholatransport.ErrSSHHostKey):
 		return config.PeerFailedVerification
 	case isTLSError(err):
 		return config.TLSConnectFailed

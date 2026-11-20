@@ -66,7 +66,7 @@ func ProcessResponse(w, ew io.Writer, opts *config.Options, req *fasthttp.Reques
 			return fmt.Errorf("write output: %w", config.WriteError(err))
 		}
 	}
-	if _, err := io.Copy(config.MarkWrites(w), body); err != nil {
+	if _, err := io.Copy(config.MarkWrites(bodyOut(w, opts)), body); err != nil {
 		return fmt.Errorf("copy response body: %w", err)
 	}
 
@@ -88,12 +88,10 @@ func bodyReader(opts *config.Options, rsp *fasthttp.Response) (io.Reader, error)
 	if err != nil {
 		return nil, err
 	}
-	if opts.Stealth.Compressed && bytes.EqualFold(rsp.Header.Peek("Content-Encoding"), []byte("gzip")) {
-		decoded, err := transport.DecodeGzip(body)
-		if err != nil {
-			return nil, fmt.Errorf("decode gzip body: %w", err)
+	if opts.Stealth.Compressed {
+		if body, err = transport.DecodeBody(body, string(rsp.Header.Peek("Content-Encoding"))); err != nil {
+			return nil, err
 		}
-		body = decoded
 	}
 	return body, nil
 }

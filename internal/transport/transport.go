@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
@@ -35,6 +36,32 @@ type StreamMeta struct {
 	ContentRange  string // Content-Range, "" when absent
 	Location      string // Location, "" when absent
 	RetryAfter    string // Retry-After, "" when absent
+	ETag          string // ETag, "" when absent
+	// ContentEncoding is the Content-Encoding header: the codings that
+	// --compressed removes. "" when absent.
+	ContentEncoding string
+	// SetCookies holds each Set-Cookie header, for the cookie jar.
+	SetCookies []string
+}
+
+// NewStreamMeta builds the StreamMeta of a response. Both stacks call it
+// with their own header lookup (net/http and fhttp have different Header
+// types), so a new field reaches both. Test fakes call it too, so they
+// cannot drift from the real stacks.
+func NewStreamMeta(status int, length int64, header func(string) string, setCookies []string) StreamMeta {
+	return StreamMeta{
+		StatusCode:      status,
+		ContentLength:   length, // -1 when unknown, per net/http
+		AcceptRanges:    strings.EqualFold(header("Accept-Ranges"), "bytes"),
+		LastModified:    header("Last-Modified"),
+		Disposition:     header("Content-Disposition"),
+		ContentRange:    header("Content-Range"),
+		Location:        header("Location"),
+		RetryAfter:      header("Retry-After"),
+		ETag:            header("ETag"),
+		ContentEncoding: header("Content-Encoding"),
+		SetCookies:      setCookies,
+	}
 }
 
 // HeaderChecker is implemented by a sink that must see the response headers
@@ -81,6 +108,10 @@ type tlsClientTransport struct {
 	name     string
 	limits   limits
 	envProxy bool // no --proxy: take the proxy from the environment per request
+	// socksClient serves a request whose environment proxy is SOCKS. A
+	// tls-client takes a proxy URL or a dial function, not both, so the
+	// shared SOCKS dialer needs a client of its own. nil without envProxy.
+	socksClient tlsclient.HttpClient
 }
 
 // buildTLSConfig assembles a *tls.Config from the TLS-related options, or
@@ -117,6 +148,16 @@ func buildTLSConfig(opts *config.Options) (*tls.Config, error) {
 
 // New constructs the current transport backend.
 func New(opts *config.Options, selectedProxy string) (Transport, error) {
+	tr, err := newNetwork(opts, selectedProxy)
+	if err != nil {
+		return nil, err
+	}
+	return protocolTransport{network: tr, opts: opts, proxy: selectedProxy}, nil
+}
+
+// newNetwork builds the network transport: tls-client with --impersonate,
+// else net/http.
+func newNetwork(opts *config.Options, selectedProxy string) (Transport, error) {
 	if strings.TrimSpace(opts.Stealth.Impersonate) != "" {
 		return newTLSClientTransport(opts, selectedProxy)
 	}
@@ -137,8 +178,11 @@ func New(opts *config.Options, selectedProxy string) (Transport, error) {
 		ForceAttemptHTTP2: true,
 		// Never auto-negotiate/transparently decompress: downloads must be
 		// byte-exact, and --compressed is handled explicitly by the caller.
-		DisableCompression:     true,
-		Proxy:                  func(r *http.Request) (*url.URL, error) { return proxyFromEnv(r.URL) },
+		DisableCompression: true,
+		Proxy:              httpProxyFromEnv,
+		// With no --proxy, a SOCKS proxy from the environment goes through
+		// the shared SOCKS dialer. --proxy replaces both below.
+		DialContext:            envDialer((&net.Dialer{}).DialContext),
 		MaxResponseHeaderBytes: maxHeaderBytes(opts.Resilience.BufferSize),
 	}
 	if selectedProxy != "" {
@@ -147,6 +191,11 @@ func New(opts *config.Options, selectedProxy string) (Transport, error) {
 			return nil, fmt.Errorf("parse proxy url: %w", err)
 		}
 		httpTransport.Proxy = http.ProxyURL(proxyURL)
+		httpTransport.DialContext = (&net.Dialer{}).DialContext // the environment does not apply
+		if isSOCKS(proxyURL) {
+			httpTransport.Proxy = nil
+			httpTransport.DialContext = socksDialer(proxyURL, (&net.Dialer{}).DialContext)
+		}
 	}
 	httpClient := &http.Client{
 		Transport: httpTransport,
@@ -205,7 +254,17 @@ func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transpor
 		options = append(options, tlsclient.WithTimeoutMilliseconds(opts.Resilience.Timeout))
 	}
 	if selectedProxy != "" {
-		options = append(options, tlsclient.WithProxyUrl(selectedProxy))
+		proxyURL, err := url.Parse(selectedProxy)
+		if err != nil {
+			return nil, fmt.Errorf("parse proxy url: %w", err)
+		}
+		if isSOCKS(proxyURL) {
+			// tls-client has no local-DNS socks5 and runs its own SOCKS4; the
+			// shared dialer gives both stacks the same SOCKS behaviour.
+			options = append(options, tlsclient.WithDialContext(socksDialer(proxyURL, (&net.Dialer{}).DialContext)))
+		} else {
+			options = append(options, tlsclient.WithProxyUrl(selectedProxy))
+		}
 	}
 	if !opts.Stealth.HTTP3 {
 		options = append(options, tlsclient.WithDisableHttp3())
@@ -215,13 +274,19 @@ func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transpor
 	if err != nil {
 		return nil, err
 	}
-
-	return &tlsClientTransport{
+	t := &tlsClientTransport{
 		client:   client,
 		name:     "tls-client",
 		limits:   newLimits(opts.Resilience),
 		envProxy: selectedProxy == "",
-	}, nil
+	}
+	if t.envProxy {
+		socksOptions := append(options[:len(options):len(options)], tlsclient.WithDialContext(envDialer((&net.Dialer{}).DialContext)))
+		if t.socksClient, err = tlsclient.NewHttpClient(tlsclient.NewNoopLogger(), socksOptions...); err != nil {
+			return nil, err
+		}
+	}
+	return t, nil
 }
 
 func (t *simpleTransport) Do(ctx context.Context, req *fasthttp.Request, rsp *fasthttp.Response) error {
@@ -242,6 +307,7 @@ func (t *simpleTransport) send(ctx context.Context, req *fasthttp.Request) (*htt
 	if err != nil {
 		return nil, nil, w.fail(err)
 	}
+	httpReq = httpReq.WithContext(withTarget(httpReq.Context(), httpReq.URL))
 	resp, err := t.httpClient.Do(httpReq)
 	if err != nil {
 		return nil, nil, w.fail(err)
@@ -324,16 +390,7 @@ func (t *simpleTransport) Stream(ctx context.Context, req *fasthttp.Request, sin
 	body := w.body(resp.Body)
 	defer body.Close()
 
-	meta := StreamMeta{
-		StatusCode:    resp.StatusCode,
-		ContentLength: resp.ContentLength, // -1 when unknown, per net/http
-		AcceptRanges:  strings.EqualFold(resp.Header.Get("Accept-Ranges"), "bytes"),
-		LastModified:  resp.Header.Get("Last-Modified"),
-		Disposition:   resp.Header.Get("Content-Disposition"),
-		ContentRange:  resp.Header.Get("Content-Range"),
-		Location:      resp.Header.Get("Location"),
-		RetryAfter:    resp.Header.Get("Retry-After"),
-	}
+	meta := NewStreamMeta(resp.StatusCode, resp.ContentLength, resp.Header.Get, resp.Header.Values("Set-Cookie"))
 	return meta, CopyBody(sink, meta, body)
 }
 
@@ -382,34 +439,43 @@ func (t *tlsClientTransport) send(ctx context.Context, req *fasthttp.Request, se
 		return nil, nil, w.fail(err)
 	}
 	setHeaders(httpReq, req)
-	if err := t.useEnvProxy(httpReq.URL); err != nil {
+	httpReq = httpReq.WithContext(withTarget(httpReq.Context(), httpReq.URL))
+	client, err := t.clientFor(httpReq)
+	if err != nil {
 		return nil, nil, w.fail(err)
 	}
-	httpResp, err := t.client.Do(httpReq)
+	httpResp, err := client.Do(httpReq)
 	if err != nil {
 		return nil, nil, w.fail(err)
 	}
 	return httpResp, w, nil
 }
 
-// useEnvProxy sets the client's proxy from the environment for target, as
-// net/http does per request. tls-client reads no proxy variables itself.
-func (t *tlsClientTransport) useEnvProxy(target *url.URL) error {
+// clientFor returns the client for req. With no --proxy, it takes the
+// proxy from the environment for req, as net/http does per request
+// (tls-client reads no proxy variables itself): a SOCKS proxy goes through
+// socksClient, and an HTTP proxy is set on the main client.
+func (t *tlsClientTransport) clientFor(req *fhttp.Request) (tlsclient.HttpClient, error) {
 	if !t.envProxy {
-		return nil
+		return t.client, nil
 	}
-	p, err := proxyFromEnv(target)
+	if p, err := envSOCKS(req.Context()); err != nil || p != nil {
+		return t.socksClient, err
+	}
+	p, err := proxyFromEnv(req.URL)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	want := ""
 	if p != nil {
 		want = p.String()
 	}
-	if want == t.client.GetProxy() {
-		return nil
+	if want != t.client.GetProxy() {
+		if err := t.client.SetProxy(want); err != nil {
+			return nil, err
+		}
 	}
-	return t.client.SetProxy(want)
+	return t.client, nil
 }
 
 func (t *tlsClientTransport) Name() string {
@@ -424,16 +490,7 @@ func (t *tlsClientTransport) Stream(ctx context.Context, req *fasthttp.Request, 
 	body := w.body(httpResp.Body)
 	defer body.Close()
 
-	meta := StreamMeta{
-		StatusCode:    httpResp.StatusCode,
-		ContentLength: httpResp.ContentLength, // -1 when unknown, per net/http
-		AcceptRanges:  strings.EqualFold(httpResp.Header.Get("Accept-Ranges"), "bytes"),
-		LastModified:  httpResp.Header.Get("Last-Modified"),
-		Disposition:   httpResp.Header.Get("Content-Disposition"),
-		ContentRange:  httpResp.Header.Get("Content-Range"),
-		Location:      httpResp.Header.Get("Location"),
-		RetryAfter:    httpResp.Header.Get("Retry-After"),
-	}
+	meta := NewStreamMeta(httpResp.StatusCode, httpResp.ContentLength, httpResp.Header.Get, httpResp.Header.Values("Set-Cookie"))
 	return meta, CopyBody(sink, meta, body)
 }
 

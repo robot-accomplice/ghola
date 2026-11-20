@@ -93,8 +93,15 @@ func Download(ctx context.Context, opts *config.Options, stream Streamer) error 
 		progress = newProgressWriter(io.Discard, out, -1)
 	}
 
+	stream, err := withCookieJar(stream, opts)
+	if err != nil {
+		return err
+	}
 	meta, err := fetchToFile(ctx, opts, stream, limiter, progress)
 	if err != nil {
+		return err // the state file stays, so a resume can check the version
+	}
+	if err := removeState(opts.Output.File); err != nil {
 		return err
 	}
 
@@ -154,6 +161,9 @@ func followRedirects(opts *config.Options, url string, get func(string) (gholatr
 		}
 		if hops >= opts.Resilience.MaxRedirs {
 			return url, meta, fmt.Errorf("download: %w", tooManyRedirects(opts))
+		}
+		if err := checkRedirectScheme(url, meta.Location); err != nil {
+			return url, meta, fmt.Errorf("download: %w", err)
 		}
 		next, ok := resolveLocation(url, meta.Location)
 		if !ok {
@@ -341,6 +351,11 @@ func downloadSingle(ctx context.Context, opts *config.Options, stream Streamer, 
 		return gholatransport.StreamMeta{}, err
 	}
 	plan := singleGet{flags: flags, offset: offset, rangeHeader: rangeHeader, limiter: limiter, progress: progress}
+	if offset > 0 {
+		if plan.ifRange, err = loadIfRange(opts.Output.File); err != nil {
+			return gholatransport.StreamMeta{}, err
+		}
+	}
 
 	_, meta, err := followRedirects(opts, url, func(url string) (gholatransport.StreamMeta, error) {
 		return plan.getWithRetry(ctx, opts, stream, url)
@@ -382,7 +397,8 @@ type singleGet struct {
 	rangeHeader string
 	limiter     *rateLimiter
 	progress    *progressWriter
-	retryStatus bool // refuse a retryable status: a retry follows
+	retryStatus bool   // refuse a retryable status: a retry follows
+	ifRange     string // the validator of the partial file's version, from its state file
 }
 
 // get sends one GET for url and writes an accepted body to the file. A
@@ -398,11 +414,14 @@ func (g singleGet) get(ctx context.Context, opts *config.Options, stream Streame
 	if g.rangeHeader != "" {
 		req.Header.Set("Range", g.rangeHeader)
 	}
+	if g.ifRange != "" {
+		req.Header.Set("If-Range", g.ifRange)
+	}
 
 	// Sink nesting (innermost first): file -> rate limit -> progress.
 	// progress is outermost so it counts bytes after throttling (bytes on disk).
-	// When --compressed, gzipSink wraps the whole chain so that compressed bytes
-	// received from the network are decoded before reaching the file (and rate
+	// When --compressed, decodeSink wraps the whole chain so that the bytes
+	// from the network are decoded before they reach the file (and rate
 	// limiting / progress count plain bytes on disk).
 	var sink io.Writer = f
 	if g.limiter != nil {
@@ -413,16 +432,16 @@ func (g singleGet) get(ctx context.Context, opts *config.Options, stream Streame
 		sink = g.progress
 	}
 
-	var flush func() error
+	check := g.check(opts, f)
+	var dec *decodeSink
 	if opts.Stealth.Compressed {
-		var gw io.Writer
-		gw, flush = gzipSink(sink)
-		sink = gw
+		dec = &decodeSink{dst: sink}
+		sink, check = dec, dec.checkThen(check)
 	}
 
-	meta, err = stream(ctx, opts, req, newCheckedSink(sink, g.check(opts, f)))
-	if flush != nil {
-		if ferr := flush(); ferr != nil && err == nil {
+	meta, err = stream(ctx, opts, req, newCheckedSink(sink, check))
+	if dec != nil {
+		if ferr := dec.flush(); ferr != nil && err == nil {
 			err = ferr
 		}
 	}
@@ -455,18 +474,39 @@ func (g singleGet) check(opts *config.Options, f *lazyFile) func(gholatransport.
 		if opts.Output.FailsOn(meta.StatusCode) {
 			return fmt.Errorf("%w: %d", config.ErrHTTPStatus, meta.StatusCode)
 		}
-		if g.offset > 0 {
-			if err := expectRange(g.offset, -1)(meta); err != nil {
-				return err
-			}
+		if err := g.checkResume(opts, f, meta); err != nil {
+			return err
 		}
 		applyRemoteName(opts, meta)
 		f.name = opts.Output.File
 		if g.progress != nil {
 			g.progress.setTotal(meterTotal(opts, meta))
 		}
-		return f.open()
+		if err := f.open(); err != nil {
+			return err
+		}
+		if g.rangeHeader != "" && g.offset == 0 {
+			return nil // a --range part is not a whole file: there is nothing to resume
+		}
+		return saveState(f.name, opts.URL, meta)
 	}
+}
+
+// checkResume accepts a resume answer. A 206 must start at the offset. A 200
+// to a request with If-Range means that the remote file changed: the server
+// sends the whole new version, and the file starts again from byte 0.
+func (g singleGet) checkResume(opts *config.Options, f *lazyFile, meta gholatransport.StreamMeta) error {
+	if g.offset == 0 {
+		return nil
+	}
+	if g.ifRange != "" && meta.StatusCode == fasthttp.StatusOK {
+		f.flags = f.flags&^os.O_APPEND | os.O_TRUNC
+		if !opts.Output.Silent {
+			fmt.Fprintf(os.Stderr, "Note: %s changed on the server since the partial download; starting again from byte 0\n", opts.Output.File)
+		}
+		return nil
+	}
+	return expectRange(g.offset, -1)(meta)
 }
 
 // meterTotal returns the meter's total for the accepted response, or -1 when
@@ -550,28 +590,54 @@ func dispositionFilename(disposition string) string {
 	return name
 }
 
-// gzipSink returns a writer that transparently gunzips data written to it
-// before passing it to dst, plus a flush func to call after streaming
-// completes. It sniffs the gzip magic bytes (0x1f 0x8b): if the stream is NOT
-// gzip (e.g. the server ignored Accept-Encoding), bytes pass through
-// undecoded, so a non-compressing server never corrupts the output.
-func gzipSink(dst io.Writer) (io.Writer, func() error) {
-	pr, pw := io.Pipe()
-	done := make(chan error, 1)
-	go func() {
-		decoded, err := gholatransport.DecodeGzip(pr)
-		if err != nil {
-			pr.CloseWithError(err)
-			done <- err
-			return
+// decodeSink removes the content codings of the response before the bytes
+// reach dst. The Content-Encoding header decides, not the body bytes: a
+// .gz file sent with no Content-Encoding is the file itself. Before, the
+// download path decoded any body that started with the gzip magic bytes,
+// so --compressed -o file.tar.gz wrote the unpacked tar.
+type decodeSink struct {
+	dst      io.Writer
+	encoding string
+	pw       *io.PipeWriter
+	done     chan error
+}
+
+// checkThen returns a header check that records the response's
+// Content-Encoding, refuses one that cannot be decoded before the file
+// opens (exit 61), and then runs next.
+func (d *decodeSink) checkThen(next func(gholatransport.StreamMeta) error) func(gholatransport.StreamMeta) error {
+	return func(meta gholatransport.StreamMeta) error {
+		if err := gholatransport.CheckEncoding(meta.ContentEncoding); err != nil {
+			return err
 		}
-		_, cerr := io.Copy(dst, decoded)
-		done <- cerr
-	}()
-	return pw, func() error {
-		pw.Close()
-		return <-done
+		d.encoding = meta.ContentEncoding
+		return next(meta)
 	}
+}
+
+func (d *decodeSink) Write(p []byte) (int, error) {
+	if d.pw == nil {
+		pr, pw := io.Pipe()
+		d.pw, d.done = pw, make(chan error, 1)
+		go func() {
+			decoded, err := gholatransport.DecodeBody(pr, d.encoding)
+			if err == nil {
+				_, err = io.Copy(d.dst, decoded)
+			}
+			pr.CloseWithError(err) // a failed decode or write stops the stream
+			d.done <- err
+		}()
+	}
+	return d.pw.Write(p)
+}
+
+// flush ends the stream and returns the decoder's error.
+func (d *decodeSink) flush() error {
+	if d.pw == nil {
+		return nil
+	}
+	d.pw.Close()
+	return <-d.done
 }
 
 // buildDownloadRequest sets URI, method, body and headers for the streaming
