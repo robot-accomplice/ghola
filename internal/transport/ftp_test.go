@@ -98,12 +98,12 @@ func TestFTP_Upload(t *testing.T) {
 	}
 }
 
-// -u wins over the URL, and a refused login is ErrFTPLogin (exit 67).
+// -u wins over the URL, and a refused login is ErrLoginDenied (exit 67).
 func TestFTP_Login(t *testing.T) {
 	srv := newFTPServer(t, "alice:s3cret", ftpFiles())
 	url := "ftp://bob:wrong@" + srv.addr() + "/pub/a.txt"
-	if _, err := ftpDo(t, &config.Options{}, "", "GET", url, "", nil); !errors.Is(err, ErrFTPLogin) {
-		t.Fatalf("wrong URL credentials: err = %v, want ErrFTPLogin", err)
+	if _, err := ftpDo(t, &config.Options{}, "", "GET", url, "", nil); !errors.Is(err, ErrLoginDenied) {
+		t.Fatalf("wrong URL credentials: err = %v, want ErrLoginDenied", err)
 	}
 	good := "ftp://alice:s3cret@" + srv.addr() + "/pub/a.txt" // fasthttp drops the URL user unless ghola keeps it
 	if _, err := ftpDo(t, &config.Options{}, "", "GET", good, "", nil); err != nil {
@@ -114,11 +114,11 @@ func TestFTP_Login(t *testing.T) {
 	}
 }
 
-// A missing file is ErrFTPNotFound (exit 78).
+// A missing file is ErrRemoteNotFound (exit 78).
 func TestFTP_MissingFile(t *testing.T) {
 	srv := newFTPServer(t, "", ftpFiles())
-	if _, err := ftpDo(t, &config.Options{}, "", "GET", "ftp://"+srv.addr()+"/pub/none", "", nil); !errors.Is(err, ErrFTPNotFound) {
-		t.Fatalf("err = %v, want ErrFTPNotFound", err)
+	if _, err := ftpDo(t, &config.Options{}, "", "GET", "ftp://"+srv.addr()+"/pub/none", "", nil); !errors.Is(err, ErrRemoteNotFound) {
+		t.Fatalf("err = %v, want ErrRemoteNotFound", err)
 	}
 }
 
@@ -146,8 +146,8 @@ func TestFTP_ThroughSOCKS(t *testing.T) {
 func TestFTP_HTTPProxyRefused(t *testing.T) {
 	srv := newFTPServer(t, "", ftpFiles())
 	_, err := ftpDo(t, &config.Options{}, "http://127.0.0.1:1", "GET", "ftp://"+srv.addr()+"/pub/a.txt", "", nil)
-	if !errors.Is(err, ErrFTPProxy) {
-		t.Fatalf("err = %v, want ErrFTPProxy", err)
+	if !errors.Is(err, ErrNoHTTPProxy) {
+		t.Fatalf("err = %v, want ErrNoHTTPProxy", err)
 	}
 	if srv.saw("USER") {
 		t.Error("ghola connected to the server directly")

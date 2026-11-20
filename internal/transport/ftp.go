@@ -8,10 +8,8 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"net/http"
 	"net/textproto"
 	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
@@ -34,15 +32,15 @@ const (
 	ftpAnonPass = "ftp@example.com"
 )
 
-// The FTP errors, with curl's exit codes: a refused login is 67 and a
-// missing file is 78.
+// The errors of the FTP and SSH protocols, with curl's exit codes: a refused
+// login is 67 and a missing file is 78.
 var (
-	ErrFTPLogin    = errors.New("the FTP server refused the login")
-	ErrFTPNotFound = errors.New("the FTP file was not found")
-	// ErrFTPProxy refuses ftp:// through an HTTP proxy. Going direct
-	// without a word would show the user's address to the server; a SOCKS
-	// proxy carries FTP.
-	ErrFTPProxy = errors.New("ftp:// does not go through an HTTP proxy; use a SOCKS proxy")
+	ErrLoginDenied    = errors.New("the server refused the login")
+	ErrRemoteNotFound = errors.New("the remote file was not found")
+	// ErrNoHTTPProxy refuses FTP, SFTP and SCP through an HTTP proxy. Going
+	// direct without a word would show the user's address to the server; a
+	// SOCKS proxy carries these protocols.
+	ErrNoHTTPProxy = errors.New("this protocol does not go through an HTTP proxy; use a SOCKS proxy")
 )
 
 // serveFTP answers an ftp:// or ftps:// request: RETR for a file (SIZE and
@@ -80,7 +78,7 @@ func (t protocolTransport) serveFTP(ctx context.Context, req *fasthttp.Request) 
 // TLS for ftps. The library gets the TLS config too, only so that it asks
 // the server to protect the data connection (PBSZ and PROT P).
 func (t protocolTransport) dialFTP(ctx context.Context, u *url.URL) (*ftp.ServerConn, error) {
-	base, err := t.ftpDialer(u)
+	base, err := t.tunnelDialer(u)
 	if err != nil {
 		return nil, err
 	}
@@ -118,14 +116,14 @@ func (t protocolTransport) dialFTP(ctx context.Context, u *url.URL) (*ftp.Server
 	user, pass := ftpLogin(u, t.opts.User)
 	if err := c.Login(user, pass); err != nil {
 		c.Quit() //nolint:errcheck
-		return nil, fmt.Errorf("%w: %w", ErrFTPLogin, err)
+		return nil, fmt.Errorf("%w: %w", ErrLoginDenied, err)
 	}
 	return c, nil
 }
 
-// ftpDialer returns the base dial function: through the SOCKS proxy that
+// tunnelDialer returns the base dial function of FTP, SFTP and SCP: through the SOCKS proxy that
 // --proxy or the environment names, or direct. An HTTP proxy is refused.
-func (t protocolTransport) ftpDialer(u *url.URL) (dialFunc, error) {
+func (t protocolTransport) tunnelDialer(u *url.URL) (dialFunc, error) {
 	direct := (&net.Dialer{}).DialContext
 	var p *url.URL
 	if t.proxy != "" {
@@ -145,7 +143,7 @@ func (t protocolTransport) ftpDialer(u *url.URL) (dialFunc, error) {
 	case isSOCKS(p):
 		return socksDialer(p, direct), nil
 	default:
-		return nil, fmt.Errorf("%w (proxy %s)", ErrFTPProxy, p.Redacted())
+		return nil, fmt.Errorf("%w (proxy %s)", ErrNoHTTPProxy, p.Redacted())
 	}
 }
 
@@ -169,33 +167,19 @@ func ftpRetrieve(c *ftp.ServerConn, p, rangeHeader string, head bool) (fileAnswe
 		c.Quit() //nolint:errcheck
 		return fileAnswer{}, ftpError(err)
 	}
-	h := http.Header{}
-	h.Set("Accept-Ranges", "bytes")
-	if mod, err := c.GetTime(p); err == nil {
-		h.Set("Last-Modified", mod.UTC().Format(http.TimeFormat))
-	}
-	status, start, length := http.StatusOK, int64(0), size
-	if rangeHeader != "" {
-		var ok bool
-		if start, length, ok = parseRange(rangeHeader, size); !ok {
-			c.Quit() //nolint:errcheck
-			h.Set("Content-Range", "bytes */"+strconv.FormatInt(size, 10))
-			return fileAnswer{status: http.StatusRequestedRangeNotSatisfiable, header: h, body: io.NopCloser(bytes.NewReader(nil))}, nil
-		}
-		status = http.StatusPartialContent
-		h.Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, start+length-1, size))
-	}
-	h.Set("Content-Length", strconv.FormatInt(length, 10))
-	if head {
+	mod, _ := c.GetTime(p) // MDTM is optional: no time, no Last-Modified
+	a, start, ok := rangeAnswer(size, mod, rangeHeader)
+	if !ok || head {
 		c.Quit() //nolint:errcheck
-		return fileAnswer{status: status, header: h, body: io.NopCloser(bytes.NewReader(nil)), length: length}, nil
+		return a, nil
 	}
 	r, err := c.RetrFrom(p, uint64(start))
 	if err != nil {
 		c.Quit() //nolint:errcheck
 		return fileAnswer{}, ftpError(err)
 	}
-	return fileAnswer{status: status, header: h, body: &ftpBody{r: io.LimitReader(r, length), resp: r, c: c}, length: length}, nil
+	a.body = &ftpBody{r: io.LimitReader(r, a.length), resp: r, c: c}
+	return a, nil
 }
 
 func ftpList(c *ftp.ServerConn, p string, head bool) (fileAnswer, error) {
@@ -207,33 +191,24 @@ func ftpList(c *ftp.ServerConn, p string, head bool) (fileAnswer, error) {
 	if err != nil {
 		return fileAnswer{}, ftpError(err)
 	}
-	var b bytes.Buffer
-	for _, n := range names {
-		b.WriteString(n + "\n")
-	}
-	h := http.Header{}
-	h.Set("Content-Length", strconv.Itoa(b.Len()))
-	if head {
-		b.Reset()
-	}
-	return fileAnswer{status: http.StatusOK, header: h, body: io.NopCloser(&b), length: int64(b.Len())}, nil
+	return listAnswer(names, head), nil
 }
 
 func ftpStore(c *ftp.ServerConn, p string, body []byte) (fileAnswer, error) {
 	if err := c.Stor(p, bytes.NewReader(body)); err != nil {
 		return fileAnswer{}, ftpError(err)
 	}
-	return fileAnswer{status: http.StatusOK, header: http.Header{}, body: io.NopCloser(bytes.NewReader(nil))}, nil
+	return emptyAnswer(), nil
 }
 
 // ftpFileUnavailable is the FTP reply "file unavailable" (RFC 959).
 const ftpFileUnavailable = 550
 
-// ftpError marks a 550 reply as ErrFTPNotFound.
+// ftpError marks a 550 reply as ErrRemoteNotFound.
 func ftpError(err error) error {
 	var reply *textproto.Error
 	if errors.As(err, &reply) && reply.Code == ftpFileUnavailable {
-		return fmt.Errorf("%w: %w", ErrFTPNotFound, err)
+		return fmt.Errorf("%w: %w", ErrRemoteNotFound, err)
 	}
 	return err
 }
