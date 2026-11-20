@@ -27,6 +27,8 @@ func proxyFromEnv(target *url.URL) (*url.URL, error) {
 		}
 	case "https":
 		raw = firstEnv("https_proxy", "HTTPS_PROXY")
+	case "ftp", "ftps":
+		raw = firstEnv("ftp_proxy", "FTP_PROXY")
 	}
 	if raw == "" || noProxy(target.Hostname(), firstEnv("no_proxy", "NO_PROXY")) {
 		return nil, nil

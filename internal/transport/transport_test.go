@@ -50,7 +50,7 @@ func TestNewHeaderLimitFromBufferSize(t *testing.T) {
 		if err != nil {
 			t.Fatalf("New returned error: %v", err)
 		}
-		simple, ok := tr.(fileTransport).network.(*simpleTransport) // New puts file:// in front
+		simple, ok := tr.(protocolTransport).network.(*simpleTransport) // New puts file:// and ftp:// in front
 		if !ok {
 			t.Fatalf("transport type=%T, want *simpleTransport", tr)
 		}
