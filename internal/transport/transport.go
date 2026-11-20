@@ -164,20 +164,16 @@ func buildTLSConfig(opts *config.Options) (*tls.Config, error) {
 		return nil, err
 	}
 	cfg.RootCAs = pool
-	if len(st.Pins) > 0 {
-		pins, err := parsePins(st.Pins)
+	if cfg.VerifyConnection, err = connectionChecks(st); err != nil {
+		return nil, err
+	}
+	if cfg.CipherSuites, err = cipherSuites(st.Ciphers); err != nil {
+		return nil, err
+	}
+	if st.ClientCert != "" {
+		cert, err := loadClientCert(st)
 		if err != nil {
 			return nil, err
-		}
-		cfg.VerifyConnection = pins.verify
-	}
-	if opts.Stealth.ClientCert != "" {
-		if opts.Stealth.ClientKey == "" {
-			return nil, fmt.Errorf("--cert requires --key")
-		}
-		cert, err := tls.LoadX509KeyPair(opts.Stealth.ClientCert, opts.Stealth.ClientKey)
-		if err != nil {
-			return nil, fmt.Errorf("load client cert/key: %w", err)
 		}
 		cfg.Certificates = []tls.Certificate{cert}
 	}
@@ -294,7 +290,7 @@ func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transpor
 	// rather than ignore the options. A pin would be per host on
 	// tls-client, and --tls-pin covers every host of the transfer.
 	if opts.Stealth.ClientCert != "" || opts.Stealth.CACert != "" || hasTLSOptions(opts.Stealth) {
-		return nil, fmt.Errorf("--tls-ca, --tls-ca-dir, --tls-cert, --tls-key, --tls-min, --tls-max and --tls-pin do not work with --impersonate yet: the browser profile sets the TLS handshake")
+		return nil, fmt.Errorf("the --tls-* options other than --no-tls-verify do not work with --impersonate yet: the browser profile sets the TLS handshake")
 	}
 
 	options := []tlsclient.HttpClientOption{

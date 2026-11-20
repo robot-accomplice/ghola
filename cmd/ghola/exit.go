@@ -48,6 +48,10 @@ func exitFor(err error) config.ExitCode {
 		return config.RecvFailed
 	case errors.As(err, &dnsErr):
 		return config.CouldntResolveHost
+	case errors.Is(err, gholatransport.ErrCertStatus):
+		return config.InvalidCertStatus
+	case errors.Is(err, gholatransport.ErrCertRevoked):
+		return config.PeerFailedVerification
 	case errors.Is(err, gholatransport.ErrPinMismatch):
 		return config.PinnedKeyMismatch
 	case isCertError(err), errors.Is(err, gholatransport.ErrSSHHostKey):

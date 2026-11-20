@@ -202,6 +202,7 @@ ghola uses curl's exit codes for the same causes, so a script written for curl r
 | 63 | The body is larger than `--max-size` |
 | 61 | The `Content-Encoding` of the answer cannot be decoded (`--no-compressed` gets it as it is) |
 | 90 | The server public key does not match `--tls-pin` |
+| 91 | The server sent no good OCSP staple (`--tls-ocsp`) |
 
 ## Architecture
 

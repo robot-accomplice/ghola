@@ -71,6 +71,9 @@ const (
 	// PinnedKeyMismatch indicates that the server key does not match
 	// --tls-pin (curl 90).
 	PinnedKeyMismatch ExitCode = 90
+	// InvalidCertStatus indicates a missing or bad OCSP staple under
+	// --tls-ocsp (curl 91).
+	InvalidCertStatus ExitCode = 91
 	// BadContentEncoding indicates a Content-Encoding that --compressed
 	// cannot decode (curl 61).
 	BadContentEncoding ExitCode = 61
@@ -154,6 +157,13 @@ type StealthOptions struct {
 	// Pins are sha256//BASE64 hashes of the server's public key
 	// (--tls-pin), as curl --pinnedpubkey takes them.
 	Pins []string
+	// Ciphers are the --tls-ciphers names; CRL is the --tls-crl file;
+	// OCSP requires a good staple (--tls-ocsp); CertType is the format of
+	// --tls-cert (--tls-cert-type).
+	Ciphers  []string
+	CRL      string
+	OCSP     bool
+	CertType string
 }
 
 // ResilienceOptions controls retry, timeout, redirect, and buffer behavior.

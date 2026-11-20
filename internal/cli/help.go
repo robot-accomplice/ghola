@@ -106,6 +106,7 @@ var exitCodes = map[int][2]string{
 	56: {"The connection failed after it was ready, for example a reset.", "Retry; the server or a middlebox closed the connection."},
 	60: {"The server certificate did not verify, or the SSH host key is not in ~/.ssh/known_hosts.", "Add the CA with --tls-ca, or the host key to known_hosts; -k skips the check."},
 	90: {"The server public key does not match --tls-pin.", "Check the pin; the server key may have changed."},
+	91: {"The server sent no good OCSP staple (--tls-ocsp).", "Ask the server owner to staple OCSP, or run without --tls-ocsp."},
 	61: {"--compressed got a Content-Encoding that ghola cannot decode.", "--no-compressed gets the body as it is."},
 	67: {"The server refused the login (FTP, SFTP, SCP).", "Check the user and the password (-u or the URL)."},
 	78: {"The remote file does not exist (FTP, SFTP, SCP).", checkThePath},
