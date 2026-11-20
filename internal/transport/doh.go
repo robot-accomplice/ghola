@@ -27,10 +27,11 @@ type dohResolver struct {
 	client  *http.Client
 	mu      sync.Mutex
 	cache   map[string][]net.IP
+	ech     map[string][]byte // the ECH config of each host, for --tls-ech
 }
 
 func newDoH(url, network string) *dohResolver {
-	return &dohResolver{url: url, network: network, client: &http.Client{}, cache: map[string][]net.IP{}}
+	return &dohResolver{url: url, network: network, client: &http.Client{}, cache: map[string][]net.IP{}, ech: map[string][]byte{}}
 }
 
 // dial resolves the host of addr with DoH, and dials each address in turn
@@ -87,8 +88,55 @@ func (r *dohResolver) lookup(ctx context.Context, host string) ([]net.IP, error)
 	return ips, nil
 }
 
-// query sends one question. RFC 8484 asks for ID 0, which caches well.
+// query asks for the addresses of one type.
 func (r *dohResolver) query(ctx context.Context, host string, t dnsmessage.Type) ([]net.IP, error) {
+	var ips []net.IP
+	err := r.ask(ctx, host, t, func(p *dnsmessage.Parser, h dnsmessage.ResourceHeader) error {
+		switch h.Type {
+		case dnsmessage.TypeA:
+			a, err := p.AResource()
+			ips = append(ips, net.IP(a.A[:]))
+			return err
+		case dnsmessage.TypeAAAA:
+			a, err := p.AAAAResource()
+			ips = append(ips, net.IP(a.AAAA[:]))
+			return err
+		}
+		return p.SkipAnswer() // a CNAME: its A record follows
+	})
+	return ips, err
+}
+
+// ask sends one question, and gives each answer record to handle, which
+// must read or skip it. RFC 8484 asks for ID 0, which caches well.
+func (r *dohResolver) ask(ctx context.Context, host string, t dnsmessage.Type, handle func(*dnsmessage.Parser, dnsmessage.ResourceHeader) error) error {
+	body, err := r.exchange(ctx, host, t)
+	if err != nil {
+		return err
+	}
+	var p dnsmessage.Parser
+	if _, err := p.Start(body); err != nil {
+		return fmt.Errorf("--doh: bad answer: %w", err)
+	}
+	if err := p.SkipAllQuestions(); err != nil {
+		return fmt.Errorf("--doh: bad answer: %w", err)
+	}
+	for {
+		h, err := p.AnswerHeader()
+		if errors.Is(err, dnsmessage.ErrSectionDone) {
+			return nil
+		}
+		if err == nil {
+			err = handle(&p, h)
+		}
+		if err != nil {
+			return fmt.Errorf("--doh: bad answer: %w", err)
+		}
+	}
+}
+
+// exchange posts the question and returns the answer message.
+func (r *dohResolver) exchange(ctx context.Context, host string, t dnsmessage.Type) ([]byte, error) {
 	name, err := dnsmessage.NewName(host + ".")
 	if err != nil {
 		return nil, fmt.Errorf("--doh: %w", err)
@@ -122,39 +170,5 @@ func (r *dohResolver) query(ctx context.Context, host string, t dnsmessage.Type)
 	if err != nil {
 		return nil, fmt.Errorf("--doh: %w", err)
 	}
-	var p dnsmessage.Parser
-	if _, err := p.Start(body); err != nil {
-		return nil, fmt.Errorf("--doh: bad answer: %w", err)
-	}
-	if err := p.SkipAllQuestions(); err != nil {
-		return nil, fmt.Errorf("--doh: bad answer: %w", err)
-	}
-	var ips []net.IP
-	for {
-		h, err := p.AnswerHeader()
-		if errors.Is(err, dnsmessage.ErrSectionDone) {
-			return ips, nil
-		}
-		if err != nil {
-			return nil, fmt.Errorf("--doh: bad answer: %w", err)
-		}
-		switch h.Type {
-		case dnsmessage.TypeA:
-			a, err := p.AResource()
-			if err != nil {
-				return nil, err
-			}
-			ips = append(ips, net.IP(a.A[:]))
-		case dnsmessage.TypeAAAA:
-			a, err := p.AAAAResource()
-			if err != nil {
-				return nil, err
-			}
-			ips = append(ips, net.IP(a.AAAA[:]))
-		default:
-			if err := p.SkipAnswer(); err != nil { // a CNAME: its A record follows
-				return nil, err
-			}
-		}
-	}
+	return body, nil
 }

@@ -246,6 +246,9 @@ func newNetwork(opts *config.Options, selectedProxy string) (Transport, error) {
 	if err := useFixedProxy(httpTransport, selectedProxy, opts.ProxyCfg.TLS, base); err != nil {
 		return nil, err
 	}
+	if err := useECH(httpTransport, opts, base); err != nil {
+		return nil, err
+	}
 	httpClient := &http.Client{
 		Transport: httpTransport,
 		// Do NOT follow redirects; the download orchestrator inspects 3xx and

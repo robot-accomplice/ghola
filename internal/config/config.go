@@ -175,6 +175,9 @@ type StealthOptions struct {
 	CRL      string
 	OCSP     bool
 	CertType string
+	// ECH sends Encrypted Client Hello when the host's HTTPS record offers
+	// it (--tls-ech). It needs --doh.
+	ECH bool
 }
 
 // ResilienceOptions controls retry, timeout, redirect, and buffer behavior.

@@ -23,7 +23,7 @@ var tlsVersions = map[string]uint16{"1.2": tls.VersionTLS12, "1.3": tls.VersionT
 
 func hasTLSOptions(st config.StealthOptions) bool {
 	return st.TLSMin != "" || st.TLSMax != "" || st.CADir != "" || len(st.Pins) > 0 ||
-		len(st.Ciphers) > 0 || st.CRL != "" || st.OCSP || st.CertType != ""
+		len(st.Ciphers) > 0 || st.CRL != "" || st.OCSP || st.CertType != "" || st.ECH
 }
 
 func setTLSVersions(cfg *tls.Config, lowest, highest string) error {
