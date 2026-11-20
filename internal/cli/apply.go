@@ -70,6 +70,7 @@ var setters = map[string]setter{
 	"trace-time":     func(o *config.Options, v string, _ *Command) error { o.Output.TraceTime = v == "true"; return nil },
 	"doh":            func(o *config.Options, v string, _ *Command) error { o.Net.DoH = v; return nil },
 	"tls-ech":        func(o *config.Options, v string, _ *Command) error { o.Stealth.ECH = v == "true"; return nil },
+	"next":           func(*config.Options, string, *Command) error { return nil }, // SplitNext splits at it
 	"save-headers":   func(o *config.Options, v string, _ *Command) error { o.Output.SaveHeaders = v; return nil },
 	"show-headers":   func(o *config.Options, v string, _ *Command) error { o.Output.Include = v == "true"; return nil },
 	"quiet":          func(o *config.Options, v string, _ *Command) error { o.Output.Silent = v == "true"; return nil },

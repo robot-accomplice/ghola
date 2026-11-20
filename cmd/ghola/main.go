@@ -30,7 +30,34 @@ func main() {
 	os.Exit(execute(ctx, os.Args[1:], nil, nil, os.Stdout))
 }
 
+// execute runs the command line. With --next it runs each group in turn,
+// as curl does, and the exit code is the last failure's (v1 defaults,
+// item 10B). Every group parses before the first transfer, so a typo in
+// a later group stops the run before anything is sent.
 func execute(ctx context.Context, args []string, do client.Doer, stream client.Streamer, w *os.File) int {
+	groups, err := cli.SplitNext(args)
+	if err != nil {
+		return argError(err)
+	}
+	if len(groups) == 1 {
+		return executeOne(ctx, args, do, stream, w)
+	}
+	for _, g := range groups {
+		if _, err := cli.Parse(g); err != nil {
+			return argError(err)
+		}
+	}
+	last := config.NoError.Int()
+	for _, g := range groups {
+		if code := executeOne(ctx, g, do, stream, w); code != config.NoError.Int() {
+			last = code
+		}
+	}
+	return last
+}
+
+// executeOne runs one group of options and URLs.
+func executeOne(ctx context.Context, args []string, do client.Doer, stream client.Streamer, w *os.File) int {
 	c, err := cli.Parse(args)
 	if err != nil {
 		return argError(err)
