@@ -42,7 +42,7 @@ var (
 	// ErrFTPProxy refuses ftp:// through an HTTP proxy. Going direct
 	// without a word would show the user's address to the server; a SOCKS
 	// proxy carries FTP.
-	ErrFTPProxy = errors.New("ftp:// does not go through an HTTP proxy; use a SOCKS proxy")
+	ErrFTPProxy = errors.New("FTP does not go through an HTTP proxy; use a SOCKS proxy")
 )
 
 // serveFTP answers an ftp:// or ftps:// request: RETR for a file (SIZE and
@@ -65,7 +65,7 @@ func (t protocolTransport) serveFTP(ctx context.Context, req *fasthttp.Request) 
 	case method == fasthttp.MethodPut:
 		a, err = ftpStore(c, p, req.Body())
 	case method != fasthttp.MethodGet && method != fasthttp.MethodHead:
-		err = fmt.Errorf("ftp://: the %s method is not supported", method)
+		err = fmt.Errorf("FTP: the %s method is not supported", method)
 	case p == "" || strings.HasSuffix(p, "/"):
 		a, err = ftpList(c, p, method == fasthttp.MethodHead)
 	default:
