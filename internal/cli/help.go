@@ -87,6 +87,8 @@ func groupNames() string {
 
 // exitCodes are curl's codes that ghola uses, with the cause and what to
 // try (ghola explain CODE). The README has the same table.
+const checkThePath = "Check the path."
+
 var exitCodes = map[int][2]string{
 	0:  {"Success.", ""},
 	1:  {"A redirect went to a protocol that ghola does not follow, for example file://.", "Fetch that URL yourself if you trust it."},
@@ -95,17 +97,17 @@ var exitCodes = map[int][2]string{
 	7:  {"The connection failed, for example it was refused.", "Check the host and the port, and that the server runs."},
 	22: {"The server answered with status 400 or above.", "--no-fail writes the answer and exits 0."},
 	23: {"ghola could not write the output (stdout or the -o file).", "Check the folder, the free space, or a closed pipe."},
-	26: {"ghola could not read a local file (-d @file, --upload, --form name=@file).", "Check the path."},
+	26: {"ghola could not read a local file (-d @file, --upload, --form name=@file).", checkThePath},
 	28: {"A time limit ended the transfer (--timeout, --timeout-connect, --stall-time).", "Raise the limit, or check the network."},
 	35: {"The TLS handshake failed.", "Check --tls-min and the server's TLS setup."},
-	37: {"ghola could not read the file of a file:// URL.", "Check the path."},
+	37: {"ghola could not read the file of a file:// URL.", checkThePath},
 	47: {"Redirects reached --follow-max.", "Raise --follow-max, or check for a redirect loop."},
 	55: {"The request failed for another cause.", "ghola -v shows the steps."},
 	56: {"The connection failed after it was ready, for example a reset.", "Retry; the server or a middlebox closed the connection."},
 	60: {"The server certificate did not verify, or the SSH host key is not in ~/.ssh/known_hosts.", "Add the CA with --tls-ca, or the host key to known_hosts; -k skips the check."},
 	61: {"--compressed got a Content-Encoding that ghola cannot decode.", "--no-compressed gets the body as it is."},
 	67: {"The server refused the login (FTP, SFTP, SCP).", "Check the user and the password (-u or the URL)."},
-	78: {"The remote file does not exist (FTP, SFTP, SCP).", "Check the path."},
+	78: {"The remote file does not exist (FTP, SFTP, SCP).", checkThePath},
 }
 
 // Explain describes an exit code, for ghola explain CODE.

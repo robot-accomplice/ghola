@@ -3,210 +3,212 @@
 
 package cli
 
-var table = []Option{
-	{Name: "output", Short: 'o', Group: "output", Scope: "all", Type: "path", Default: "stdout (fetch); remote name (download and mirror)", Curl: "-o / -O / --output-dir", Wget: "-O / -P", Aria2: "-o / -d", Phase: "0B", Help: "Write the body to PATH. A PATH that ends in / or names a folder gets the remote file name inside it. With several URLs: one -o DIR/ serves all, or one -o for each URL in order."},
-	{Name: "output-name", Short: 0, Group: "output", Scope: "all", Type: "url|header", Default: "url", Curl: "-J", Wget: "--content-disposition", Aria2: "(default header)", Phase: "0B", Help: "Take the remote file name from the URL or from Content-Disposition. A name with a folder part is refused."},
-	{Name: "output-overwrite", Short: 0, Group: "output", Scope: "all", Type: "bool", Default: "true (fetch); false (download and mirror)", Curl: "--no-clobber (inverse)", Wget: "-nc (inverse)", Aria2: "--allow-overwrite", Phase: "2", Help: "Replace an existing file. Without it an existing file stops the job with exit 23."},
-	{Name: "output-create-dirs", Short: 0, Group: "output", Scope: "all", Type: "bool", Default: "false", Curl: "--create-dirs", Wget: "-x", Aria2: "(default)", Phase: "2", Help: "Create the missing folders of PATH."},
-	{Name: "output-remote-time", Short: 0, Group: "output", Scope: "all", Type: "bool", Default: "false", Curl: "-R", Wget: "(default with -N)", Aria2: "--remote-time", Phase: "0B", Help: "Set the file time to the Last-Modified time."},
-	{Name: "output-select", Short: 0, Group: "output", Scope: "fetch", Type: "gjson path", Default: "", Curl: "", Wget: "", Aria2: "", Phase: "0B", Help: "Write only the value at the path of a JSON body (gjson syntax)."},
-	{Name: "output-template", Short: 'w', Group: "output", Scope: "all", Type: "template", Default: "", Curl: "-w", Wget: "", Aria2: "", Phase: "2", Help: "After each transfer write the template. It uses curl's %{name} variables and %{json}."},
-	{Name: "output-events", Short: 0, Group: "output", Scope: "all", Type: "none|json", Default: "none", Curl: "", Wget: "", Aria2: "(RPC)", Phase: "2", Help: "Write one JSON line to stderr for each transfer event. A JSON schema in the repo defines the lines."},
-	{Name: "show-headers", Short: 0, Group: "output", Scope: "fetch", Type: "bool", Default: "false", Curl: "-i / --show-headers", Wget: "-S (stderr)", Aria2: "", Phase: "0B", Help: "Write the response header block to stdout before the body."},
-	{Name: "save-headers", Short: 0, Group: "output", Scope: "all", Type: "path", Default: "", Curl: "-D", Wget: "--save-headers", Aria2: "", Phase: "2", Help: "Write the response header block to PATH."},
-	{Name: "quiet", Short: 'q', Group: "output", Scope: "all", Type: "bool", Default: "false", Curl: "-sS", Wget: "-q", Aria2: "-q", Phase: "0B", Help: "Write no progress meter and no notes. Errors still go to stderr."},
-	{Name: "verbose", Short: 'v', Group: "output", Scope: "all", Type: "bool", Default: "false", Curl: "-v", Wget: "-v", Aria2: "--console-log-level=debug", Phase: "0B", Help: "Write the request and response headers and the connection steps to stderr."},
-	{Name: "progress", Short: 0, Group: "output", Scope: "all", Type: "bool", Default: "auto", Curl: "-# / --no-progress-meter", Wget: "--progress / -nv", Aria2: "--summary-interval", Phase: "0B", Help: "Show the progress meter. Default: only when stderr is a terminal and the body does not go to it."},
-	{Name: "max-size", Short: 0, Group: "output", Scope: "all", Type: "size", Default: "", Curl: "--max-filesize", Wget: "--quota (total)", Aria2: "", Phase: "2", Help: "Stop with exit 63 when the body is larger than SIZE."},
-	{Name: "har", Short: 0, Group: "output", Scope: "fetch", Type: "path", Default: "", Curl: "", Wget: "", Aria2: "", Phase: "0B", Help: "Write the request and the response to PATH as HAR 1.2."},
-	{Name: "trace", Short: 0, Group: "output", Scope: "all", Type: "path", Default: "", Curl: "--trace / --trace-ascii", Wget: "", Aria2: "", Phase: "2", Help: "Write all bytes sent and received to PATH (- for stderr)."},
-	{Name: "trace-format", Short: 0, Group: "output", Scope: "all", Type: "hex|ascii", Default: "hex", Curl: "--trace-ascii", Wget: "", Aria2: "", Phase: "2", Help: "The format of --trace."},
-	{Name: "trace-time", Short: 0, Group: "output", Scope: "all", Type: "bool", Default: "false", Curl: "--trace-time", Wget: "", Aria2: "", Phase: "2", Help: "Add a time to each --trace and --verbose line."},
-	{Name: "method", Short: 'm', Group: "request", Scope: "fetch", Type: "string", Default: "GET; POST with a body", Curl: "-X", Wget: "--method", Aria2: "", Phase: "0B", Help: "Send the request with this method."},
-	{Name: "head", Short: 'I', Group: "request", Scope: "fetch", Type: "bool", Default: "false", Curl: "-I", Wget: "--spider -S", Aria2: "", Phase: "0B", Help: "Send HEAD and write the response headers to stdout."},
-	{Name: "header", Short: 'H', Group: "request", Scope: "all", Type: "Name: value (repeat)", Default: "", Curl: "-H", Wget: "--header", Aria2: "--header", Phase: "0B", Help: "Add a request header. \"Name:\" removes a header that ghola or the profile sets."},
-	{Name: "user-agent", Short: 0, Group: "request", Scope: "all", Type: "string", Default: "ghola/VERSION", Curl: "-A", Wget: "-U", Aria2: "-U", Phase: "0B", Help: "Set the User-Agent header."},
-	{Name: "referer", Short: 0, Group: "request", Scope: "all", Type: "none|auto|URL", Default: "none", Curl: "-e", Wget: "--referer", Aria2: "--referer", Phase: "0B", Help: "Set the Referer header. auto sends the previous URL after a redirect."},
-	{Name: "data", Short: 'd', Group: "request", Scope: "fetch", Type: "text | @file | @-", Default: "", Curl: "--data-binary", Wget: "--post-data / --post-file", Aria2: "", Phase: "0B", Help: "Send the body without changes. @file reads a file and @- reads stdin. The Content-Type is application/x-www-form-urlencoded unless -H sets one."},
-	{Name: "data-literal", Short: 0, Group: "request", Scope: "fetch", Type: "text", Default: "", Curl: "--data-raw", Wget: "--post-data", Aria2: "", Phase: "0B", Help: "Send the text as the body, also when it starts with @."},
-	{Name: "field", Short: 0, Group: "request", Scope: "fetch", Type: "name=value (repeat)", Default: "", Curl: "--data-urlencode", Wget: "", Aria2: "", Phase: "0B", Help: "Add a URL-encoded form field to the body."},
-	{Name: "form", Short: 0, Group: "request", Scope: "fetch", Type: "name=value | name=@file (repeat)", Default: "", Curl: "-F", Wget: "", Aria2: "", Phase: "0B", Help: "Send a multipart/form-data body."},
-	{Name: "json", Short: 0, Group: "request", Scope: "fetch", Type: "text | @file | @-", Default: "", Curl: "--json", Wget: "", Aria2: "", Phase: "2", Help: "Send a JSON body. Sets Content-Type and Accept to application/json."},
-	{Name: "query", Short: 0, Group: "request", Scope: "all", Type: "name=value (repeat)", Default: "", Curl: "--url-query / -G", Wget: "", Aria2: "", Phase: "2", Help: "Add a URL-encoded query parameter to each URL."},
-	{Name: "upload", Short: 0, Group: "request", Scope: "fetch", Type: "path", Default: "", Curl: "-T", Wget: "--body-file --method=PUT", Aria2: "", Phase: "0B", Help: "Send the file as the body of a PUT."},
-	{Name: "range", Short: 0, Group: "request", Scope: "all", Type: "byte range", Default: "", Curl: "-r", Wget: "", Aria2: "", Phase: "0B", Help: "Request only the byte range, for example 0-1023."},
-	{Name: "continue", Short: 'c', Group: "request", Scope: "all", Type: "bool", Default: "false", Curl: "-C -", Wget: "-c", Aria2: "-c", Phase: "0B", Help: "Resume a partial file. The request sends If-Range, so a file that changed on the server starts again from byte 0."},
-	{Name: "continue-at", Short: 0, Group: "request", Scope: "fetch", Type: "bytes", Default: "", Curl: "-C N", Wget: "--start-pos", Aria2: "", Phase: "0B", Help: "Resume at this byte offset."},
-	{Name: "chain", Short: 0, Group: "request", Scope: "fetch", Type: "eth|base|solana", Default: "", Curl: "", Wget: "", Aria2: "", Phase: "0B", Help: "JSON-RPC shortcut: POST with the RPC headers of the chain."},
-	{Name: "url-glob", Short: 0, Group: "request", Scope: "all", Type: "bool", Default: "true", Curl: "-g (inverse)", Wget: "", Aria2: "-Z", Phase: "2", Help: "Expand {a,b} and [1-9] in URLs."},
-	{Name: "url-path-as-is", Short: 0, Group: "request", Scope: "all", Type: "bool", Default: "false", Curl: "--path-as-is", Wget: "", Aria2: "", Phase: "2", Help: "Send the path without removing ./ and ../."},
-	{Name: "request-target", Short: 0, Group: "request", Scope: "fetch", Type: "string", Default: "", Curl: "--request-target", Wget: "", Aria2: "", Phase: "2", Help: "Send this request target in place of the URL path."},
-	{Name: "variable", Short: 0, Group: "request", Scope: "fetch", Type: "name=value (repeat)", Default: "", Curl: "--variable", Wget: "", Aria2: "", Phase: "2", Help: "Set a variable for {{name}} expansion in other option values."},
-	{Name: "next", Short: 0, Group: "request", Scope: "fetch", Type: "(separator)", Default: "", Curl: "-: / --next", Wget: "", Aria2: "", Phase: "2", Help: "Start the options for the next URL."},
-	{Name: "input", Short: 'i', Group: "request", Scope: "all", Type: "path", Default: "", Curl: "-K (partly)", Wget: "-i", Aria2: "-i", Phase: "3", Help: "Read URLs from PATH (- for stdin): one for each line, with options for each URL in aria2's format."},
-	{Name: "input-format", Short: 0, Group: "request", Scope: "all", Type: "lines|html|sitemap|metalink", Default: "lines", Curl: "", Wget: "-F / --force-html", Aria2: "(detected)", Phase: "3", Help: "The format of --input."},
-	{Name: "http", Short: 0, Group: "http", Scope: "all", Type: "auto|1.0|1.1|2|2-prior|3|3-only", Default: "auto", Curl: "--http1.0 / --http1.1 / --http2 / --http2-prior-knowledge / --http3 / --http3-only", Wget: "--no-http2 (Wget2)", Aria2: "", Phase: "2", Help: "The HTTP version."},
-	{Name: "compressed", Short: 0, Group: "http", Scope: "all", Type: "bool", Default: "true", Curl: "--compressed", Wget: "--compression (Wget2)", Aria2: "--http-accept-gzip", Phase: "0B", Help: "Ask for gzip, br and zstd and decode the body. A segment of a download asks for identity."},
-	{Name: "follow", Short: 0, Group: "http", Scope: "all", Type: "bool", Default: "true", Curl: "-L", Wget: "(default)", Aria2: "(default)", Phase: "0B", Help: "Follow redirects."},
-	{Name: "follow-max", Short: 0, Group: "http", Scope: "all", Type: "int", Default: "20", Curl: "--max-redirs", Wget: "--max-redirect", Aria2: "", Phase: "0B", Help: "Stop with exit 47 after this many redirects."},
-	{Name: "follow-trusted", Short: 0, Group: "http", Scope: "all", Type: "bool", Default: "false", Curl: "--location-trusted", Wget: "", Aria2: "", Phase: "0B", Help: "Send -u and the Authorization and Cookie headers to other hosts after a redirect too."},
-	{Name: "fail", Short: 0, Group: "http", Scope: "all", Type: "bool", Default: "true", Curl: "--fail-with-body", Wget: "(default)", Aria2: "(default)", Phase: "0B", Help: "Exit 22 on status 400 and above. stdout keeps the body. -o writes no file."},
-	{Name: "hsts", Short: 0, Group: "http", Scope: "all", Type: "path", Default: "", Curl: "--hsts", Wget: "--hsts-file", Aria2: "", Phase: "2", Help: "Read and write the HSTS cache at PATH."},
-	{Name: "alt-svc", Short: 0, Group: "http", Scope: "all", Type: "path", Default: "", Curl: "--alt-svc", Wget: "", Aria2: "", Phase: "2", Help: "Read and write the Alt-Svc cache at PATH."},
-	{Name: "cond-time", Short: 0, Group: "http", Scope: "all", Type: "[-]date | file", Default: "", Curl: "-z", Wget: "-N", Aria2: "--conditional-get", Phase: "2", Help: "Send If-Modified-Since (or If-Unmodified-Since with -) for the date or the file time."},
-	{Name: "cond-etag-save", Short: 0, Group: "http", Scope: "all", Type: "path", Default: "", Curl: "--etag-save", Wget: "", Aria2: "", Phase: "2", Help: "Write the ETag of the response to PATH."},
-	{Name: "cond-etag-compare", Short: 0, Group: "http", Scope: "all", Type: "path", Default: "", Curl: "--etag-compare", Wget: "", Aria2: "", Phase: "2", Help: "Send If-None-Match with the ETag in PATH."},
-	{Name: "max-header-size", Short: 0, Group: "http", Scope: "all", Type: "size", Default: "1MiB", Curl: "", Wget: "", Aria2: "", Phase: "0B", Help: "The largest response header block that ghola accepts."},
-	{Name: "timeout", Short: 't', Group: "limits", Scope: "all", Type: "duration", Default: "none", Curl: "-m / --max-time", Wget: "-T", Aria2: "--timeout", Phase: "0B", Help: "Stop with exit 28 when one transfer takes longer."},
-	{Name: "timeout-connect", Short: 0, Group: "limits", Scope: "all", Type: "duration", Default: "none", Curl: "--connect-timeout", Wget: "--connect-timeout", Aria2: "--connect-timeout", Phase: "0B", Help: "Stop with exit 28 when DNS + TCP + proxy + TLS take longer."},
-	{Name: "stall-time", Short: 0, Group: "limits", Scope: "all", Type: "duration", Default: "30s (with --stall-rate)", Curl: "-y / --speed-time", Wget: "--read-timeout (close)", Aria2: "--lowest-speed-limit (with a fixed time)", Phase: "0B", Help: "Stop with exit 28 when the speed is below --stall-rate for this long."},
-	{Name: "stall-rate", Short: 0, Group: "limits", Scope: "all", Type: "rate", Default: "1B/s (with --stall-time)", Curl: "-Y / --speed-limit", Wget: "", Aria2: "--lowest-speed-limit", Phase: "0B", Help: "The speed limit for --stall-time."},
-	{Name: "rate-max", Short: 0, Group: "limits", Scope: "all", Type: "rate", Default: "", Curl: "--limit-rate", Wget: "--limit-rate", Aria2: "--max-download-limit", Phase: "0B", Help: "Limit the speed of each transfer."},
-	{Name: "rate-max-total", Short: 0, Group: "limits", Scope: "all", Type: "rate", Default: "", Curl: "", Wget: "", Aria2: "--max-overall-download-limit", Phase: "3", Help: "Limit the speed of all transfers together."},
-	{Name: "wait", Short: 0, Group: "limits", Scope: "all", Type: "duration", Default: "0", Curl: "", Wget: "-w", Aria2: "", Phase: "4", Help: "Wait between requests."},
-	{Name: "wait-jitter", Short: 0, Group: "limits", Scope: "all", Type: "duration", Default: "0", Curl: "", Wget: "--random-wait", Aria2: "", Phase: "0B", Help: "Add a random wait from 0 to this duration before each request."},
-	{Name: "retry-max", Short: 'r', Group: "retry", Scope: "all", Type: "int", Default: "3 (idempotent methods); 0 (others)", Curl: "--retry", Wget: "-t", Aria2: "-m", Phase: "0B", Help: "Retries after a transient failure. A POST retries only when this is set."},
-	{Name: "retry-delay", Short: 0, Group: "retry", Scope: "all", Type: "duration", Default: "1s (doubles each time)", Curl: "--retry-delay", Wget: "--waitretry", Aria2: "--retry-wait", Phase: "0B", Help: "The first wait before a retry. Retry-After from the server wins."},
-	{Name: "retry-max-time", Short: 0, Group: "retry", Scope: "all", Type: "duration", Default: "", Curl: "--retry-max-time", Wget: "", Aria2: "", Phase: "2", Help: "Stop retries after this total time."},
-	{Name: "retry-status", Short: 0, Group: "retry", Scope: "all", Type: "list", Default: "408,429,500,502,503,504,522,524", Curl: "(fixed list)", Wget: "--retry-on-http-error", Aria2: "", Phase: "0B", Help: "The status codes that are retried. A refused or reset connection and a timeout are always retried."},
-	{Name: "ip", Short: 0, Group: "net", Scope: "all", Type: "any|4|6", Default: "any", Curl: "-4 / -6", Wget: "-4 / -6", Aria2: "--disable-ipv6", Phase: "2", Help: "The IP version."},
-	{Name: "resolve", Short: 0, Group: "net", Scope: "all", Type: "host:port:addr (repeat)", Default: "", Curl: "--resolve", Wget: "", Aria2: "", Phase: "2", Help: "Use this address for host:port."},
-	{Name: "connect-to", Short: 0, Group: "net", Scope: "all", Type: "host:port:host2:port2 (repeat)", Default: "", Curl: "--connect-to", Wget: "", Aria2: "", Phase: "2", Help: "Connect to host2:port2 for requests to host:port."},
-	{Name: "interface", Short: 0, Group: "net", Scope: "all", Type: "name | address", Default: "", Curl: "--interface", Wget: "--bind-address", Aria2: "--interface", Phase: "2", Help: "Send from this interface or address."},
-	{Name: "local-port", Short: 0, Group: "net", Scope: "all", Type: "port range", Default: "", Curl: "--local-port", Wget: "", Aria2: "", Phase: "2", Help: "Send from a local port in this range."},
-	{Name: "unix-socket", Short: 0, Group: "net", Scope: "all", Type: "path", Default: "", Curl: "--unix-socket", Wget: "", Aria2: "", Phase: "2", Help: "Connect through this Unix socket."},
-	{Name: "doh", Short: 0, Group: "net", Scope: "all", Type: "URL", Default: "", Curl: "--doh-url", Wget: "--dns-over-https (Wget2)", Aria2: "", Phase: "2", Help: "Resolve names with DNS over HTTPS at this URL."},
-	{Name: "tls-verify", Short: 'k', Group: "tls", Scope: "all", Type: "bool", Default: "true", Curl: "-k (inverse)", Wget: "--no-check-certificate (inverse)", Aria2: "--check-certificate", Phase: "0B", Help: "Check the server certificate. -k is --no-tls-verify."},
-	{Name: "tls-ca", Short: 0, Group: "tls", Scope: "all", Type: "path", Default: "system store", Curl: "--cacert", Wget: "--ca-certificate", Aria2: "--ca-certificate", Phase: "0B", Help: "Trust the CA certificates in PATH."},
-	{Name: "tls-ca-dir", Short: 0, Group: "tls", Scope: "all", Type: "path", Default: "", Curl: "--capath", Wget: "--ca-directory", Aria2: "", Phase: "2", Help: "Trust the CA certificates in this folder."},
-	{Name: "tls-cert", Short: 0, Group: "tls", Scope: "all", Type: "path", Default: "", Curl: "-E / --cert", Wget: "--certificate", Aria2: "--certificate", Phase: "0B", Help: "Send this client certificate."},
-	{Name: "tls-key", Short: 0, Group: "tls", Scope: "all", Type: "path", Default: "", Curl: "--key", Wget: "--private-key", Aria2: "--private-key", Phase: "0B", Help: "The private key of --tls-cert."},
-	{Name: "tls-cert-type", Short: 0, Group: "tls", Scope: "all", Type: "PEM|DER|P12", Default: "PEM", Curl: "--cert-type", Wget: "--certificate-type", Aria2: "", Phase: "2", Help: "The format of --tls-cert."},
-	{Name: "tls-min", Short: 0, Group: "tls", Scope: "all", Type: "1.2|1.3", Default: "1.2", Curl: "--tlsv1.2 / --tlsv1.3", Wget: "--secure-protocol", Aria2: "--min-tls-version", Phase: "2", Help: "The lowest TLS version."},
-	{Name: "tls-max", Short: 0, Group: "tls", Scope: "all", Type: "1.2|1.3", Default: "1.3", Curl: "--tls-max", Wget: "", Aria2: "", Phase: "2", Help: "The highest TLS version."},
-	{Name: "tls-ciphers", Short: 0, Group: "tls", Scope: "all", Type: "list", Default: "", Curl: "--ciphers / --tls13-ciphers", Wget: "--ciphers", Aria2: "", Phase: "2", Help: "The cipher suites. With --impersonate this changes the fingerprint and ghola writes a warning."},
-	{Name: "tls-pin", Short: 0, Group: "tls", Scope: "all", Type: "sha256//hash (list)", Default: "", Curl: "--pinnedpubkey", Wget: "--pinnedpubkey (Wget2)", Aria2: "", Phase: "2", Help: "Refuse a server key that does not match."},
-	{Name: "tls-crl", Short: 0, Group: "tls", Scope: "all", Type: "path", Default: "", Curl: "--crlfile", Wget: "--crl-file", Aria2: "", Phase: "2", Help: "Refuse certificates in this CRL."},
-	{Name: "tls-ocsp", Short: 0, Group: "tls", Scope: "all", Type: "bool", Default: "false", Curl: "--cert-status", Wget: "--ocsp (Wget2)", Aria2: "", Phase: "2", Help: "Require a good OCSP staple."},
-	{Name: "tls-ech", Short: 0, Group: "tls", Scope: "all", Type: "bool", Default: "false", Curl: "--ech", Wget: "", Aria2: "", Phase: "2", Help: "Use Encrypted Client Hello when the server offers it."},
-	{Name: "user", Short: 'u', Group: "auth", Scope: "all", Type: "user:password", Default: "", Curl: "-u", Wget: "--user / --password", Aria2: "--http-user / --http-passwd", Phase: "0B", Help: "Send these credentials. They go only to the host of the first URL unless --follow-trusted."},
-	{Name: "auth", Short: 0, Group: "auth", Scope: "all", Type: "basic|digest|ntlm|negotiate|any", Default: "basic", Curl: "--basic / --digest / --ntlm / --negotiate / --anyauth", Wget: "", Aria2: "", Phase: "2", Help: "The authentication method for --user."},
-	{Name: "auth-bearer", Short: 0, Group: "auth", Scope: "all", Type: "token", Default: "", Curl: "--oauth2-bearer", Wget: "", Aria2: "", Phase: "2", Help: "Send Authorization: Bearer with the token."},
-	{Name: "auth-aws-sigv4", Short: 0, Group: "auth", Scope: "all", Type: "provider:region:service", Default: "", Curl: "--aws-sigv4", Wget: "", Aria2: "", Phase: "2", Help: "Sign the request with AWS Signature Version 4."},
-	{Name: "auth-netrc", Short: 0, Group: "auth", Scope: "all", Type: "bool", Default: "false", Curl: "-n / --netrc", Wget: "(default on)", Aria2: "(default on)", Phase: "2", Help: "Read credentials from ~/.netrc."},
-	{Name: "auth-netrc-file", Short: 0, Group: "auth", Scope: "all", Type: "path", Default: "", Curl: "--netrc-file", Wget: "", Aria2: "--netrc-path", Phase: "2", Help: "Read credentials from this netrc file."},
-	{Name: "proxy", Short: 0, Group: "proxy", Scope: "all", Type: "URL", Default: "from the environment", Curl: "-x", Wget: "-e use_proxy=on", Aria2: "--all-proxy", Phase: "0B", Help: "Send through this proxy: http https socks4 socks4a socks5 socks5h (SOCKS in phase 2)."},
-	{Name: "proxy-user", Short: 0, Group: "proxy", Scope: "all", Type: "user:password", Default: "", Curl: "-U", Wget: "--proxy-user / --proxy-password", Aria2: "--all-proxy-user", Phase: "0B", Help: "The proxy credentials."},
-	{Name: "proxy-file", Short: 0, Group: "proxy", Scope: "all", Type: "path", Default: "", Curl: "", Wget: "", Aria2: "", Phase: "0B", Help: "Read proxy URLs from PATH (one for each line)."},
-	{Name: "proxy-strategy", Short: 0, Group: "proxy", Scope: "all", Type: "sticky|random|round-robin", Default: "sticky", Curl: "", Wget: "", Aria2: "", Phase: "0B", Help: "How --proxy-file picks a proxy for each request."},
-	{Name: "proxy-check", Short: 0, Group: "proxy", Scope: "all", Type: "bool", Default: "false", Curl: "", Wget: "", Aria2: "", Phase: "0B", Help: "Check each proxy before use and drop dead ones."},
-	{Name: "proxy-bypass", Short: 0, Group: "proxy", Scope: "all", Type: "list", Default: "from no_proxy", Curl: "--noproxy", Wget: "(no_proxy)", Aria2: "--no-proxy", Phase: "2", Help: "Hosts that go direct."},
-	{Name: "proxy-tls-*", Short: 0, Group: "proxy", Scope: "all", Type: "(as --tls-*)", Default: "", Curl: "--proxy-cacert / --proxy-insecure / ...", Wget: "", Aria2: "", Phase: "2", Help: "Each --tls-* option has a --proxy-tls-* form for an HTTPS proxy."},
-	{Name: "cookie", Short: 0, Group: "cookie", Scope: "all", Type: "name=value | file (repeat)", Default: "", Curl: "-b", Wget: "--load-cookies", Aria2: "--load-cookies", Phase: "0B", Help: "Send this cookie, or the cookies in the file."},
-	{Name: "cookie-jar", Short: 0, Group: "cookie", Scope: "all", Type: "path", Default: "", Curl: "-c (write) with -b (read)", Wget: "--load-cookies / --save-cookies", Aria2: "--load-cookies / --save-cookies", Phase: "0B", Help: "Read cookies from PATH and write them back. ghola reads the Netscape format and the v0 JSON jar. A new jar is Netscape."},
-	{Name: "impersonate", Short: 0, Group: "impersonate", Scope: "all", Type: "profile", Default: "", Curl: "", Wget: "", Aria2: "", Phase: "0B", Help: "Copy a browser's TLS and HTTP/2 fingerprint: chrome firefox safari edge. ghola profiles lists them."},
-	{Name: "impersonate-headers", Short: 0, Group: "impersonate", Scope: "all", Type: "bool", Default: "false", Curl: "", Wget: "", Aria2: "", Phase: "0B", Help: "Send the browser's default headers in its order."},
-	{Name: "impersonate-accept-language", Short: 0, Group: "impersonate", Scope: "all", Type: "string", Default: "profile default", Curl: "", Wget: "", Aria2: "", Phase: "0B", Help: "Override the profile's Accept-Language."},
-	{Name: "connections", Short: 'n', Group: "download", Scope: "download", Type: "int", Default: "1", Curl: "", Wget: "", Aria2: "-x / -s", Phase: "3", Help: "Split one file into N ranges on N connections. Needs Range support."},
-	{Name: "jobs", Short: 'j', Group: "download", Scope: "all", Type: "int", Default: "1", Curl: "-Z / --parallel-max", Wget: "", Aria2: "-j", Phase: "3", Help: "Run up to N transfers at the same time."},
-	{Name: "source", Short: 0, Group: "download", Scope: "download", Type: "URL (repeat)", Default: "", Curl: "", Wget: "", Aria2: "(several URIs on one line)", Phase: "3", Help: "Another mirror of the same file. Segments go to the faster mirrors."},
-	{Name: "file-allocation", Short: 0, Group: "download", Scope: "download", Type: "none|prealloc|falloc|trunc", Default: "none", Curl: "", Wget: "", Aria2: "--file-allocation", Phase: "3", Help: "How the file space is reserved before the download."},
-	{Name: "checksum", Short: 0, Group: "download", Scope: "all", Type: "algo=hex", Default: "", Curl: "", Wget: "", Aria2: "--checksum", Phase: "3", Help: "Check the file against this digest before the job is done. Content-Digest and Metalink digests are checked by default."},
-	{Name: "session", Short: 0, Group: "download", Scope: "download", Type: "bool", Default: "true", Curl: "", Wget: "", Aria2: "--save-session", Phase: "3", Help: "Keep a state file next to each partial download, so ghola jobs resume can restart it."},
-	{Name: "on-complete", Short: 0, Group: "download", Scope: "download", Type: "command", Default: "", Curl: "", Wget: "", Aria2: "--on-download-complete", Phase: "3", Help: "Run this command when a job finishes."},
-	{Name: "on-error", Short: 0, Group: "download", Scope: "download", Type: "command", Default: "", Curl: "", Wget: "", Aria2: "--on-download-error", Phase: "3", Help: "Run this command when a job fails."},
-	{Name: "seed-ratio", Short: 0, Group: "download", Scope: "download", Type: "float", Default: "1.0", Curl: "", Wget: "", Aria2: "--seed-ratio", Phase: "3", Help: "BitTorrent: stop seeding at this upload ratio (D5)."},
-	{Name: "background", Short: 0, Group: "download", Scope: "all", Type: "bool", Default: "false", Curl: "", Wget: "-b", Aria2: "(daemon)", Phase: "4", Help: "Run in the background and write messages to --log."},
-	{Name: "log", Short: 0, Group: "download", Scope: "all", Type: "path", Default: "ghola.log with --background", Curl: "--stderr", Wget: "-o / -a", Aria2: "-l", Phase: "4", Help: "Write messages to PATH."},
-	{Name: "depth", Short: 0, Group: "mirror", Scope: "mirror", Type: "int", Default: "5", Curl: "", Wget: "-l", Aria2: "", Phase: "4", Help: "Follow links this many levels deep (0 = no limit)."},
-	{Name: "parent", Short: 0, Group: "mirror", Scope: "mirror", Type: "bool", Default: "false", Curl: "", Wget: "-np (inverse)", Aria2: "", Phase: "4", Help: "Follow links above the start folder."},
-	{Name: "hosts", Short: 0, Group: "mirror", Scope: "mirror", Type: "list", Default: "start host", Curl: "", Wget: "-H / -D", Aria2: "", Phase: "4", Help: "The hosts that links may go to."},
-	{Name: "accept", Short: 0, Group: "mirror", Scope: "mirror", Type: "glob list", Default: "", Curl: "", Wget: "-A", Aria2: "", Phase: "4", Help: "Keep only file names that match."},
-	{Name: "reject", Short: 0, Group: "mirror", Scope: "mirror", Type: "glob list", Default: "", Curl: "", Wget: "-R", Aria2: "", Phase: "4", Help: "Skip file names that match."},
-	{Name: "accept-regex", Short: 0, Group: "mirror", Scope: "mirror", Type: "regex", Default: "", Curl: "", Wget: "--accept-regex", Aria2: "", Phase: "4", Help: "Keep only URLs that match."},
-	{Name: "reject-regex", Short: 0, Group: "mirror", Scope: "mirror", Type: "regex", Default: "", Curl: "", Wget: "--reject-regex", Aria2: "", Phase: "4", Help: "Skip URLs that match."},
-	{Name: "include-dirs", Short: 0, Group: "mirror", Scope: "mirror", Type: "list", Default: "", Curl: "", Wget: "-I", Aria2: "", Phase: "4", Help: "Follow only these folders."},
-	{Name: "exclude-dirs", Short: 0, Group: "mirror", Scope: "mirror", Type: "list", Default: "", Curl: "", Wget: "-X", Aria2: "", Phase: "4", Help: "Skip these folders."},
-	{Name: "layout", Short: 0, Group: "mirror", Scope: "mirror", Type: "full|no-host|flat", Default: "full", Curl: "", Wget: "-x / -nH / -nd", Aria2: "", Phase: "4", Help: "How the local folders copy the URL."},
-	{Name: "cut-dirs", Short: 0, Group: "mirror", Scope: "mirror", Type: "int", Default: "0", Curl: "", Wget: "--cut-dirs", Aria2: "", Phase: "4", Help: "Drop this many leading folders from the local path."},
-	{Name: "timestamps", Short: 0, Group: "mirror", Scope: "mirror", Type: "bool", Default: "true", Curl: "", Wget: "-N", Aria2: "--conditional-get", Phase: "4", Help: "Get a file again only when the server copy is newer."},
-	{Name: "requisites", Short: 0, Group: "mirror", Scope: "mirror", Type: "bool", Default: "false", Curl: "", Wget: "-p", Aria2: "", Phase: "4", Help: "Also get the images and styles that a page needs."},
-	{Name: "convert-links", Short: 0, Group: "mirror", Scope: "mirror", Type: "bool", Default: "false", Curl: "", Wget: "-k", Aria2: "", Phase: "4", Help: "Change links to work offline."},
-	{Name: "backup-converted", Short: 0, Group: "mirror", Scope: "mirror", Type: "bool", Default: "false", Curl: "", Wget: "-K", Aria2: "", Phase: "4", Help: "Keep the original of each converted file."},
-	{Name: "adjust-extension", Short: 0, Group: "mirror", Scope: "mirror", Type: "bool", Default: "false", Curl: "", Wget: "-E", Aria2: "", Phase: "4", Help: "Add .html or .css when the type needs it."},
-	{Name: "offline", Short: 0, Group: "mirror", Scope: "mirror", Type: "bool", Default: "false", Curl: "", Wget: "-p -k -E", Aria2: "", Phase: "4", Help: "Make the copy work offline: --requisites, --convert-links and --adjust-extension together."},
-	{Name: "robots", Short: 0, Group: "mirror", Scope: "mirror", Type: "bool", Default: "true", Curl: "", Wget: "-e robots=off (inverse)", Aria2: "", Phase: "4", Help: "Obey robots.txt and nofollow."},
-	{Name: "quota", Short: 0, Group: "mirror", Scope: "mirror", Type: "size", Default: "", Curl: "", Wget: "-Q", Aria2: "", Phase: "4", Help: "Stop after this many bytes in total."},
-	{Name: "spider", Short: 0, Group: "mirror", Scope: "all", Type: "bool", Default: "false", Curl: "", Wget: "--spider", Aria2: "--dry-run", Phase: "4", Help: "Check the links and save nothing."},
-	{Name: "file-names", Short: 0, Group: "mirror", Scope: "all", Type: "unix|windows|ascii", Default: "system", Curl: "", Wget: "--restrict-file-names", Aria2: "", Phase: "4", Help: "Which characters a local file name may hold."},
-	{Name: "warc", Short: 0, Group: "mirror", Scope: "all", Type: "path", Default: "", Curl: "", Wget: "--warc-file", Aria2: "", Phase: "4", Help: "Also write the exchange as a WARC file."},
-	{Name: "config", Short: 0, Group: "general", Scope: "all", Type: "path", Default: "~/.config/ghola/config", Curl: "-K", Wget: "--config / -e", Aria2: "--conf-path", Phase: "2", Help: "Read options from PATH."},
-	{Name: "no-config", Short: 0, Group: "general", Scope: "all", Type: "bool", Default: "false", Curl: "-q (first)", Wget: "--no-config", Aria2: "--no-conf", Phase: "2", Help: "Read no config file."},
-	{Name: "help", Short: 'h', Group: "general", Scope: "all", Type: "topic", Default: "", Curl: "-h / --help category", Wget: "-h", Aria2: "-h", Phase: "0B", Help: "Show help, or the help for a topic."},
-	{Name: "version", Short: 'V', Group: "general", Scope: "all", Type: "bool", Default: "false", Curl: "-V", Wget: "-V", Aria2: "-v", Phase: "0B", Help: "Show the version."},
-}
+// optionsCSV is docs/cli/v1-options.csv.
+const optionsCSV = `name,short,group,scope,type,default,curl,wget,aria2,phase,description
+output,-o,output,all,path,stdout (fetch); remote name (download and mirror),-o / -O / --output-dir,-O / -P,-o / -d,0B,"Write the body to PATH. A PATH that ends in / or names a folder gets the remote file name inside it. With several URLs: one -o DIR/ serves all, or one -o for each URL in order."
+output-name,,output,all,url|header,url,-J,--content-disposition,(default header),0B,Take the remote file name from the URL or from Content-Disposition. A name with a folder part is refused.
+output-overwrite,,output,all,bool,true (fetch); false (download and mirror),--no-clobber (inverse),-nc (inverse),--allow-overwrite,2,Replace an existing file. Without it an existing file stops the job with exit 23.
+output-create-dirs,,output,all,bool,false,--create-dirs,-x,(default),2,Create the missing folders of PATH.
+output-remote-time,,output,all,bool,false,-R,(default with -N),--remote-time,0B,Set the file time to the Last-Modified time.
+output-select,,output,fetch,gjson path,,,,,0B,Write only the value at the path of a JSON body (gjson syntax).
+output-template,-w,output,all,template,,-w,,,2,After each transfer write the template. It uses curl's %{name} variables and %{json}.
+output-events,,output,all,none|json,none,,,(RPC),2,Write one JSON line to stderr for each transfer event. A JSON schema in the repo defines the lines.
+show-headers,,output,fetch,bool,false,-i / --show-headers,-S (stderr),,0B,Write the response header block to stdout before the body.
+save-headers,,output,all,path,,-D,--save-headers,,2,Write the response header block to PATH.
+quiet,-q,output,all,bool,false,-sS,-q,-q,0B,Write no progress meter and no notes. Errors still go to stderr.
+verbose,-v,output,all,bool,false,-v,-v,--console-log-level=debug,0B,Write the request and response headers and the connection steps to stderr.
+progress,,output,all,bool,auto,-# / --no-progress-meter,--progress / -nv,--summary-interval,0B,Show the progress meter. Default: only when stderr is a terminal and the body does not go to it.
+max-size,,output,all,size,,--max-filesize,--quota (total),,2,Stop with exit 63 when the body is larger than SIZE.
+har,,output,fetch,path,,,,,0B,Write the request and the response to PATH as HAR 1.2.
+trace,,output,all,path,,--trace / --trace-ascii,,,2,Write all bytes sent and received to PATH (- for stderr).
+trace-format,,output,all,hex|ascii,hex,--trace-ascii,,,2,The format of --trace.
+trace-time,,output,all,bool,false,--trace-time,,,2,Add a time to each --trace and --verbose line.
+method,-m,request,fetch,string,GET; POST with a body,-X,--method,,0B,Send the request with this method.
+head,-I,request,fetch,bool,false,-I,--spider -S,,0B,Send HEAD and write the response headers to stdout.
+header,-H,request,all,Name: value (repeat),,-H,--header,--header,0B,"Add a request header. ""Name:"" removes a header that ghola or the profile sets."
+user-agent,,request,all,string,ghola/VERSION,-A,-U,-U,0B,Set the User-Agent header.
+referer,,request,all,none|auto|URL,none,-e,--referer,--referer,0B,Set the Referer header. auto sends the previous URL after a redirect.
+data,-d,request,fetch,text | @file | @-,,--data-binary,--post-data / --post-file,,0B,Send the body without changes. @file reads a file and @- reads stdin. The Content-Type is application/x-www-form-urlencoded unless -H sets one.
+data-literal,,request,fetch,text,,--data-raw,--post-data,,0B,"Send the text as the body, also when it starts with @."
+field,,request,fetch,name=value (repeat),,--data-urlencode,,,0B,Add a URL-encoded form field to the body.
+form,,request,fetch,name=value | name=@file (repeat),,-F,,,0B,Send a multipart/form-data body.
+json,,request,fetch,text | @file | @-,,--json,,,2,Send a JSON body. Sets Content-Type and Accept to application/json.
+query,,request,all,name=value (repeat),,--url-query / -G,,,2,Add a URL-encoded query parameter to each URL.
+upload,,request,fetch,path,,-T,--body-file --method=PUT,,0B,Send the file as the body of a PUT.
+range,,request,all,byte range,,-r,,,0B,"Request only the byte range, for example 0-1023."
+continue,-c,request,all,bool,false,-C -,-c,-c,0B,"Resume a partial file. The request sends If-Range, so a file that changed on the server starts again from byte 0."
+continue-at,,request,fetch,bytes,,-C N,--start-pos,,0B,Resume at this byte offset.
+chain,,request,fetch,eth|base|solana,,,,,0B,JSON-RPC shortcut: POST with the RPC headers of the chain.
+url-glob,,request,all,bool,true,-g (inverse),,-Z,2,"Expand {a,b} and [1-9] in URLs."
+url-path-as-is,,request,all,bool,false,--path-as-is,,,2,Send the path without removing ./ and ../.
+request-target,,request,fetch,string,,--request-target,,,2,Send this request target in place of the URL path.
+variable,,request,fetch,name=value (repeat),,--variable,,,2,Set a variable for {{name}} expansion in other option values.
+next,,request,fetch,(separator),,-: / --next,,,2,Start the options for the next URL.
+input,-i,request,all,path,,-K (partly),-i,-i,3,"Read URLs from PATH (- for stdin): one for each line, with options for each URL in aria2's format."
+input-format,,request,all,lines|html|sitemap|metalink,lines,,-F / --force-html,(detected),3,The format of --input.
+http,,http,all,auto|1.0|1.1|2|2-prior|3|3-only,auto,--http1.0 / --http1.1 / --http2 / --http2-prior-knowledge / --http3 / --http3-only,--no-http2 (Wget2),,2,The HTTP version.
+compressed,,http,all,bool,true,--compressed,--compression (Wget2),--http-accept-gzip,0B,"Ask for gzip, br and zstd and decode the body. A segment of a download asks for identity."
+follow,,http,all,bool,true,-L,(default),(default),0B,Follow redirects.
+follow-max,,http,all,int,20,--max-redirs,--max-redirect,,0B,Stop with exit 47 after this many redirects.
+follow-trusted,,http,all,bool,false,--location-trusted,,,0B,Send -u and the Authorization and Cookie headers to other hosts after a redirect too.
+fail,,http,all,bool,true,--fail-with-body,(default),(default),0B,Exit 22 on status 400 and above. stdout keeps the body. -o writes no file.
+hsts,,http,all,path,,--hsts,--hsts-file,,2,Read and write the HSTS cache at PATH.
+alt-svc,,http,all,path,,--alt-svc,,,2,Read and write the Alt-Svc cache at PATH.
+cond-time,,http,all,[-]date | file,,-z,-N,--conditional-get,2,Send If-Modified-Since (or If-Unmodified-Since with -) for the date or the file time.
+cond-etag-save,,http,all,path,,--etag-save,,,2,Write the ETag of the response to PATH.
+cond-etag-compare,,http,all,path,,--etag-compare,,,2,Send If-None-Match with the ETag in PATH.
+max-header-size,,http,all,size,1MiB,,,,0B,The largest response header block that ghola accepts.
+timeout,-t,limits,all,duration,none,-m / --max-time,-T,--timeout,0B,Stop with exit 28 when one transfer takes longer.
+timeout-connect,,limits,all,duration,none,--connect-timeout,--connect-timeout,--connect-timeout,0B,Stop with exit 28 when DNS + TCP + proxy + TLS take longer.
+stall-time,,limits,all,duration,30s (with --stall-rate),-y / --speed-time,--read-timeout (close),--lowest-speed-limit (with a fixed time),0B,Stop with exit 28 when the speed is below --stall-rate for this long.
+stall-rate,,limits,all,rate,1B/s (with --stall-time),-Y / --speed-limit,,--lowest-speed-limit,0B,The speed limit for --stall-time.
+rate-max,,limits,all,rate,,--limit-rate,--limit-rate,--max-download-limit,0B,Limit the speed of each transfer.
+rate-max-total,,limits,all,rate,,,,--max-overall-download-limit,3,Limit the speed of all transfers together.
+wait,,limits,all,duration,0,,-w,,4,Wait between requests.
+wait-jitter,,limits,all,duration,0,,--random-wait,,0B,Add a random wait from 0 to this duration before each request.
+retry-max,-r,retry,all,int,3 (idempotent methods); 0 (others),--retry,-t,-m,0B,Retries after a transient failure. A POST retries only when this is set.
+retry-delay,,retry,all,duration,1s (doubles each time),--retry-delay,--waitretry,--retry-wait,0B,The first wait before a retry. Retry-After from the server wins.
+retry-max-time,,retry,all,duration,,--retry-max-time,,,2,Stop retries after this total time.
+retry-status,,retry,all,list,"408,429,500,502,503,504,522,524",(fixed list),--retry-on-http-error,,0B,The status codes that are retried. A refused or reset connection and a timeout are always retried.
+ip,,net,all,any|4|6,any,-4 / -6,-4 / -6,--disable-ipv6,2,The IP version.
+resolve,,net,all,host:port:addr (repeat),,--resolve,,,2,Use this address for host:port.
+connect-to,,net,all,host:port:host2:port2 (repeat),,--connect-to,,,2,Connect to host2:port2 for requests to host:port.
+interface,,net,all,name | address,,--interface,--bind-address,--interface,2,Send from this interface or address.
+local-port,,net,all,port range,,--local-port,,,2,Send from a local port in this range.
+unix-socket,,net,all,path,,--unix-socket,,,2,Connect through this Unix socket.
+doh,,net,all,URL,,--doh-url,--dns-over-https (Wget2),,2,Resolve names with DNS over HTTPS at this URL.
+tls-verify,-k,tls,all,bool,true,-k (inverse),--no-check-certificate (inverse),--check-certificate,0B,Check the server certificate. -k is --no-tls-verify.
+tls-ca,,tls,all,path,system store,--cacert,--ca-certificate,--ca-certificate,0B,Trust the CA certificates in PATH.
+tls-ca-dir,,tls,all,path,,--capath,--ca-directory,,2,Trust the CA certificates in this folder.
+tls-cert,,tls,all,path,,-E / --cert,--certificate,--certificate,0B,Send this client certificate.
+tls-key,,tls,all,path,,--key,--private-key,--private-key,0B,The private key of --tls-cert.
+tls-cert-type,,tls,all,PEM|DER|P12,PEM,--cert-type,--certificate-type,,2,The format of --tls-cert.
+tls-min,,tls,all,1.2|1.3,1.2,--tlsv1.2 / --tlsv1.3,--secure-protocol,--min-tls-version,2,The lowest TLS version.
+tls-max,,tls,all,1.2|1.3,1.3,--tls-max,,,2,The highest TLS version.
+tls-ciphers,,tls,all,list,,--ciphers / --tls13-ciphers,--ciphers,,2,The cipher suites. With --impersonate this changes the fingerprint and ghola writes a warning.
+tls-pin,,tls,all,sha256//hash (list),,--pinnedpubkey,--pinnedpubkey (Wget2),,2,Refuse a server key that does not match.
+tls-crl,,tls,all,path,,--crlfile,--crl-file,,2,Refuse certificates in this CRL.
+tls-ocsp,,tls,all,bool,false,--cert-status,--ocsp (Wget2),,2,Require a good OCSP staple.
+tls-ech,,tls,all,bool,false,--ech,,,2,Use Encrypted Client Hello when the server offers it.
+user,-u,auth,all,user:password,,-u,--user / --password,--http-user / --http-passwd,0B,Send these credentials. They go only to the host of the first URL unless --follow-trusted.
+auth,,auth,all,basic|digest|ntlm|negotiate|any,basic,--basic / --digest / --ntlm / --negotiate / --anyauth,,,2,The authentication method for --user.
+auth-bearer,,auth,all,token,,--oauth2-bearer,,,2,Send Authorization: Bearer with the token.
+auth-aws-sigv4,,auth,all,provider:region:service,,--aws-sigv4,,,2,Sign the request with AWS Signature Version 4.
+auth-netrc,,auth,all,bool,false,-n / --netrc,(default on),(default on),2,Read credentials from ~/.netrc.
+auth-netrc-file,,auth,all,path,,--netrc-file,,--netrc-path,2,Read credentials from this netrc file.
+proxy,,proxy,all,URL,from the environment,-x,-e use_proxy=on,--all-proxy,0B,Send through this proxy: http https socks4 socks4a socks5 socks5h (SOCKS in phase 2).
+proxy-user,,proxy,all,user:password,,-U,--proxy-user / --proxy-password,--all-proxy-user,0B,The proxy credentials.
+proxy-file,,proxy,all,path,,,,,0B,Read proxy URLs from PATH (one for each line).
+proxy-strategy,,proxy,all,sticky|random|round-robin,sticky,,,,0B,How --proxy-file picks a proxy for each request.
+proxy-check,,proxy,all,bool,false,,,,0B,Check each proxy before use and drop dead ones.
+proxy-bypass,,proxy,all,list,from no_proxy,--noproxy,(no_proxy),--no-proxy,2,Hosts that go direct.
+proxy-tls-*,,proxy,all,(as --tls-*),,--proxy-cacert / --proxy-insecure / ...,,,2,Each --tls-* option has a --proxy-tls-* form for an HTTPS proxy.
+cookie,,cookie,all,name=value | file (repeat),,-b,--load-cookies,--load-cookies,0B,"Send this cookie, or the cookies in the file."
+cookie-jar,,cookie,all,path,,-c (write) with -b (read),--load-cookies / --save-cookies,--load-cookies / --save-cookies,0B,Read cookies from PATH and write them back. ghola reads the Netscape format and the v0 JSON jar. A new jar is Netscape.
+impersonate,,impersonate,all,profile,,,,,0B,Copy a browser's TLS and HTTP/2 fingerprint: chrome firefox safari edge. ghola profiles lists them.
+impersonate-headers,,impersonate,all,bool,false,,,,0B,Send the browser's default headers in its order.
+impersonate-accept-language,,impersonate,all,string,profile default,,,,0B,Override the profile's Accept-Language.
+connections,-n,download,download,int,1,,,-x / -s,3,Split one file into N ranges on N connections. Needs Range support.
+jobs,-j,download,all,int,1,-Z / --parallel-max,,-j,3,Run up to N transfers at the same time.
+source,,download,download,URL (repeat),,,,(several URIs on one line),3,Another mirror of the same file. Segments go to the faster mirrors.
+file-allocation,,download,download,none|prealloc|falloc|trunc,none,,,--file-allocation,3,How the file space is reserved before the download.
+checksum,,download,all,algo=hex,,,,--checksum,3,Check the file against this digest before the job is done. Content-Digest and Metalink digests are checked by default.
+session,,download,download,bool,true,,,--save-session,3,"Keep a state file next to each partial download, so ghola jobs resume can restart it."
+on-complete,,download,download,command,,,,--on-download-complete,3,Run this command when a job finishes.
+on-error,,download,download,command,,,,--on-download-error,3,Run this command when a job fails.
+seed-ratio,,download,download,float,1.0,,,--seed-ratio,3,BitTorrent: stop seeding at this upload ratio (D5).
+background,,download,all,bool,false,,-b,(daemon),4,Run in the background and write messages to --log.
+log,,download,all,path,ghola.log with --background,--stderr,-o / -a,-l,4,Write messages to PATH.
+depth,,mirror,mirror,int,5,,-l,,4,Follow links this many levels deep (0 = no limit).
+parent,,mirror,mirror,bool,false,,-np (inverse),,4,Follow links above the start folder.
+hosts,,mirror,mirror,list,start host,,-H / -D,,4,The hosts that links may go to.
+accept,,mirror,mirror,glob list,,,-A,,4,Keep only file names that match.
+reject,,mirror,mirror,glob list,,,-R,,4,Skip file names that match.
+accept-regex,,mirror,mirror,regex,,,--accept-regex,,4,Keep only URLs that match.
+reject-regex,,mirror,mirror,regex,,,--reject-regex,,4,Skip URLs that match.
+include-dirs,,mirror,mirror,list,,,-I,,4,Follow only these folders.
+exclude-dirs,,mirror,mirror,list,,,-X,,4,Skip these folders.
+layout,,mirror,mirror,full|no-host|flat,full,,-x / -nH / -nd,,4,How the local folders copy the URL.
+cut-dirs,,mirror,mirror,int,0,,--cut-dirs,,4,Drop this many leading folders from the local path.
+timestamps,,mirror,mirror,bool,true,,-N,--conditional-get,4,Get a file again only when the server copy is newer.
+requisites,,mirror,mirror,bool,false,,-p,,4,Also get the images and styles that a page needs.
+convert-links,,mirror,mirror,bool,false,,-k,,4,Change links to work offline.
+backup-converted,,mirror,mirror,bool,false,,-K,,4,Keep the original of each converted file.
+adjust-extension,,mirror,mirror,bool,false,,-E,,4,Add .html or .css when the type needs it.
+offline,,mirror,mirror,bool,false,,-p -k -E,,4,"Make the copy work offline: --requisites, --convert-links and --adjust-extension together."
+robots,,mirror,mirror,bool,true,,-e robots=off (inverse),,4,Obey robots.txt and nofollow.
+quota,,mirror,mirror,size,,,-Q,,4,Stop after this many bytes in total.
+spider,,mirror,all,bool,false,,--spider,--dry-run,4,Check the links and save nothing.
+file-names,,mirror,all,unix|windows|ascii,system,,--restrict-file-names,,4,Which characters a local file name may hold.
+warc,,mirror,all,path,,,--warc-file,,4,Also write the exchange as a WARC file.
+config,,general,all,path,~/.config/ghola/config,-K,--config / -e,--conf-path,2,Read options from PATH.
+no-config,,general,all,bool,false,-q (first),--no-config,--no-conf,2,Read no config file.
+help,-h,general,all,topic,,-h / --help category,-h,-h,0B,"Show help, or the help for a topic."
+version,-V,general,all,bool,false,-V,-V,-v,0B,Show the version.
+`
 
-var v0Table = []V0Flag{
-	{V0: "--accept-language", V1: "--impersonate-accept-language", Note: ""},
-	{V0: "-b / --backoff MS", V1: "--retry-delay DURATION", Note: "The value has a unit: 1s and not 1000."},
-	{V0: "--buffer-size N", V1: "--max-header-size SIZE", Note: "It only raised the header limit after fasthttp went (plan section 9)."},
-	{V0: "-c / --chain NAME", V1: "--chain NAME", Note: "No short letter: -c is --continue."},
-	{V0: "--cacert", V1: "--tls-ca", Note: ""},
-	{V0: "--cert", V1: "--tls-cert", Note: ""},
-	{V0: "--compressed", V1: "(default)", Note: "Use --no-compressed to turn it off."},
-	{V0: "--connect-timeout SECONDS", V1: "--timeout-connect DURATION", Note: "A bare number is still seconds."},
-	{V0: "-n / --connections N", V1: "-n / --connections N", Note: "Only for ghola download."},
-	{V0: "-C / --continue-at OFFSET", V1: "-c / --continue or --continue-at OFFSET", Note: "-C - becomes -c."},
-	{V0: "--cookie", V1: "--cookie", Note: ""},
-	{V0: "--cookie-jar FILE", V1: "--cookie-jar FILE", Note: "ghola reads the v0 JSON jar and writes it back as JSON. A new jar is Netscape."},
-	{V0: "-d / --data", V1: "-d / --data", Note: "v1 sends a file from @file without changes. v0 did the same."},
-	{V0: "--data-binary", V1: "-d / --data", Note: ""},
-	{V0: "--data-urlencode", V1: "--field", Note: ""},
-	{V0: "-D / --drift MS", V1: "--wait-jitter DURATION", Note: ""},
-	{V0: "-f / --fail", V1: "(default)", Note: "Use --no-fail to turn it off. The rule is now status 400 and above."},
-	{V0: "-F / --form", V1: "--form", Note: "No short letter (1.4% of curl files)."},
-	{V0: "-G / --ghost", V1: "(removed)", Note: "See open question 1."},
-	{V0: "--har", V1: "--har", Note: ""},
-	{V0: "-H / --header", V1: "-H / --header", Note: ""},
-	{V0: "-h / --help", V1: "-h / --help", Note: ""},
-	{V0: "--http3", V1: "--http 3", Note: ""},
-	{V0: "--impersonate", V1: "--impersonate", Note: ""},
-	{V0: "-i / --include", V1: "--show-headers", Note: "curl 8.10 uses the same name."},
-	{V0: "-k / --insecure", V1: "--no-tls-verify", Note: ""},
-	{V0: "--jq PATH", V1: "--output-select PATH", Note: "The syntax is gjson and not jq. See open question 2."},
-	{V0: "--key", V1: "--tls-key", Note: ""},
-	{V0: "--limit-rate", V1: "--rate-max", Note: ""},
-	{V0: "-L / --location", V1: "(default)", Note: "Use --no-follow to turn it off."},
-	{V0: "--location-trusted", V1: "--follow-trusted", Note: ""},
-	{V0: "--max-redirs", V1: "--follow-max", Note: "The default is now 20."},
-	{V0: "--max-time SECONDS", V1: "--timeout DURATION", Note: ""},
-	{V0: "-o / --output", V1: "-o / --output", Note: ""},
-	{V0: "--profile-list", V1: "ghola profiles", Note: "The job is a word."},
-	{V0: "--proxy", V1: "--proxy", Note: ""},
-	{V0: "--proxy-auth", V1: "--proxy-user", Note: ""},
-	{V0: "--proxy-check", V1: "--proxy-check", Note: ""},
-	{V0: "--proxy-file", V1: "--proxy-file", Note: ""},
-	{V0: "--proxy-strategy", V1: "--proxy-strategy", Note: ""},
-	{V0: "--range", V1: "--range", Note: ""},
-	{V0: "--referer", V1: "--referer", Note: ""},
-	{V0: "-J / --remote-header-name", V1: "--output-name header", Note: ""},
-	{V0: "-O / --remote-name", V1: "ghola download URL or -o DIR/", Note: ""},
-	{V0: "-R / --remote-time", V1: "--output-remote-time", Note: ""},
-	{V0: "-X / --request", V1: "-m / --method", Note: ""},
-	{V0: "-r / --retry N", V1: "--retry-max N", Note: "The default is now 3 for idempotent methods."},
-	{V0: "--retry-http", V1: "(default)", Note: "--retry-status sets the codes."},
-	{V0: "--serve", V1: "ghola serve", Note: "There is no alias."},
-	{V0: "-s / --silent", V1: "-q / --quiet", Note: "v1 -q still writes errors (as curl -sS)."},
-	{V0: "-S / --snoop", V1: "ghola inspect URL", Note: "The job is a word."},
-	{V0: "--speed-limit", V1: "--stall-rate RATE", Note: ""},
-	{V0: "--speed-time", V1: "--stall-time DURATION", Note: ""},
-	{V0: "--stealth-headers", V1: "--impersonate-headers", Note: ""},
-	{V0: "--timeout MS", V1: "--timeout DURATION", Note: "The value has a unit: 30s and not 30000. A bare number is seconds."},
-	{V0: "--timing", V1: "--output-template or -v", Note: "-v writes the timing to stderr."},
-	{V0: "-T / --upload-file", V1: "--upload", Note: ""},
-	{V0: "-u / --user", V1: "-u / --user", Note: ""},
-	{V0: "-A / --user-agent", V1: "--user-agent", Note: "No short letter (1.3% of curl files)."},
-	{V0: "-v / --verbose", V1: "-v / --verbose", Note: ""},
-	{V0: "-V / --version", V1: "-V / --version", Note: ""},
-	{V0: "-w / --wget", V1: "ghola download URL", Note: "ghola wget runs wget syntax."},
-}
+// v0CSV is docs/cli/v0-to-v1.csv.
+const v0CSV = `v0,v1,note
+--accept-language,--impersonate-accept-language,
+-b / --backoff MS,--retry-delay DURATION,The value has a unit: 1s and not 1000.
+--buffer-size N,--max-header-size SIZE,It only raised the header limit after fasthttp went (plan section 9).
+-c / --chain NAME,--chain NAME,No short letter: -c is --continue.
+--cacert,--tls-ca,
+--cert,--tls-cert,
+--compressed,(default),Use --no-compressed to turn it off.
+--connect-timeout SECONDS,--timeout-connect DURATION,A bare number is still seconds.
+-n / --connections N,-n / --connections N,Only for ghola download.
+-C / --continue-at OFFSET,-c / --continue or --continue-at OFFSET,-C - becomes -c.
+--cookie,--cookie,
+--cookie-jar FILE,--cookie-jar FILE,ghola reads the v0 JSON jar and writes it back as JSON. A new jar is Netscape.
+-d / --data,-d / --data,v1 sends a file from @file without changes. v0 did the same.
+--data-binary,-d / --data,
+--data-urlencode,--field,
+-D / --drift MS,--wait-jitter DURATION,
+-f / --fail,(default),Use --no-fail to turn it off. The rule is now status 400 and above.
+-F / --form,--form,No short letter (1.4% of curl files).
+-G / --ghost,(removed),See open question 1.
+--har,--har,
+-H / --header,-H / --header,
+-h / --help,-h / --help,
+--http3,--http 3,
+--impersonate,--impersonate,
+-i / --include,--show-headers,curl 8.10 uses the same name.
+-k / --insecure,--no-tls-verify,
+--jq PATH,--output-select PATH,The syntax is gjson and not jq. See open question 2.
+--key,--tls-key,
+--limit-rate,--rate-max,
+-L / --location,(default),Use --no-follow to turn it off.
+--location-trusted,--follow-trusted,
+--max-redirs,--follow-max,The default is now 20.
+--max-time SECONDS,--timeout DURATION,
+-o / --output,-o / --output,
+--profile-list,ghola profiles,The job is a word.
+--proxy,--proxy,
+--proxy-auth,--proxy-user,
+--proxy-check,--proxy-check,
+--proxy-file,--proxy-file,
+--proxy-strategy,--proxy-strategy,
+--range,--range,
+--referer,--referer,
+-J / --remote-header-name,--output-name header,
+-O / --remote-name,ghola download URL or -o DIR/,
+-R / --remote-time,--output-remote-time,
+-X / --request,-m / --method,
+-r / --retry N,--retry-max N,The default is now 3 for idempotent methods.
+--retry-http,(default),--retry-status sets the codes.
+--serve,ghola serve,There is no alias.
+-s / --silent,-q / --quiet,v1 -q still writes errors (as curl -sS).
+-S / --snoop,ghola inspect URL,The job is a word.
+--speed-limit,--stall-rate RATE,
+--speed-time,--stall-time DURATION,
+--stealth-headers,--impersonate-headers,
+--timeout MS,--timeout DURATION,The value has a unit: 30s and not 30000. A bare number is seconds.
+--timing,--output-template or -v,-v writes the timing to stderr.
+-T / --upload-file,--upload,
+-u / --user,-u / --user,
+-A / --user-agent,--user-agent,No short letter (1.3% of curl files).
+-v / --verbose,-v / --verbose,
+-V / --version,-V / --version,
+-w / --wget,ghola download URL,ghola wget runs wget syntax.
+`

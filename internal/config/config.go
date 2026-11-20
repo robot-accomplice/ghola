@@ -210,74 +210,77 @@ func Finish(opts *Options, explicit func(name string) bool) error {
 	if opts.URL == "" {
 		return fmt.Errorf("URL is mandatory")
 	}
-	if err := checkInput(opts); err != nil {
-		return err
+	for _, check := range []func(*Options) error{checkInput, checkOneOutput, checkConflicts, checkValues} {
+		if err := check(opts); err != nil {
+			return err
+		}
 	}
-	if err := checkOneOutput(opts); err != nil {
-		return err
-	}
-	// curl --location-trusted is -L plus the credentials on every hop.
-	if opts.Resilience.LocationTrusted {
-		opts.Resilience.Location = true
-	}
-
 	if opts.Stealth.Impersonate != "" {
 		if _, err := profile.Resolve(opts.Stealth.Impersonate); err != nil {
 			return err
 		}
-		if !explicit(ExplicitProfileHeaders) {
-			opts.Stealth.StealthHeaders = true
-		}
 	}
+	applyRules(opts, explicit)
+	return nil
+}
 
-	if opts.ProxyCfg.Proxy != "" && opts.ProxyCfg.File != "" {
+// checkConflicts refuses options that cannot go together.
+func checkConflicts(opts *Options) error {
+	o := opts.Output
+	switch {
+	case opts.ProxyCfg.Proxy != "" && opts.ProxyCfg.File != "":
 		return fmt.Errorf("--proxy and --proxy-file cannot be used together")
+	case o.ContinueAt != "" && o.Range != "":
+		return fmt.Errorf("--continue (or --continue-at) and --range cannot be used together")
+	case opts.Stealth.Compressed && (o.ContinueAt != "" || o.Range != ""):
+		return fmt.Errorf("--compressed cannot be combined with --continue or --range: the byte ranges would apply to the compressed stream")
+	case len(opts.Form) > 0 && (opts.Data != "" || opts.DataBinary != "" || len(opts.DataURLEncode) > 0):
+		return fmt.Errorf("--form cannot be combined with --data or --field")
 	}
-	if opts.Output.ContinueAt != "" && opts.Output.Range != "" {
-		return fmt.Errorf("--continue-at and --range cannot be used together")
-	}
-	if opts.Stealth.Compressed && opts.Output.ContinueAt != "" {
-		return fmt.Errorf("--compressed cannot be combined with --continue-at (byte ranges apply to the compressed stream)")
-	}
-	if opts.Stealth.Compressed && opts.Output.Range != "" {
-		return fmt.Errorf("--compressed cannot be combined with --range (byte ranges apply to the compressed stream)")
-	}
-	if opts.Output.ContinueAt != "" && opts.Output.ContinueAt != "-" {
-		if _, err := strconv.ParseInt(opts.Output.ContinueAt, 10, 64); err != nil {
-			return fmt.Errorf("invalid --continue-at value %q (want an integer offset or '-')", opts.Output.ContinueAt)
+	return nil
+}
+
+// checkValues checks the values that the parser keeps as text.
+func checkValues(opts *Options) error {
+	if c := opts.Output.ContinueAt; c != "" && c != "-" {
+		if _, err := strconv.ParseInt(c, 10, 64); err != nil {
+			return fmt.Errorf("invalid --continue-at value %q (want a byte offset)", c)
 		}
 	}
 	if opts.Output.LimitRate != "" {
 		if _, err := ParseRate(opts.Output.LimitRate); err != nil {
-			return fmt.Errorf("invalid --limit-rate %q: %w", opts.Output.LimitRate, err)
+			return fmt.Errorf("invalid --rate-max %q: %w", opts.Output.LimitRate, err)
 		}
 	}
-	if opts.Stealth.Referer != "none" && opts.Stealth.Referer != "auto" {
-		if _, err := url.ParseRequestURI(opts.Stealth.Referer); err != nil {
-			return fmt.Errorf("invalid --referer value %q", opts.Stealth.Referer)
+	if r := opts.Stealth.Referer; r != "none" && r != "auto" {
+		if _, err := url.ParseRequestURI(r); err != nil {
+			return fmt.Errorf("invalid --referer value %q", r)
 		}
 	}
+	return nil
+}
 
-	if len(opts.Form) > 0 && (opts.Data != "" || opts.DataBinary != "") {
-		return fmt.Errorf("--form cannot be combined with -d/--data-binary")
+// applyRules sets what follows from the options: redirects for
+// --follow-trusted, the profile headers of --impersonate, the default
+// Content-Type, POST for a body, -o -, and the remote file name.
+func applyRules(opts *Options, explicit func(name string) bool) {
+	if opts.Resilience.LocationTrusted {
+		opts.Resilience.Location = true // curl --location-trusted is -L plus the credentials on every hop
 	}
-	if len(opts.Form) > 0 && len(opts.DataURLEncode) > 0 {
-		return fmt.Errorf("--form cannot be combined with --data-urlencode")
+	if opts.Stealth.Impersonate != "" && !explicit(ExplicitProfileHeaders) {
+		opts.Stealth.StealthHeaders = true
 	}
-
 	addDefaultContentType(opts)
-	if (opts.Data != "" || opts.DataBinary != "" || len(opts.Form) > 0 || len(opts.DataURLEncode) > 0) && !explicit(ExplicitMethod) {
+	hasBody := opts.Data != "" || opts.DataBinary != "" || len(opts.Form) > 0 || len(opts.DataURLEncode) > 0
+	if hasBody && !explicit(ExplicitMethod) {
 		opts.Method = fasthttp.MethodPost
 	}
-
 	if opts.Output.File == "-" {
 		opts.Output.File, opts.Output.Stdout = "", true
 	}
 	if opts.Output.RemoteName && opts.Output.File == "" {
 		inferWgetFilename(opts)
 	}
-
-	return nil
 }
 
 func applyChainShortcuts(opts *Options) {

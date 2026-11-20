@@ -26,6 +26,7 @@ type otherFlag struct {
 var flagToken = regexp.MustCompile(`(^|[\s/(])(--?[A-Za-z0-9#][A-Za-z0-9.-]*)`)
 
 func init() {
+	table, v0Table = mustReadTables()
 	for i := range table {
 		o := &table[i]
 		byName[o.Name] = o
@@ -39,13 +40,18 @@ func init() {
 		}
 	}
 	for _, tool := range []string{"curl", "wget", "aria2c"} {
-		for i := range table {
-			o := &table[i]
-			col := map[string]string{"curl": o.Curl, "wget": o.Wget, "aria2c": o.Aria2}[tool]
-			for _, f := range flags(col) {
-				if !hasTool(otherIndex[f], tool) {
-					otherIndex[f] = append(otherIndex[f], otherFlag{tool: tool, opt: o})
-				}
+		indexTool(tool)
+	}
+}
+
+// indexTool adds the flags of one tool's column to otherIndex.
+func indexTool(tool string) {
+	for i := range table {
+		o := &table[i]
+		col := map[string]string{"curl": o.Curl, "wget": o.Wget, "aria2c": o.Aria2}[tool]
+		for _, f := range flags(col) {
+			if !hasTool(otherIndex[f], tool) {
+				otherIndex[f] = append(otherIndex[f], otherFlag{tool: tool, opt: o})
 			}
 		}
 	}
