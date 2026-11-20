@@ -82,6 +82,9 @@ type OutputOptions struct {
 	RemoteHeader bool   // -J: use Content-Disposition filename
 	RemoteTime   bool   // -R: set mtime from Last-Modified
 	LimitRate    string // --limit-rate: aggregate bytes/sec cap (e.g. "500k", "2M")
+	// Stdout is -o -: write the body to stdout, also binary data to a
+	// terminal, as in curl. File is then "".
+	Stdout bool
 }
 
 // StealthOptions controls browser impersonation and identity features.
@@ -354,6 +357,9 @@ func ParseFlags(args []string) (opts *Options, done bool, err error) {
 		opts.Method = fasthttp.MethodPost
 	}
 
+	if opts.Output.File == "-" {
+		opts.Output.File, opts.Output.Stdout = "", true
+	}
 	if opts.Output.WgetMode && opts.Output.File == "" {
 		inferWgetFilename(opts)
 	}

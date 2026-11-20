@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
@@ -173,6 +174,10 @@ func New(opts *config.Options, selectedProxy string) (Transport, error) {
 			return nil, fmt.Errorf("parse proxy url: %w", err)
 		}
 		httpTransport.Proxy = http.ProxyURL(proxyURL)
+		if isSOCKS(proxyURL) {
+			httpTransport.Proxy = nil
+			httpTransport.DialContext = socksDialer(proxyURL, (&net.Dialer{}).DialContext)
+		}
 	}
 	httpClient := &http.Client{
 		Transport: httpTransport,
@@ -231,7 +236,17 @@ func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transpor
 		options = append(options, tlsclient.WithTimeoutMilliseconds(opts.Resilience.Timeout))
 	}
 	if selectedProxy != "" {
-		options = append(options, tlsclient.WithProxyUrl(selectedProxy))
+		proxyURL, err := url.Parse(selectedProxy)
+		if err != nil {
+			return nil, fmt.Errorf("parse proxy url: %w", err)
+		}
+		if isSOCKS(proxyURL) {
+			// tls-client has no local-DNS socks5 and runs its own SOCKS4; the
+			// shared dialer gives both stacks the same SOCKS behaviour.
+			options = append(options, tlsclient.WithDialContext(socksDialer(proxyURL, (&net.Dialer{}).DialContext)))
+		} else {
+			options = append(options, tlsclient.WithProxyUrl(selectedProxy))
+		}
 	}
 	if !opts.Stealth.HTTP3 {
 		options = append(options, tlsclient.WithDisableHttp3())

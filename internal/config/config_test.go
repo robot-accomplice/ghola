@@ -519,3 +519,18 @@ func TestParseFlags_LocationTrustedFollowsRedirects(t *testing.T) {
 		t.Errorf("Location = %v, LocationTrusted = %v, want both true", opts.Resilience.Location, opts.Resilience.LocationTrusted)
 	}
 }
+
+// -o - writes to stdout, as in curl. Before, it created a file named "-".
+// A GET with -o - must not take the download-to-file path.
+func TestParseFlags_OutputDashIsStdout(t *testing.T) {
+	opts, _, err := ParseFlags([]string{"-o", "-", "http://example.com/file"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opts.Output.File != "" || !opts.Output.Stdout {
+		t.Errorf("File = %q, Stdout = %v; want \"\" and true", opts.Output.File, opts.Output.Stdout)
+	}
+	if ShouldStream(opts) {
+		t.Error("-o - takes the download-to-file path")
+	}
+}
