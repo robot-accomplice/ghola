@@ -559,6 +559,9 @@ func (g singleGet) check(opts *config.Options, f *lazyFile) func(gholatransport.
 		if g.rangeHeader != "" && g.offset == 0 {
 			return nil // a --range part is not a whole file: there is nothing to resume
 		}
+		if opts.Output.NoSession {
+			return nil // --no-session keeps no state file
+		}
 		return saveState(f.name, opts.URL, meta)
 	}
 }

@@ -192,7 +192,7 @@ func hashTree(root string) (map[string]fileInfo, error) {
 func cleanEnv(dir string) []string {
 	drop := map[string]bool{
 		"HTTP_PROXY": true, "HTTPS_PROXY": true, "ALL_PROXY": true, "NO_PROXY": true,
-		"CURL_HOME": true, "WGETRC": true, "XDG_CONFIG_HOME": true, "APPDATA": true,
+		"CURL_HOME": true, "WGETRC": true, "XDG_CONFIG_HOME": true, "APPDATA": true, "XDG_STATE_HOME": true, "LOCALAPPDATA": true,
 	}
 	var env []string
 	for _, kv := range os.Environ() {
@@ -201,6 +201,7 @@ func cleanEnv(dir string) []string {
 			env = append(env, kv)
 		}
 	}
-	// ghola reads its config under XDG_CONFIG_HOME, or APPDATA on Windows.
-	return append(env, "CURL_HOME="+dir, "XDG_CONFIG_HOME="+dir, "APPDATA="+dir, "WGETRC="+os.DevNull)
+	// ghola reads its config under XDG_CONFIG_HOME (APPDATA on Windows) and
+	// keeps its job list under XDG_STATE_HOME (LOCALAPPDATA).
+	return append(env, "CURL_HOME="+dir, "XDG_CONFIG_HOME="+dir, "APPDATA="+dir, "XDG_STATE_HOME="+dir, "LOCALAPPDATA="+dir, "WGETRC="+os.DevNull)
 }

@@ -120,6 +120,11 @@ type OutputOptions struct {
 	RateTotal RateShare
 	// RateTotalValue is the --rate-max-total value.
 	RateTotalValue string
+	// NoSession is --no-session: no state file, and no entry in the job
+	// list. SessionArgs are the native options of the run, as
+	// --name=value, which "ghola jobs resume" runs again.
+	NoSession   bool
+	SessionArgs []string
 	// OnComplete and OnError run after a download (--on-complete,
 	// --on-error).
 	OnComplete, OnError string

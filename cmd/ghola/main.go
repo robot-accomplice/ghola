@@ -190,6 +190,8 @@ func runJob(c *cli.Command, w *os.File) (code int, done bool) {
 	switch c.Job {
 	case cli.JobFetch, cli.JobDownload, cli.JobInspect:
 		return 0, false
+	case cli.JobJobs:
+		return runJobsCommand(c.Args, w), true
 	case cli.JobServe:
 		if err := bridge.ListenAndServe(bridge.Addr); err != nil {
 			fmt.Fprintf(os.Stderr, "bridge: %v\n", err)
@@ -441,11 +443,14 @@ func fetch(ctx context.Context, opts *config.Options, do client.Doer, stream cli
 	defer cancel()
 
 	if config.ShouldStream(opts) {
+		first := recordJob(opts, "") // a download that is stopped stays in the list
 		if err := client.Download(ctx, opts, stream); err != nil {
 			code := failed(opts, err)
+			recordJob(opts, first) // the remote name may have changed the file
 			runHook(opts.Output.OnError, opts)
 			return code
 		}
+		forgetJob(opts, first)
 		runHook(opts.Output.OnComplete, opts)
 		return config.NoError.Int()
 	}

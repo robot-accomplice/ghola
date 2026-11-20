@@ -93,6 +93,7 @@ var setters = map[string]setter{
 	"file-allocation": func(o *config.Options, v string, _ *Command) error { o.Output.FileAllocation = v; return nil },
 	"on-complete":     func(o *config.Options, v string, _ *Command) error { o.Output.OnComplete = v; return nil },
 	"on-error":        func(o *config.Options, v string, _ *Command) error { o.Output.OnError = v; return nil },
+	"session":         func(o *config.Options, v string, _ *Command) error { o.Output.NoSession = v == "false"; return nil },
 	"save-headers":    func(o *config.Options, v string, _ *Command) error { o.Output.SaveHeaders = v; return nil },
 	"show-headers":    func(o *config.Options, v string, _ *Command) error { o.Output.Include = v == "true"; return nil },
 	"quiet":           func(o *config.Options, v string, _ *Command) error { o.Output.Silent = v == "true"; return nil },
@@ -225,6 +226,7 @@ func Apply(c *Command) (*config.Options, error) {
 	if err := applyInput(o, c); err != nil {
 		return nil, &UsageError{Msg: err.Error()}
 	}
+	o.Output.SessionArgs = sessionArgs(c)
 	if err := pairOutputs(o, c.Values["output"]); err != nil {
 		return nil, &UsageError{Msg: err.Error()}
 	}
@@ -511,6 +513,29 @@ func applyProxyTLS(o *config.Options, c *Command) error {
 		o.ProxyCfg.TLS = proxy.Stealth
 	}
 	return nil
+}
+
+// notInSession are the options that a resumed job does not take again:
+// ghola jobs resume gives the file, the URL and -c itself, and the others
+// name more than one job.
+var notInSession = map[string]bool{
+	"output": true, "input": true, "input-format": true, "jobs": true, "next": true,
+	"continue": true, "continue-at": true, "config": true, "no-config": true, "session": true,
+}
+
+// sessionArgs are the options of the run as --name=value, in the table
+// order, for the job list.
+func sessionArgs(c *Command) []string {
+	var out []string
+	for _, o := range table {
+		if notInSession[o.Name] {
+			continue
+		}
+		for _, v := range c.Values[o.Name] {
+			out = append(out, "--"+o.Name+"="+v)
+		}
+	}
+	return out
 }
 
 // setJSON sends a JSON body: Content-Type and Accept are
