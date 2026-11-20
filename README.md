@@ -64,7 +64,7 @@ Attribution: the direction for Ghola's browser-like fetching work was inspired b
 | `--compressed` | **Decompression** -- ask for `gzip, deflate, br, zstd` and decode the body, on stdout and with `-o`. The `Content-Encoding` header decides: a `.gz` file sent as it is stays a `.gz` file. |
 | `--cookie-jar <file>` | **Persistent cookies** -- save and reuse cookies across runs. |
 | `--cookie <name=value>` | **Seed cookies** -- add one or more cookies to the request session. |
-| `--proxy <url>` | **Single proxy** -- route traffic through a proxy: `http://`, `https://`, `socks4://`, `socks4a://`, `socks5://` or `socks5h://`, as in curl. `socks4` and `socks5` resolve the host name in ghola; `socks4a` and `socks5h` let the proxy resolve it. `socks5://user:pass@host` sends credentials. |
+| `--proxy <url>` | **Single proxy** -- route traffic through a proxy: `http://`, `https://`, `socks4://`, `socks4a://`, `socks5://` or `socks5h://`, as in curl. `socks4` and `socks5` resolve the host name in ghola; `socks4a` and `socks5h` let the proxy resolve it. `socks5://user:pass@host` sends credentials. Without `--proxy`, ghola reads `http_proxy`, `https_proxy`, `ALL_PROXY` and `no_proxy`, as curl does, and a SOCKS URL there works the same way. |
 | `--proxy-file <path>` | **Proxy pool** -- load proxies from a newline-delimited file. |
 | `--proxy-strategy <mode>` | **Proxy selection** -- choose from `sticky`, `random`, or `round-robin`. |
 | `--profile-list` | **List profiles** -- print the built-in impersonation profiles and exit. |
