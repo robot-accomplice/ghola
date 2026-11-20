@@ -40,7 +40,14 @@ func findTools(t *testing.T, ghola string) map[string]*tool {
 		}
 		found[name] = &tool{Name: name, Path: path}
 	}
+	// "ghola curl" runs the curl arguments of each scenario on the ghola
+	// binary, with curl's -q first as curl gets it (v1 spec, section 6).
+	found[gholaCurl] = &tool{Name: gholaCurl, Path: ghola, base: []string{"curl", "-q"}}
 	for _, tl := range found {
+		if tl.Name == gholaCurl {
+			tl.Version = "ghola curl"
+			continue
+		}
 		tl.Version = version(tl.Path)
 		switch {
 		case tl.Name == "curl":

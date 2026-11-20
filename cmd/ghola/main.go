@@ -33,6 +33,21 @@ func execute(ctx context.Context, args []string, do client.Doer, stream client.S
 	if err != nil {
 		return argError(err)
 	}
+	hideErrors := false
+	if c.Job == cli.JobCurl {
+		curl, err := cli.FromCurl(c.Args)
+		if err != nil {
+			return argError(err)
+		}
+		if curl.ShowNative {
+			fmt.Fprintln(w, "ghola "+cli.ShellQuote(curl.Args))
+			return config.NoError.Int()
+		}
+		if c, err = cli.Parse(curl.Args); err != nil {
+			return argError(err)
+		}
+		hideErrors = curl.HideErrors
+	}
 	if code, done := runJob(c, w); done {
 		return code
 	}
@@ -40,6 +55,7 @@ func execute(ctx context.Context, args []string, do client.Doer, stream client.S
 	if err != nil {
 		return argError(err)
 	}
+	opts.Output.HideErrors = hideErrors
 	if c.Job == cli.JobInspect {
 		opts.Output.Snoop = true
 	}

@@ -84,12 +84,22 @@ func TestParity(t *testing.T) {
 			continue
 		}
 		t.Run(sc.ID, func(t *testing.T) {
+			var curl *Result
 			for _, name := range toolOrder {
 				mk, tl := sc.Runs[name], tools[name]
 				if mk == nil || tl == nil {
 					continue
 				}
-				results = append(results, runOne(t, srv, out, sc, tl, mk))
+				r := runOne(t, srv, out, sc, tl, mk)
+				if name == "curl" {
+					curl = r
+				}
+				results = append(results, r)
+			}
+			if mk, tl := sc.Runs["curl"], tools[gholaCurl]; mk != nil && tl != nil && curl != nil {
+				r := runOne(t, srv, out, sc, tl, mk)
+				judgeCurl(t, sc, r, curl)
+				results = append(results, r)
 			}
 		})
 	}
@@ -112,12 +122,29 @@ func runOne(t *testing.T, srv *server, out string, sc scenario, tl *tool, mk fun
 	} else {
 		r.Pass = true
 	}
-	if tl.Name == "ghola" {
+	switch {
+	case tl.Name == "ghola":
 		judge(t, sc, r)
-	} else if !r.Pass {
+	case tl.Name == gholaCurl:
+		// judged against curl by judgeCurl
+	case !r.Pass:
 		t.Logf("%s fails: %s", tl.Name, r.Reason)
 	}
 	return r
+}
+
+// gholaCurl is the pseudo-tool "ghola curl": the ghola binary on the
+// curl arguments of each scenario.
+const gholaCurl = "ghola-curl"
+
+// judgeCurl requires "ghola curl" to pass each scenario that curl passes.
+// Where curl fails, ghola curl may pass: it keeps ghola's fixes, such as
+// If-Range on resume.
+func judgeCurl(t *testing.T, sc scenario, r, curl *Result) {
+	t.Helper()
+	if curl.Pass && !r.Pass {
+		t.Errorf("ghola curl fails %s, which curl passes: %s (args %q, exit %d, stderr %q)", sc.ID, r.Reason, r.Args, r.Exit, firstLine(r.Stderr))
+	}
 }
 
 // judge applies the ratchet in known_test.go to ghola's result.
