@@ -7,6 +7,7 @@ require (
 	github.com/bogdanfinn/fhttp v0.7.3
 	github.com/bogdanfinn/tls-client v1.18.1
 	github.com/bogdanfinn/utls v1.8.2-barnius
+	github.com/bogdanfinn/websocket v1.5.9-barnius
 	github.com/fclairamb/ftpserverlib v0.33.3
 	github.com/jlaffaye/ftp v0.2.4
 	github.com/klauspost/compress v1.20.4
@@ -25,7 +26,6 @@ require (
 	github.com/bdandy/go-errors v1.2.2 // indirect
 	github.com/bdandy/go-socks4 v1.2.3 // indirect
 	github.com/bogdanfinn/quic-go-utls v1.0.13-utls // indirect
-	github.com/bogdanfinn/websocket v1.5.9-barnius // indirect
 	github.com/kr/fs v0.1.0 // indirect
 	github.com/molecule-man/go-brrr v1.3.1 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
