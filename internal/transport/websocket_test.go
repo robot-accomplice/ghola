@@ -74,28 +74,25 @@ func wsURL(httpURL string) string {
 // stacks, over ws:// and wss://. The handshake carries the -H headers.
 func TestWebSocket_ReceivesMessages(t *testing.T) {
 	for _, imp := range stacks {
-		for _, secure := range []bool{false, true} {
-			t.Run("impersonate="+imp+"/tls="+map[bool]string{false: "no", true: "yes"}[secure], func(t *testing.T) {
-				s := &wsServer{}
-				var ts *httptest.Server
-				if secure {
-					ts = httptest.NewTLSServer(s.handler(false))
-				} else {
-					ts = httptest.NewServer(s.handler(false))
-				}
-				defer ts.Close()
-				opts := &config.Options{Stealth: config.StealthOptions{Impersonate: imp, Insecure: true}}
-				got, err := wsGet(t, opts, "", wsURL(ts.URL)+"/feed", "", map[string]string{"X-Probe": "1"})
-				if err != nil || got != "hello bye" {
-					t.Fatalf("got %q, err %v", got, err)
-				}
-				s.mu.Lock()
-				defer s.mu.Unlock()
-				if s.header.Get("X-Probe") != "1" {
-					t.Errorf("the handshake lacks X-Probe: %v", s.header)
-				}
-			})
-		}
+		t.Run("impersonate="+imp+"/ws", func(t *testing.T) { receive(t, imp, httptest.NewServer) })
+		t.Run("impersonate="+imp+"/wss", func(t *testing.T) { receive(t, imp, httptest.NewTLSServer) })
+	}
+}
+
+func receive(t *testing.T, imp string, start func(http.Handler) *httptest.Server) {
+	t.Helper()
+	s := &wsServer{}
+	ts := start(s.handler(false))
+	defer ts.Close()
+	opts := &config.Options{Stealth: config.StealthOptions{Impersonate: imp, Insecure: true}}
+	got, err := wsGet(t, opts, "", wsURL(ts.URL)+"/feed", "", map[string]string{"X-Probe": "1"})
+	if err != nil || got != "hello bye" {
+		t.Fatalf("got %q, err %v", got, err)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.header.Get("X-Probe") != "1" {
+		t.Errorf("the handshake lacks X-Probe: %v", s.header)
 	}
 }
 

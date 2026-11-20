@@ -44,16 +44,7 @@ func (t protocolTransport) serveWebSocket(ctx context.Context, req *fasthttp.Req
 	if err != nil {
 		return fileAnswer{}, err
 	}
-	header := fhttp.Header{}
-	for k, v := range req.Header.All() {
-		switch strings.ToLower(string(k)) {
-		case "host", "connection", "upgrade", "content-length", "content-type",
-			"sec-websocket-key", "sec-websocket-version", "sec-websocket-extensions":
-			continue // the WebSocket handshake sets these
-		}
-		header.Add(string(k), string(v))
-	}
-	conn, rsp, err := d.DialContext(ctx, u.String(), header)
+	conn, rsp, err := d.DialContext(ctx, u.String(), handshakeHeader(req))
 	if rsp != nil && rsp.Body != nil {
 		rsp.Body.Close()
 	}
@@ -63,28 +54,52 @@ func (t protocolTransport) serveWebSocket(ctx context.Context, req *fasthttp.Req
 		}
 		return fileAnswer{}, err
 	}
-	if body := req.Body(); len(body) > 0 {
-		kind := websocket.TextMessage
-		if string(req.Header.Method()) == fasthttp.MethodPut { // -T sends a file
-			kind = websocket.BinaryMessage
-		}
-		if err := conn.WriteMessage(kind, body); err != nil {
-			conn.Close()
-			return fileAnswer{}, err
-		}
+	if err := sendBody(conn, req); err != nil {
+		conn.Close()
+		return fileAnswer{}, err
 	}
+	return messages(ctx, conn), nil
+}
+
+// handshakeHeader returns the request headers for the handshake, without
+// the ones that the WebSocket handshake sets itself.
+func handshakeHeader(req *fasthttp.Request) fhttp.Header {
+	header := fhttp.Header{}
+	for k, v := range req.Header.All() {
+		switch strings.ToLower(string(k)) {
+		case "host", "connection", "upgrade", "content-length", "content-type",
+			"sec-websocket-key", "sec-websocket-version", "sec-websocket-extensions":
+			continue
+		}
+		header.Add(string(k), string(v))
+	}
+	return header
+}
+
+// sendBody sends the request body as one message: text for -d, binary for
+// -T (PUT). An empty body sends nothing.
+func sendBody(conn *websocket.Conn, req *fasthttp.Request) error {
+	body := req.Body()
+	if len(body) == 0 {
+		return nil
+	}
+	kind := websocket.TextMessage
+	if string(req.Header.Method()) == fasthttp.MethodPut {
+		kind = websocket.BinaryMessage
+	}
+	return conn.WriteMessage(kind, body)
+}
+
+// messages answers with the received messages as one body. A close frame
+// ends it; --max-time and Ctrl-C end it with the context error (exit 28
+// for --max-time).
+func messages(ctx context.Context, conn *websocket.Conn) fileAnswer {
 	pr, pw := io.Pipe()
 	go func() {
 		for {
 			_, msg, err := conn.ReadMessage()
 			if err != nil {
-				switch {
-				case ctx.Err() != nil:
-					err = ctx.Err() // --max-time (exit 28) or Ctrl-C closed the connection
-				case websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseNoStatusReceived):
-					err = nil // a close frame ends the body
-				}
-				pw.CloseWithError(err)
+				pw.CloseWithError(endOfMessages(ctx, err))
 				return
 			}
 			if _, err := pw.Write(msg); err != nil {
@@ -92,11 +107,23 @@ func (t protocolTransport) serveWebSocket(ctx context.Context, req *fasthttp.Req
 			}
 		}
 	}()
-	go func() { <-ctx.Done(); conn.Close() }() // --max-time and Ctrl-C end the session
+	go func() { <-ctx.Done(); conn.Close() }()
 	return fileAnswer{
 		status: http.StatusOK, header: http.Header{}, length: -1,
 		body: closer{Reader: pr, close: func() error { pr.Close(); return conn.Close() }},
-	}, nil
+	}
+}
+
+// endOfMessages returns the error that ends the body: the context error
+// when the context ended, nil for a close frame, else err.
+func endOfMessages(ctx context.Context, err error) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseNoStatusReceived) {
+		return nil
+	}
+	return err
 }
 
 // wsDialer returns the WebSocket dialer for the stack.
