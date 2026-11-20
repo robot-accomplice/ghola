@@ -1,0 +1,45 @@
+id,task,native,curl,wget,aria2,note
+1,Print a page,ghola URL,curl URL,wget -qO- URL,,
+2,Print a page in a script: quiet; follow redirects; fail on HTTP errors,ghola -q URL,curl -fsSL URL,wget -qO- URL,,
+3,Download a file under its remote name,ghola download URL,curl -LO URL,wget URL,aria2c URL,
+4,Download a file to a given name,ghola -o out.zip URL,curl -Lo out.zip URL,wget -O out.zip URL,aria2c -o out.zip URL,
+5,Download a file into a folder,ghola -o dl/ URL,curl -L --output-dir dl -O URL,wget -P dl URL,aria2c -d dl URL,Accepted: -o DIR/ needs the slash when the folder does not exist yet. One character more than wget -P.
+6,Resume an interrupted download,ghola download -c URL,curl -LO -C - URL,wget -c URL,aria2c -c URL,
+7,Download one file on 8 connections,ghola download -n8 URL,,,aria2c -x8 -s8 URL,
+8,Download the URLs in a list; 4 at a time,ghola download -i urls.txt -j4,,,aria2c -i urls.txt -j4,
+9,Download the URLs in a list; one at a time,ghola download -i urls.txt,,wget -i urls.txt,aria2c -i urls.txt -j1,
+10,Post JSON with a bearer token,"ghola --json '{""a"":1}' --auth-bearer T URL","curl --json '{""a"":1}' --oauth2-bearer T URL","wget -qO- --header 'Content-Type: application/json' --header 'Authorization: Bearer T' --post-data '{""a"":1}' URL",,
+11,Post a form field,ghola -d 'a=1' URL,curl -d 'a=1' URL,wget -qO- --post-data 'a=1' URL,,
+12,Post a URL-encoded field with spaces,ghola --field 'q=a b' URL,curl --data-urlencode 'q=a b' URL,,,
+13,Post the body from a file,ghola -d @body.txt URL,curl --data-binary @body.txt URL,wget -qO- --post-file body.txt URL,,
+14,Upload a file as a multipart form,ghola --form file=@x.bin URL,curl -F file=@x.bin URL,,,Accepted: --form is in 1.4% of curl files. Pasted commands use ghola curl.
+15,Upload a file with PUT,ghola --upload x.bin URL,curl -T x.bin URL,wget -qO- --method=PUT --body-file=x.bin URL,,Accepted: --upload-file is in 0.3% of curl files.
+16,Send a custom header,ghola -H 'X-A: 1' URL,curl -H 'X-A: 1' URL,wget -qO- --header 'X-A: 1' URL,aria2c --header 'X-A: 1' URL,
+17,Send Basic credentials,ghola -u u:p URL,curl -u u:p URL,wget -qO- --user u --password p URL,aria2c --http-user u --http-passwd p URL,
+18,Send a cookie,ghola --cookie a=1 URL,curl -b a=1 URL,wget -qO- --header 'Cookie: a=1' URL,aria2c --header 'Cookie: a=1' URL,Accepted: --cookie is in 0.8% of curl script files. The 27% in browser-header files go through ghola curl.
+19,Keep cookies in a jar across runs,ghola --cookie-jar j.txt URL,curl -b j.txt -c j.txt URL,wget -qO- --load-cookies j.txt --save-cookies j.txt --keep-session-cookies URL,aria2c --load-cookies j.txt --save-cookies j.txt URL,"Accepted: one option against two, one character more."
+20,Show only the response headers,ghola -I URL,curl -I URL,wget -S --spider URL,,
+21,Show the response headers and the body,ghola --show-headers URL,curl -i URL,wget -S -qO- URL,,Accepted: --show-headers is in 0.9% of curl files.
+22,Debug a request,ghola -v URL,curl -v URL,wget -d URL,aria2c --console-log-level=debug URL,
+23,Print only the status code,ghola -qo /dev/null -w '%{http_code}' URL,curl -so /dev/null -w '%{http_code}' URL,,,
+24,Get one field of a JSON answer,ghola --output-select name URL,,,,
+25,Skip the TLS certificate check,ghola -k URL,curl -k URL,wget -qO- --no-check-certificate URL,aria2c --check-certificate=false URL,
+26,Trust a private CA,ghola --tls-ca ca.pem URL,curl --cacert ca.pem URL,wget -qO- --ca-certificate=ca.pem URL,aria2c --ca-certificate=ca.pem URL,
+27,Send through an HTTP proxy,ghola --proxy http://p:8080 URL,curl -x http://p:8080 URL,wget -qO- -e use_proxy=on -e https_proxy=http://p:8080 URL,aria2c --all-proxy=http://p:8080 URL,Accepted: --proxy is in 0.3% of curl script files.
+28,Send through SOCKS5 with remote DNS,ghola --proxy socks5h://p:1080 URL,curl -x socks5h://p:1080 URL,,,Accepted: as task 27.
+29,Stop after 30 seconds in total,ghola -t 30 URL,curl -m 30 URL,,,
+30,Retry up to 5 times,ghola -r 5 URL,curl --retry 5 URL,wget -qO- -t 5 URL,aria2c -m 5 URL,
+31,Retry transient errors,ghola URL,curl --retry 3 URL,wget -qO- URL,aria2c URL,
+32,Limit the speed to 1 MB/s,ghola --rate-max 1M URL,curl --limit-rate 1M URL,wget -qO- --limit-rate=1m URL,aria2c --max-download-limit=1M URL,
+33,Force IPv4,ghola --ip 4 URL,curl -4 URL,wget -qO- -4 URL,aria2c --disable-ipv6 URL,Accepted: --ipv4 is in 0.1% of curl files.
+34,Connect a host name to a given address,ghola --resolve example.com:443:127.0.0.1 URL,curl --resolve example.com:443:127.0.0.1 URL,,,
+35,Use HTTP/2 without an upgrade,ghola --http 2-prior URL,curl --http2-prior-knowledge URL,,,
+36,Request a byte range,ghola --range 0-99 URL,curl -r 0-99 URL,,,Accepted: --range is in 0.3% of curl files.
+37,Save the response headers to a file,ghola --save-headers h.txt URL,curl -D h.txt URL,,,Accepted: --dump-header is in 0.5% of curl files.
+38,Copy Chrome's TLS fingerprint,ghola --impersonate chrome URL,,,,
+39,Download a file and check its SHA-256,ghola download --checksum sha-256=ab12 URL,,,aria2c --checksum=sha-256=ab12 URL,
+40,Download one file from two mirrors,ghola download URL --source URL2,,,aria2c URL URL2,"Accepted: aria2c reads several URLs on one line as mirrors of one file. In ghola several URLs are several files, as in curl and wget."
+41,Mirror a site to depth 2,ghola mirror --depth 2 URL,,wget -m -l 2 URL,,"Accepted: one option against two, one character more."
+42,Mirror a site for offline use,ghola mirror --offline URL,,wget -m -p -k -E URL,,
+43,Check the links of a site and save nothing,ghola mirror --spider URL,,wget -r --spider URL,,
+44,Download in the background with a log,ghola download --background --log dl.log URL,,wget -b -o dl.log URL,aria2c -D -l dl.log URL,Accepted: --background is in 0.5% of wget files.
