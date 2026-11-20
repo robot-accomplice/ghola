@@ -44,6 +44,7 @@ Attribution: the direction for Ghola's browser-like fetching work was inspired b
 | `-w, --wget` | **Wget mode** -- auto-saves to local file using the inferred remote filename. |
 | `-u <user:pass>` | **Basic Auth** -- native HTTP basic authentication. |
 | `-T <file>` | **Upload** -- send a local file as the request body. |
+| `file:///path` | **Local files** -- a `file://` URL reads a local file (a folder lists its names), with `-o`, `-C -`, `-r` ranges and `-T` uploads, as in curl. A redirect never goes to `file://`, and the bridge refuses it. |
 | `-o <file>` | **Output** -- write response body to a file. While the download runs, `<file>.ghola` records the `ETag` or `Last-Modified` of the remote version. ghola removes it when the download is done. `-o -` writes to stdout, as in curl. Without `-o -`, ghola refuses binary data (a NUL byte) to a terminal with exit 23, as curl does, so the bytes cannot change the terminal state. |
 | `-C -` | **Resume** a partial file. With a `<file>.ghola` state file, the request sends `If-Range`: when the remote file changed, the server sends the new version and ghola writes it from byte 0, so old and new bytes are never joined. Without a state file (a partial file from another tool), ghola resumes as curl does. |
 | `-H <header>` | **Custom headers** -- repeatable. A GET has no `Content-Type`. `-d`, `--data-binary` and `--data-urlencode` send `application/x-www-form-urlencoded`, as in curl. `--chain` sends `application/json`. A `Content-Type` from `-H` wins. |
@@ -184,6 +185,7 @@ ghola uses curl's exit codes for the same causes, so a script written for curl r
 | Code | Cause |
 |------|-------|
 | 0 | Success |
+| 1 | A redirect went to a protocol that ghola does not follow (for example `file://`) |
 | 2 | Invalid or missing argument |
 | 6 | The host name did not resolve |
 | 7 | The connection failed (for example, refused) |
@@ -192,6 +194,7 @@ ghola uses curl's exit codes for the same causes, so a script written for curl r
 | 26 | ghola could not read a local file (`-d @file`, `-T`, `-F name=@file`) |
 | 28 | A time limit ended the transfer (`--max-time`, `--connect-timeout`, `--speed-limit`) |
 | 35 | The TLS handshake failed |
+| 37 | ghola could not read the file of a `file://` URL |
 | 47 | `-L` reached `--max-redirs` |
 | 55 | The request failed for another cause |
 | 56 | The connection failed after it was ready (for example, a reset, or a TLS alert after the handshake) |

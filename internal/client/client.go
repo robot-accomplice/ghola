@@ -248,6 +248,11 @@ redirectLoop:
 
 			if opts.Resilience.Location && isRedirectStatus(status) {
 				loc := string(rsp.Header.Peek("Location"))
+				if err := checkRedirectScheme(effectiveURL, loc); err != nil {
+					fasthttp.ReleaseRequest(req)
+					fasthttp.ReleaseResponse(rsp)
+					return nil, nil, err
+				}
 				if newURL, newMethod, newData, ok := handleRedirect(status, effectiveMethod, effectiveData, loc, effectiveURL); ok {
 					// One more hop than --max-redirs is an error, as in curl
 					// (audit finding H6). A 3xx without a usable Location is
@@ -323,6 +328,30 @@ func isRedirectStatus(status int) bool {
 	default:
 		return false
 	}
+}
+
+// ErrRedirectScheme marks a redirect to a protocol that ghola does not
+// follow. A server must not send ghola to file:// (a local file) or to any
+// other protocol: curl follows only http, https, ftp and ftps, and stops
+// with "Protocol not supported" (exit 1).
+var ErrRedirectScheme = errors.New("redirect to a protocol that ghola does not follow")
+
+// redirectSchemes are the protocols that a redirect may go to. ftp and
+// ftps join when ghola speaks FTP (plan phase 5).
+var redirectSchemes = map[string]bool{"http": true, "https": true}
+
+// checkRedirectScheme refuses a redirect to a protocol outside
+// redirectSchemes. A Location that does not resolve is the caller's case.
+func checkRedirectScheme(baseURL, location string) error {
+	next, ok := resolveLocation(baseURL, location)
+	if !ok {
+		return nil
+	}
+	u, err := url.Parse(next)
+	if err != nil || redirectSchemes[strings.ToLower(u.Scheme)] {
+		return nil
+	}
+	return fmt.Errorf("%w: %s (Location %q)", ErrRedirectScheme, u.Scheme, location)
 }
 
 func resolveLocation(baseURL, location string) (string, bool) {

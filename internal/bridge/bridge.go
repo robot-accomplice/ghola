@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
+	"strings"
 
 	"github.com/robot-accomplice/ghola/internal/client"
 	"github.com/robot-accomplice/ghola/internal/config"
@@ -79,6 +81,14 @@ func Handler(do client.Doer) fasthttp.RequestHandler {
 		if br.URL == "" {
 			ctx.SetStatusCode(fasthttp.StatusBadRequest)
 			writeError(ctx, "url is required")
+			return
+		}
+		if !bridgeScheme(br.URL) {
+			// A bridge client sends URLs from outside data. It must not
+			// make ghola read a local file (file://) or speak another
+			// protocol for it.
+			ctx.SetStatusCode(fasthttp.StatusBadRequest)
+			writeError(ctx, "url must be http:// or https://")
 			return
 		}
 
@@ -219,4 +229,18 @@ func ListenAndServe(addr string) error {
 	}
 	fmt.Fprintf(os.Stderr, "ghola bridge listening on %s (token in %s)\n", addr, path)
 	return fasthttp.Serve(ln, Guard(Handler(nil), addr, token))
+}
+
+// bridgeScheme reports whether the bridge may fetch raw: http and https
+// only.
+func bridgeScheme(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	switch strings.ToLower(u.Scheme) {
+	case "http", "https":
+		return true
+	}
+	return false
 }

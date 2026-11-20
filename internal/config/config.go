@@ -25,6 +25,9 @@ type ExitCode int
 const (
 	// NoError indicates successful execution.
 	NoError ExitCode = 0
+	// UnsupportedProtocol indicates a protocol that ghola does not follow,
+	// for example a redirect to file:// (curl 1).
+	UnsupportedProtocol ExitCode = 1
 	// BadFlag indicates invalid or missing CLI arguments (curl 2).
 	BadFlag ExitCode = 2
 	// CouldntResolveHost indicates that DNS did not resolve the host (curl 6).
@@ -38,6 +41,9 @@ const (
 	// ReadFileFailed indicates a local file could not be read, e.g.
 	// --upload-file or -d @file (curl 26).
 	ReadFileFailed ExitCode = 26
+	// FileCouldntRead indicates a file:// URL whose file could not be read
+	// (curl 37).
+	FileCouldntRead ExitCode = 37
 	// TimedOut indicates --max-time, --connect-timeout or --speed-limit
 	// ended the transfer (curl 28).
 	TimedOut ExitCode = 28
