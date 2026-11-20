@@ -497,17 +497,8 @@ func (g singleGet) get(ctx context.Context, opts *config.Options, stream Streame
 // writes no file and leaves an existing file unchanged.
 func (g singleGet) check(opts *config.Options, f *lazyFile) func(gholatransport.StreamMeta) error {
 	return func(meta gholatransport.StreamMeta) error {
-		if isRedirect(meta) {
-			return errRedirect
-		}
-		if g.retryStatus && isRetryableHTTPStatus(opts, meta.StatusCode) {
-			return fmt.Errorf("%w %d", errRetryStatus, meta.StatusCode)
-		}
-		if opts.Output.CondTime && meta.StatusCode == fasthttp.StatusNotModified {
-			return errNotModified
-		}
-		if opts.Output.FailsOn(meta.StatusCode) {
-			return fmt.Errorf("%w: %d", config.ErrHTTPStatus, meta.StatusCode)
+		if err := g.checkStatus(opts, meta); err != nil {
+			return err
 		}
 		if err := g.checkResume(opts, f, meta); err != nil {
 			return err
@@ -528,6 +519,23 @@ func (g singleGet) check(opts *config.Options, f *lazyFile) func(gholatransport.
 		}
 		return saveState(f.name, opts.URL, meta)
 	}
+}
+
+// checkStatus stops a response that writes no file: a redirect, a status
+// that a retry follows, a 304 to a condition, and a status that --fail
+// refuses.
+func (g singleGet) checkStatus(opts *config.Options, meta gholatransport.StreamMeta) error {
+	switch {
+	case isRedirect(meta):
+		return errRedirect
+	case g.retryStatus && isRetryableHTTPStatus(opts, meta.StatusCode):
+		return fmt.Errorf("%w %d", errRetryStatus, meta.StatusCode)
+	case opts.Output.CondTime && meta.StatusCode == fasthttp.StatusNotModified:
+		return errNotModified
+	case opts.Output.FailsOn(meta.StatusCode):
+		return fmt.Errorf("%w: %d", config.ErrHTTPStatus, meta.StatusCode)
+	}
+	return nil
 }
 
 // checkResume accepts a resume answer. A 206 must start at the offset. A 200

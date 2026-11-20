@@ -41,13 +41,7 @@ func TestProxyBypass(t *testing.T) {
 	for _, imp := range stacks {
 		for _, tc := range tests {
 			t.Run(tc.name+", impersonate="+imp, func(t *testing.T) {
-				// Clear first: on Windows, HTTP_PROXY and http_proxy are one name.
-				for _, k := range []string{"http_proxy", "no_proxy", "all_proxy", "REQUEST_METHOD"} {
-					t.Setenv(k, "")
-				}
-				for k, v := range tc.env {
-					t.Setenv(k, v)
-				}
+				setProxyEnv(t, tc.env)
 				target.n.Store(0)
 				proxy.n.Store(0)
 				opts := &config.Options{Stealth: config.StealthOptions{Impersonate: imp}, ProxyCfg: config.ProxyOptions{Bypass: tc.bypass}}
@@ -60,10 +54,22 @@ func TestProxyBypass(t *testing.T) {
 				if err := get(t, tr, ts.URL+"/"); err != nil && !tc.wantProxy {
 					t.Fatalf("GET: %v", err)
 				}
-				if gotProxy := proxy.n.Load() == 1 && target.n.Load() == 0; gotProxy != tc.wantProxy {
+				if (proxy.n.Load() == 1 && target.n.Load() == 0) != tc.wantProxy {
 					t.Errorf("proxy %d, target %d requests; want through the proxy: %v", proxy.n.Load(), target.n.Load(), tc.wantProxy)
 				}
 			})
 		}
+	}
+}
+
+// setProxyEnv sets the proxy variables for the test, and clears the
+// others first: on Windows, HTTP_PROXY and http_proxy are one name.
+func setProxyEnv(t *testing.T, env map[string]string) {
+	t.Helper()
+	for _, k := range []string{"http_proxy", "no_proxy", "all_proxy", "REQUEST_METHOD"} {
+		t.Setenv(k, "")
+	}
+	for k, v := range env {
+		t.Setenv(k, v)
 	}
 }

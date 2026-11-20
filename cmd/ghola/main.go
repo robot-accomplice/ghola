@@ -168,7 +168,8 @@ func runJob(c *cli.Command, w *os.File) (code int, done bool) {
 	}
 }
 
-// transfer reads the request body sources and fetches each URL.
+// transfer opens the --save-headers file for the whole command, and runs
+// the transfers.
 func transfer(ctx context.Context, opts *config.Options, do client.Doer, stream client.Streamer, w *os.File) int {
 	if code, ok := openHeaderFile(opts, w); !ok {
 		return code
@@ -176,7 +177,11 @@ func transfer(ctx context.Context, opts *config.Options, do client.Doer, stream 
 	if f, ok := opts.Output.HeaderOut.(*os.File); ok && f != w {
 		defer f.Close()
 	}
+	return transferAll(ctx, opts, do, stream, w)
+}
 
+// transferAll reads the request body sources and fetches each URL.
+func transferAll(ctx context.Context, opts *config.Options, do client.Doer, stream client.Streamer, w *os.File) int {
 	if opts.Transfer != "" {
 		b, err := os.ReadFile(opts.Transfer)
 		if err != nil {

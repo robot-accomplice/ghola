@@ -50,22 +50,26 @@ func TestExecute_OutputFileRules(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-			defer cancel()
-			out, err := os.CreateTemp(t.TempDir(), "out")
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer out.Close()
-			args := append([]string{"-q", "-r", "0"}, tc.args...)
-			if tc.args[0] == "download" {
-				args = append([]string{"download", "-q", "-r", "0"}, tc.args[1:]...)
-			}
-			if got := execute(ctx, args, nil, nil, out); got != tc.want.Int() {
+			args := quiet(tc.args)
+			if got := runGhola(t, args...); got != tc.want.Int() {
 				t.Errorf("ghola %q exit = %d, want %d", args, got, tc.want)
 			}
 		})
 	}
+	checkOutputFiles(t, dir, existing)
+	// --output-overwrite replaces it.
+	if got := runGhola(t, "download", "-q", "--output-overwrite", "-o", existing, srv.URL); got != 0 {
+		t.Fatalf("--output-overwrite: exit %d", got)
+	}
+	if b, _ := os.ReadFile(existing); string(b) != body {
+		t.Errorf("--output-overwrite kept the old file")
+	}
+}
+
+// checkOutputFiles checks that download kept the existing file, and that
+// no file grew past --max-size.
+func checkOutputFiles(t *testing.T, dir, existing string) {
+	t.Helper()
 	if b, _ := os.ReadFile(existing); string(b) != "keep" {
 		t.Errorf("download replaced the existing file: %q", b)
 	}
@@ -74,13 +78,26 @@ func TestExecute_OutputFileRules(t *testing.T) {
 			t.Errorf("%s: %d bytes written past --max-size", name, fi.Size())
 		}
 	}
-	// --output-overwrite replaces it.
-	out, _ := os.CreateTemp(t.TempDir(), "out")
+}
+
+// quiet puts -q -r 0 after the job word, if there is one.
+func quiet(args []string) []string {
+	if len(args) > 0 && args[0] == "download" {
+		return append([]string{"download", "-q", "-r", "0"}, args[1:]...)
+	}
+	return append([]string{"-q", "-r", "0"}, args...)
+}
+
+// runGhola runs ghola with args, with stdout in a temporary file, and
+// returns the exit code.
+func runGhola(t *testing.T, args ...string) int {
+	t.Helper()
+	out, err := os.CreateTemp(t.TempDir(), "out")
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer out.Close()
-	if got := execute(context.Background(), []string{"download", "-q", "--output-overwrite", "-o", existing, srv.URL}, nil, nil, out); got != 0 {
-		t.Fatalf("--output-overwrite: exit %d", got)
-	}
-	if b, _ := os.ReadFile(existing); string(b) != body {
-		t.Errorf("--output-overwrite kept the old file")
-	}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	return execute(ctx, args, nil, nil, out)
 }

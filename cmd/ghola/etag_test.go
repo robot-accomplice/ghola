@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -25,25 +24,13 @@ func TestExecute_ETagCache(t *testing.T) {
 		t.Run(job, func(t *testing.T) {
 			dir := t.TempDir()
 			etag := filepath.Join(dir, "etag")
-			run := func(body string) int {
-				args := []string{"-q", "--cond-etag-compare", etag, "--cond-etag-save", etag}
-				if job != "stdout" {
-					args = append(args, "-o", filepath.Join(dir, body))
-				}
-				if job == "download" {
-					args = append([]string{job}, args...)
-				}
-				out, _ := os.CreateTemp(t.TempDir(), "out")
-				defer out.Close()
-				return execute(context.Background(), append(args, srv.URL), nil, nil, out)
-			}
-			if code := run("first"); code != 0 {
+			if code := runGhola(t, etagArgs(job, etag, dir, "first", srv.URL)...); code != 0 {
 				t.Fatalf("first run: exit %d", code)
 			}
 			if b, _ := os.ReadFile(etag); string(b) != "\"v1\"\n" {
 				t.Fatalf("saved ETag %q", b)
 			}
-			if code := run("second"); code != 0 {
+			if code := runGhola(t, etagArgs(job, etag, dir, "second", srv.URL)...); code != 0 {
 				t.Fatalf("second run: exit %d", code)
 			}
 			if _, err := os.Stat(filepath.Join(dir, "second")); job != "stdout" && err == nil {
@@ -54,4 +41,16 @@ func TestExecute_ETagCache(t *testing.T) {
 			}
 		})
 	}
+}
+
+// etagArgs is one run of the ETag cache for the job, with -o dir/body.
+func etagArgs(job, etag, dir, body, url string) []string {
+	args := []string{"-q", "--cond-etag-compare", etag, "--cond-etag-save", etag}
+	if job != "stdout" {
+		args = append(args, "-o", filepath.Join(dir, body))
+	}
+	if job == "download" {
+		args = append([]string{job}, args...)
+	}
+	return append(args, url)
 }

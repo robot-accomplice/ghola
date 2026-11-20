@@ -315,25 +315,12 @@ func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transpor
 	base := rules.dial(local) // --connect-to, --resolve, --ip
 	// The rules and the local options need ghola's dial function.
 	custom := rules != nil || hasLocalOptions(opts.Net)
-	if selectedProxy != "" {
-		proxyURL, err := url.Parse(selectedProxy)
-		if err != nil {
-			return nil, fmt.Errorf("parse proxy url: %w", err)
-		}
-		switch {
-		case isSOCKS(proxyURL):
-			// tls-client has no local-DNS socks5 and runs its own SOCKS4; the
-			// shared dialer gives both stacks the same SOCKS behaviour.
-			options = append(options, tlsclient.WithDialContext(socksDialer(proxyURL, base)))
-		case custom:
-			return nil, ErrRulesNeedDirect
-		default:
-			options = append(options, tlsclient.WithProxyUrl(selectedProxy))
-		}
-	} else if custom {
-		// The rules need ghola's dial function, so this client cannot take
-		// an HTTP proxy from the environment: clientFor refuses one.
-		options = append(options, tlsclient.WithDialContext(envDialer(base, opts.ProxyCfg.Bypass)))
+	dialOpt, err := tlsClientDial(selectedProxy, base, custom, opts.ProxyCfg.Bypass)
+	if err != nil {
+		return nil, err
+	}
+	if dialOpt != nil {
+		options = append(options, dialOpt)
 	}
 	if !opts.Stealth.HTTP3 {
 		options = append(options, tlsclient.WithDisableHttp3())
@@ -358,6 +345,33 @@ func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transpor
 		}
 	}
 	return t, nil
+}
+
+// tlsClientDial returns the tls-client option for the proxy and the dial
+// function, or nil for tls-client's own dialer.
+func tlsClientDial(selectedProxy string, base dialFunc, custom bool, bypass *string) (tlsclient.HttpClientOption, error) {
+	if selectedProxy == "" {
+		if !custom {
+			return nil, nil
+		}
+		// The rules need ghola's dial function, so this client cannot take
+		// an HTTP proxy from the environment: clientFor refuses one.
+		return tlsclient.WithDialContext(envDialer(base, bypass)), nil
+	}
+	proxyURL, err := url.Parse(selectedProxy)
+	if err != nil {
+		return nil, fmt.Errorf("parse proxy url: %w", err)
+	}
+	switch {
+	case isSOCKS(proxyURL):
+		// tls-client has no local-DNS socks5 and runs its own SOCKS4; the
+		// shared dialer gives both stacks the same SOCKS behaviour.
+		return tlsclient.WithDialContext(socksDialer(proxyURL, base)), nil
+	case custom:
+		return nil, ErrRulesNeedDirect
+	default:
+		return tlsclient.WithProxyUrl(selectedProxy), nil
+	}
 }
 
 func (t *simpleTransport) Do(ctx context.Context, req *fasthttp.Request, rsp *fasthttp.Response) error {
