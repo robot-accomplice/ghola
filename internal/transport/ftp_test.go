@@ -105,6 +105,10 @@ func TestFTP_Login(t *testing.T) {
 	if _, err := ftpDo(t, &config.Options{}, "", "GET", url, "", nil); !errors.Is(err, ErrFTPLogin) {
 		t.Fatalf("wrong URL credentials: err = %v, want ErrFTPLogin", err)
 	}
+	good := "ftp://alice:s3cret@" + srv.addr() + "/pub/a.txt" // fasthttp drops the URL user unless ghola keeps it
+	if _, err := ftpDo(t, &config.Options{}, "", "GET", good, "", nil); err != nil {
+		t.Fatalf("URL credentials: %v", err)
+	}
 	if _, err := ftpDo(t, &config.Options{User: "alice:s3cret"}, "", "GET", url, "", nil); err != nil {
 		t.Fatalf("-u alice: %v", err)
 	}

@@ -223,3 +223,20 @@ type sectionCloser struct {
 }
 
 func (s sectionCloser) Close() error { return s.f.Close() }
+
+// requestURL returns the URL of req with its user and password.
+// fasthttp's URI.String drops them, so ftp://user:pass@host lost its login.
+func requestURL(req *fasthttp.Request) (*url.URL, error) {
+	u, err := url.Parse(req.URI().String())
+	if err != nil {
+		return nil, err
+	}
+	if name := string(req.URI().Username()); name != "" {
+		if pass := req.URI().Password(); len(pass) > 0 {
+			u.User = url.UserPassword(name, string(pass))
+		} else {
+			u.User = url.User(name)
+		}
+	}
+	return u, nil
+}

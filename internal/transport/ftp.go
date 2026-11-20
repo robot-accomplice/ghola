@@ -49,7 +49,7 @@ var (
 // MDTM give the headers, REST gives a range), a name list for a path that
 // ends in /, and STOR for PUT (-T).
 func (t protocolTransport) serveFTP(ctx context.Context, req *fasthttp.Request) (fileAnswer, error) {
-	u, err := url.Parse(req.URI().String())
+	u, err := requestURL(req)
 	if err != nil {
 		return fileAnswer{}, err
 	}
