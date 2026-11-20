@@ -66,7 +66,7 @@ func ProcessResponse(w, ew io.Writer, opts *config.Options, req *fasthttp.Reques
 			return fmt.Errorf("write output: %w", config.WriteError(err))
 		}
 	}
-	if _, err := io.Copy(config.MarkWrites(w), body); err != nil {
+	if _, err := io.Copy(config.MarkWrites(bodyOut(w, opts)), body); err != nil {
 		return fmt.Errorf("copy response body: %w", err)
 	}
 
