@@ -37,6 +37,7 @@ var setters = map[string]setter{
 	"output-name":        func(o *config.Options, v string, _ *Command) error { o.Output.RemoteHeader = v == "header"; return nil },
 	"output-remote-time": func(o *config.Options, v string, _ *Command) error { o.Output.RemoteTime = v == "true"; return nil },
 	"output-select":      func(o *config.Options, v string, _ *Command) error { o.Output.JQ = v; return nil },
+	"save-headers":       func(o *config.Options, v string, _ *Command) error { o.Output.SaveHeaders = v; return nil },
 	"show-headers":       func(o *config.Options, v string, _ *Command) error { o.Output.Include = v == "true"; return nil },
 	"quiet":              func(o *config.Options, v string, _ *Command) error { o.Output.Silent = v == "true"; return nil },
 	"progress":           setProgress,

@@ -4,6 +4,7 @@ package config
 
 import (
 	"fmt"
+	"io"
 	"net/url"
 	"path"
 	"path/filepath"
@@ -82,10 +83,14 @@ func (e ExitCode) Int() int {
 
 // OutputOptions controls how HTTP responses are rendered.
 type OutputOptions struct {
-	File         string
-	Verbose      bool
-	Fail         bool
-	Include      bool
+	File    string
+	Verbose bool
+	Fail    bool
+	Include bool
+	// SaveHeaders is the --save-headers path ("-" is stdout). HeaderOut is
+	// that file, which ghola opens once for the whole command.
+	SaveHeaders  string
+	HeaderOut    io.Writer
 	Silent       bool
 	Snoop        bool
 	JQ           string

@@ -64,6 +64,29 @@ func execute(ctx context.Context, args []string, do client.Doer, stream client.S
 	return transfer(ctx, opts, do, stream, w)
 }
 
+// openHeaderFile opens the --save-headers file once for the command, as
+// curl -D does: every response of every URL goes into it. "-" is stdout.
+func openHeaderFile(opts *config.Options, w *os.File) (int, bool) {
+	switch opts.Output.SaveHeaders {
+	case "":
+		return 0, true
+	case "-":
+		opts.Output.HeaderOut = w
+		return 0, true
+	}
+	// The header file is not the body, so --output-overwrite does not
+	// keep it: curl -D replaces it.
+	out := opts.Output
+	out.NoOverwrite = false
+	f, err := config.OpenOutput(out, opts.Output.SaveHeaders, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, false)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "--save-headers: %v\n", err)
+		return config.WriteFileFailed.Int(), false
+	}
+	opts.Output.HeaderOut = f
+	return 0, true
+}
+
 // compatCommands translate the syntax of curl, wget and aria2c into native
 // arguments (v1 spec, section 6).
 var compatCommands = map[string]func([]string) (*cli.Compat, error){
@@ -144,6 +167,12 @@ func runJob(c *cli.Command, w *os.File) (code int, done bool) {
 
 // transfer reads the request body sources and fetches each URL.
 func transfer(ctx context.Context, opts *config.Options, do client.Doer, stream client.Streamer, w *os.File) int {
+	if code, ok := openHeaderFile(opts, w); !ok {
+		return code
+	}
+	if f, ok := opts.Output.HeaderOut.(*os.File); ok && f != w {
+		defer f.Close()
+	}
 
 	if opts.Transfer != "" {
 		b, err := os.ReadFile(opts.Transfer)

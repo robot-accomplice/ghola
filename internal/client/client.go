@@ -233,6 +233,12 @@ redirectLoop:
 				continue
 			}
 			state.jar.AbsorbResponse(effectiveURL, rsp)
+			if out := opts.Output.HeaderOut; out != nil {
+				if _, err := out.Write(rsp.Header.Header()); err != nil {
+					lastErr = fmt.Errorf("--save-headers: %w", config.WriteError(err))
+					break
+				}
+			}
 			if err := state.jar.Save(); err != nil {
 				lastErr = err
 				break

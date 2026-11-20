@@ -25,6 +25,7 @@ const curlTable = `
 --compressed                   => --compressed
 -I --head                      => --head
 -i --include --show-headers    => --show-headers
+-D --dump-header                => --save-headers %s
 -v --verbose                   => -v
 -R --remote-time               => --output-remote-time
 -O --remote-name               => -o ./

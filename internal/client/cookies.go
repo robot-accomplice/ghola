@@ -11,6 +11,24 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
+// withHeaderSave returns stream with --save-headers: the head of each
+// response (the probe, each segment, each redirect) goes to HeaderOut.
+func withHeaderSave(stream Streamer, opts *config.Options) Streamer {
+	out := opts.Output.HeaderOut
+	if out == nil {
+		return stream
+	}
+	return func(ctx context.Context, opts *config.Options, req *fasthttp.Request, sink io.Writer) (gholatransport.StreamMeta, error) {
+		meta, err := stream(ctx, opts, req, sink)
+		if meta.StatusLine != "" {
+			if _, werr := out.Write(meta.HeaderBlock()); werr != nil && err == nil {
+				err = fmt.Errorf("--save-headers: %w", config.WriteError(werr))
+			}
+		}
+		return meta, err
+	}
+}
+
 // withCookieJar returns stream with the cookie jar on each request: the
 // probe, every segment, and every redirect of a download. Before, only
 // FetchURL (stdout) used the jar, so --cookie and --cookie-jar did nothing

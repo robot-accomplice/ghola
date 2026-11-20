@@ -108,7 +108,7 @@ func Download(ctx context.Context, opts *config.Options, stream Streamer) error 
 		progress = newProgressWriter(io.Discard, out, -1)
 	}
 
-	stream, err := withCookieJar(stream, opts)
+	stream, err := withCookieJar(withHeaderSave(stream, opts), opts)
 	if err != nil {
 		return err
 	}

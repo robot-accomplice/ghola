@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
+	"sort"
 	"strings"
 
 	fhttp "github.com/bogdanfinn/fhttp"
@@ -41,6 +42,35 @@ type StreamMeta struct {
 	ContentEncoding string
 	// SetCookies holds each Set-Cookie header, for the cookie jar.
 	SetCookies []string
+	// StatusLine and Header are the whole response head, for
+	// --save-headers. The network stacks set them.
+	StatusLine string
+	Header     http.Header
+}
+
+// HeaderBlock returns the response head as curl -D writes it: the status
+// line, the headers, and an empty line. The stacks do not keep the order
+// of the headers, so they are sorted.
+func (m StreamMeta) HeaderBlock() []byte {
+	var b strings.Builder
+	b.WriteString(m.StatusLine + "\r\n")
+	names := make([]string, 0, len(m.Header))
+	for name := range m.Header {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		for _, v := range m.Header[name] {
+			b.WriteString(name + ": " + v + "\r\n")
+		}
+	}
+	b.WriteString("\r\n")
+	return []byte(b.String())
+}
+
+// statusLine is "HTTP/1.1 200 OK", or "HTTP/2 200 OK" as curl writes it.
+func statusLine(proto, status string) string {
+	return strings.TrimSuffix(proto, ".0") + " " + status
 }
 
 // NewStreamMeta builds the StreamMeta of a response. Both stacks call it
@@ -427,6 +457,7 @@ func (t *simpleTransport) Stream(ctx context.Context, req *fasthttp.Request, sin
 	defer body.Close()
 
 	meta := NewStreamMeta(resp.StatusCode, resp.ContentLength, resp.Header.Get, resp.Header.Values("Set-Cookie"))
+	meta.StatusLine, meta.Header = statusLine(resp.Proto, resp.Status), resp.Header
 	return meta, CopyBody(sink, meta, body)
 }
 
@@ -533,6 +564,7 @@ func (t *tlsClientTransport) Stream(ctx context.Context, req *fasthttp.Request, 
 	defer body.Close()
 
 	meta := NewStreamMeta(httpResp.StatusCode, httpResp.ContentLength, httpResp.Header.Get, httpResp.Header.Values("Set-Cookie"))
+	meta.StatusLine, meta.Header = statusLine(httpResp.Proto, httpResp.Status), http.Header(httpResp.Header)
 	return meta, CopyBody(sink, meta, body)
 }
 

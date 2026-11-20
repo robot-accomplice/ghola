@@ -55,9 +55,9 @@ func TestFromCurl_RunsWithCurlDefaults(t *testing.T) {
 	}
 }
 
-// --create-dirs and --max-filesize apply as the native output rules.
+// --create-dirs, --max-filesize and -D apply as the native output rules.
 func TestFromCurl_OutputRules(t *testing.T) {
-	cmd, err := Parse(fromCurl(t, "--create-dirs", "--max-filesize", "1K", "-o", "d/f", "u").Args)
+	cmd, err := Parse(fromCurl(t, "--create-dirs", "--max-filesize", "1K", "-D", "h.txt", "-o", "d/f", "u").Args)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestFromCurl_OutputRules(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !o.Output.CreateDirs || o.Output.MaxSize != 1024 || o.Output.NoOverwrite {
+	if !o.Output.CreateDirs || o.Output.MaxSize != 1024 || o.Output.NoOverwrite || o.Output.SaveHeaders != "h.txt" {
 		t.Errorf("output = %+v", o.Output)
 	}
 }
