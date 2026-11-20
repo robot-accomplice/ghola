@@ -44,6 +44,12 @@ const (
 	// FileCouldntRead indicates a file:// URL whose file could not be read
 	// (curl 37).
 	FileCouldntRead ExitCode = 37
+	// FTPLoginDenied indicates that the FTP server refused the login
+	// (curl 67).
+	FTPLoginDenied ExitCode = 67
+	// RemoteFileNotFound indicates that the FTP file does not exist
+	// (curl 78).
+	RemoteFileNotFound ExitCode = 78
 	// TimedOut indicates --max-time, --connect-timeout or --speed-limit
 	// ended the transfer (curl 28).
 	TimedOut ExitCode = 28

@@ -152,7 +152,7 @@ func New(opts *config.Options, selectedProxy string) (Transport, error) {
 	if err != nil {
 		return nil, err
 	}
-	return fileTransport{network: tr}, nil
+	return protocolTransport{network: tr, opts: opts, proxy: selectedProxy}, nil
 }
 
 // newNetwork builds the network transport: tls-client with --impersonate,

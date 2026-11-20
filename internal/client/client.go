@@ -336,9 +336,9 @@ func isRedirectStatus(status int) bool {
 // with "Protocol not supported" (exit 1).
 var ErrRedirectScheme = errors.New("redirect to a protocol that ghola does not follow")
 
-// redirectSchemes are the protocols that a redirect may go to. ftp and
-// ftps join when ghola speaks FTP (plan phase 5).
-var redirectSchemes = map[string]bool{"http": true, "https": true}
+// redirectSchemes are the protocols that a redirect may go to: curl's
+// default list.
+var redirectSchemes = map[string]bool{"http": true, "https": true, "ftp": true, "ftps": true}
 
 // checkRedirectScheme refuses a redirect to a protocol outside
 // redirectSchemes. A Location that does not resolve is the caller's case.

@@ -32,6 +32,12 @@ func exitFor(err error) config.ExitCode {
 		return config.UnsupportedProtocol
 	case errors.Is(err, gholatransport.ErrFileRead):
 		return config.FileCouldntRead
+	case errors.Is(err, gholatransport.ErrFTPLogin):
+		return config.FTPLoginDenied
+	case errors.Is(err, gholatransport.ErrFTPNotFound):
+		return config.RemoteFileNotFound
+	case errors.Is(err, gholatransport.ErrFTPProxy):
+		return config.UnsupportedProtocol
 	case errors.Is(err, gholatransport.ErrBadEncoding):
 		return config.BadContentEncoding
 	case isTimeout(err):

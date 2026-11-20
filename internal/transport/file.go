@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/robot-accomplice/ghola/internal/config"
 	"github.com/valyala/fasthttp"
 )
 
@@ -26,26 +27,37 @@ var ErrFileRead = errors.New("could not read the file:// file")
 // SchemeFile is the scheme of a local file URL (plan phase 5, decision D1).
 const SchemeFile = "file"
 
-// fileTransport serves file:// URLs from the local disk and sends every
-// other URL to the network transport. It sits in front of both stacks, so
-// stdout and -o, and both stacks, read files the same way. A file:// answer
-// looks like an HTTP answer (200, 206, Content-Length, Last-Modified), so
-// the range checks, resume and -R work unchanged.
-type fileTransport struct {
+// protocolTransport serves file:// and ftp(s):// URLs itself and sends
+// every other URL to the network transport. It sits in front of both
+// stacks, so stdout and -o, and both stacks, handle these protocols the
+// same way. Their answers look like HTTP answers (200, 206, Content-Length,
+// Last-Modified), so the range checks, resume and -R work unchanged.
+type protocolTransport struct {
 	network Transport
+	opts    *config.Options
+	proxy   string // the --proxy URL, "" for the environment
 }
 
-func isFileURL(req *fasthttp.Request) bool {
-	return strings.EqualFold(string(req.URI().Scheme()), SchemeFile)
+// serve answers req when its protocol is not HTTP. ok is false for HTTP.
+func (t protocolTransport) serve(ctx context.Context, req *fasthttp.Request) (a fileAnswer, ok bool, err error) {
+	switch strings.ToLower(string(req.URI().Scheme())) {
+	case SchemeFile:
+		a, err = serveFile(req)
+		return a, true, err
+	case SchemeFTP, SchemeFTPS:
+		a, err = t.serveFTP(ctx, req)
+		return a, true, err
+	}
+	return fileAnswer{}, false, nil
 }
 
-func (t fileTransport) Name() string { return t.network.Name() }
+func (t protocolTransport) Name() string { return t.network.Name() }
 
-func (t fileTransport) Do(ctx context.Context, req *fasthttp.Request, rsp *fasthttp.Response) error {
-	if !isFileURL(req) {
+func (t protocolTransport) Do(ctx context.Context, req *fasthttp.Request, rsp *fasthttp.Response) error {
+	a, ok, err := t.serve(ctx, req)
+	if !ok {
 		return t.network.Do(ctx, req, rsp)
 	}
-	a, err := serveFile(req)
 	if err != nil {
 		return err
 	}
@@ -53,11 +65,11 @@ func (t fileTransport) Do(ctx context.Context, req *fasthttp.Request, rsp *fasth
 	return nil
 }
 
-func (t fileTransport) Stream(ctx context.Context, req *fasthttp.Request, sink io.Writer) (StreamMeta, error) {
-	if !isFileURL(req) {
+func (t protocolTransport) Stream(ctx context.Context, req *fasthttp.Request, sink io.Writer) (StreamMeta, error) {
+	a, ok, err := t.serve(ctx, req)
+	if !ok {
 		return t.network.Stream(ctx, req, sink)
 	}
-	a, err := serveFile(req)
 	if err != nil {
 		return StreamMeta{}, err
 	}
@@ -211,3 +223,20 @@ type sectionCloser struct {
 }
 
 func (s sectionCloser) Close() error { return s.f.Close() }
+
+// requestURL returns the URL of req with its user and password.
+// fasthttp's URI.String drops them, so ftp://user:pass@host lost its login.
+func requestURL(req *fasthttp.Request) (*url.URL, error) {
+	u, err := url.Parse(req.URI().String())
+	if err != nil {
+		return nil, err
+	}
+	if name := string(req.URI().Username()); name != "" {
+		if pass := req.URI().Password(); len(pass) > 0 {
+			u.User = url.UserPassword(name, string(pass))
+		} else {
+			u.User = url.User(name)
+		}
+	}
+	return u, nil
+}

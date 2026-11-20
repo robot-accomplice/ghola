@@ -29,6 +29,8 @@ func proxyFromEnv(target *url.URL) (*url.URL, error) {
 		}
 	case "https":
 		raw = firstEnv("https_proxy", "HTTPS_PROXY")
+	case "ftp", "ftps":
+		raw = firstEnv("ftp_proxy", "FTP_PROXY")
 	}
 	if raw == "" {
 		// As in curl, ALL_PROXY serves a scheme whose own variable is unset.
