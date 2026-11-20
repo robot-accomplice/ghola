@@ -39,13 +39,15 @@ type StreamMeta struct {
 	// ContentEncoding is the Content-Encoding header: the codings that
 	// --compressed removes. "" when absent.
 	ContentEncoding string
+	// SetCookies holds each Set-Cookie header, for the cookie jar.
+	SetCookies []string
 }
 
 // NewStreamMeta builds the StreamMeta of a response. Both stacks call it
 // with their own header lookup (net/http and fhttp have different Header
 // types), so a new field reaches both. Test fakes call it too, so they
 // cannot drift from the real stacks.
-func NewStreamMeta(status int, length int64, header func(string) string) StreamMeta {
+func NewStreamMeta(status int, length int64, header func(string) string, setCookies []string) StreamMeta {
 	return StreamMeta{
 		StatusCode:      status,
 		ContentLength:   length, // -1 when unknown, per net/http
@@ -57,6 +59,7 @@ func NewStreamMeta(status int, length int64, header func(string) string) StreamM
 		RetryAfter:      header("Retry-After"),
 		ETag:            header("ETag"),
 		ContentEncoding: header("Content-Encoding"),
+		SetCookies:      setCookies,
 	}
 }
 
@@ -347,7 +350,7 @@ func (t *simpleTransport) Stream(ctx context.Context, req *fasthttp.Request, sin
 	body := w.body(resp.Body)
 	defer body.Close()
 
-	meta := NewStreamMeta(resp.StatusCode, resp.ContentLength, resp.Header.Get)
+	meta := NewStreamMeta(resp.StatusCode, resp.ContentLength, resp.Header.Get, resp.Header.Values("Set-Cookie"))
 	return meta, CopyBody(sink, meta, body)
 }
 
@@ -438,7 +441,7 @@ func (t *tlsClientTransport) Stream(ctx context.Context, req *fasthttp.Request, 
 	body := w.body(httpResp.Body)
 	defer body.Close()
 
-	meta := NewStreamMeta(httpResp.StatusCode, httpResp.ContentLength, httpResp.Header.Get)
+	meta := NewStreamMeta(httpResp.StatusCode, httpResp.ContentLength, httpResp.Header.Get, httpResp.Header.Values("Set-Cookie"))
 	return meta, CopyBody(sink, meta, body)
 }
 

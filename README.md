@@ -62,7 +62,7 @@ Attribution: the direction for Ghola's browser-like fetching work was inspired b
 | `--speed-limit <B/s>` | **Stall check** -- stop when slower than this many bytes per second for `--speed-time` (default 30 s). |
 | `--speed-time <s>` | **Stall window** in seconds for `--speed-limit` (default limit 1 byte per second). |
 | `--compressed` | **Decompression** -- ask for `gzip, deflate, br, zstd` and decode the body, on stdout and with `-o`. The `Content-Encoding` header decides: a `.gz` file sent as it is stays a `.gz` file. |
-| `--cookie-jar <file>` | **Persistent cookies** -- save and reuse cookies across runs. |
+| `--cookie-jar <file>` | **Persistent cookies** -- save and reuse cookies across runs, on stdout and with `-o`. A new jar uses the Netscape format, so curl (`-b`, `-c`) and wget (`--load-cookies`) read it, and ghola reads theirs. A v0 JSON jar is read and written back as JSON. The jar follows RFC 6265: a server can set a cookie only for its own domain, never for a public suffix, and a cookie without `Domain` goes back only to its host. |
 | `--cookie <name=value>` | **Seed cookies** -- add one or more cookies to the request session. |
 | `--proxy <url>` | **Single proxy** -- route traffic through an HTTP proxy. |
 | `--proxy-file <path>` | **Proxy pool** -- load proxies from a newline-delimited file. |
