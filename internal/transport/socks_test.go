@@ -303,3 +303,83 @@ func TestSOCKSProxy_HTTPS(t *testing.T) {
 		})
 	}
 }
+
+// A SOCKS URL in the proxy variables goes through the same dialer as
+// --proxy, with curl's DNS rule, on both stacks. ALL_PROXY serves a scheme
+// whose own variable is not set, as in curl.
+func TestSOCKSProxy_FromTheEnvironment(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer target.Close()
+	port := target.Listener.Addr().(*net.TCPAddr).Port
+	targetURL := "http://localhost:" + strconv.Itoa(port) + "/"
+	for _, variable := range []string{"http_proxy", "ALL_PROXY"} {
+		for _, imp := range stacks {
+			t.Run(variable+"/impersonate="+imp, func(t *testing.T) {
+				for _, v := range []string{"http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY", "all_proxy", "ALL_PROXY", "no_proxy", "NO_PROXY"} {
+					t.Setenv(v, "")
+				}
+				srv := newSocksServer(t, "")
+				t.Setenv(variable, "socks5://"+srv.ln.Addr().String())
+				tr, err := New(&config.Options{Stealth: config.StealthOptions{Impersonate: imp}}, "")
+				if err != nil {
+					t.Fatalf("New: %v", err)
+				}
+				if err := get(t, tr, targetURL); err != nil {
+					t.Fatalf("GET: %v", err)
+				}
+				if v, naming, _ := srv.last(); v != 5 || naming != "ip" {
+					t.Errorf("proxy saw SOCKS%d with %q; want SOCKS5 with the address that ghola resolved", v, naming)
+				}
+			})
+		}
+	}
+}
+
+// --proxy wins over the environment: with an HTTP --proxy, a SOCKS
+// ALL_PROXY must not carry the connection to that proxy.
+func TestProxyFlag_IgnoresAnEnvironmentSOCKSProxy(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer target.Close()
+	// The test proxy connects only to the test's own target, whatever the
+	// request names, so it can never reach another host.
+	targetAddr := target.Listener.Addr().String()
+	httpProxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodConnect { // tls-client tunnels HTTP targets too
+			up, err := net.Dial("tcp", targetAddr)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadGateway)
+				return
+			}
+			c, _, _ := w.(http.Hijacker).Hijack()
+			c.Write([]byte("HTTP/1.1 200 Connection established\r\n\r\n")) //nolint:errcheck
+			go io.Copy(up, c)                                              //nolint:errcheck
+			io.Copy(c, up)                                                 //nolint:errcheck
+			c.Close()
+			up.Close()
+			return
+		}
+		resp, err := http.Get(target.URL + "/") // forward to the fixed target
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		resp.Body.Close()
+	}))
+	defer httpProxy.Close()
+	for _, imp := range stacks {
+		t.Run("impersonate="+imp, func(t *testing.T) {
+			srv := newSocksServer(t, "")
+			t.Setenv("ALL_PROXY", "socks5://"+srv.ln.Addr().String())
+			tr, err := New(&config.Options{Stealth: config.StealthOptions{Impersonate: imp}}, httpProxy.URL)
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+			if err := get(t, tr, target.URL+"/"); err != nil {
+				t.Fatalf("GET: %v", err)
+			}
+			if v, _, _ := srv.last(); v != 0 {
+				t.Errorf("the request went through the environment SOCKS proxy")
+			}
+		})
+	}
+}

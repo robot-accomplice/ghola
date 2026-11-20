@@ -108,6 +108,10 @@ type tlsClientTransport struct {
 	name     string
 	limits   limits
 	envProxy bool // no --proxy: take the proxy from the environment per request
+	// socksClient serves a request whose environment proxy is SOCKS. A
+	// tls-client takes a proxy URL or a dial function, not both, so the
+	// shared SOCKS dialer needs a client of its own. nil without envProxy.
+	socksClient tlsclient.HttpClient
 }
 
 // buildTLSConfig assembles a *tls.Config from the TLS-related options, or
@@ -174,8 +178,11 @@ func newNetwork(opts *config.Options, selectedProxy string) (Transport, error) {
 		ForceAttemptHTTP2: true,
 		// Never auto-negotiate/transparently decompress: downloads must be
 		// byte-exact, and --compressed is handled explicitly by the caller.
-		DisableCompression:     true,
-		Proxy:                  func(r *http.Request) (*url.URL, error) { return proxyFromEnv(r.URL) },
+		DisableCompression: true,
+		Proxy:              httpProxyFromEnv,
+		// With no --proxy, a SOCKS proxy from the environment goes through
+		// the shared SOCKS dialer. --proxy replaces both below.
+		DialContext:            envDialer((&net.Dialer{}).DialContext),
 		MaxResponseHeaderBytes: maxHeaderBytes(opts.Resilience.BufferSize),
 	}
 	if selectedProxy != "" {
@@ -184,6 +191,7 @@ func newNetwork(opts *config.Options, selectedProxy string) (Transport, error) {
 			return nil, fmt.Errorf("parse proxy url: %w", err)
 		}
 		httpTransport.Proxy = http.ProxyURL(proxyURL)
+		httpTransport.DialContext = (&net.Dialer{}).DialContext // the environment does not apply
 		if isSOCKS(proxyURL) {
 			httpTransport.Proxy = nil
 			httpTransport.DialContext = socksDialer(proxyURL, (&net.Dialer{}).DialContext)
@@ -266,13 +274,19 @@ func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transpor
 	if err != nil {
 		return nil, err
 	}
-
-	return &tlsClientTransport{
+	t := &tlsClientTransport{
 		client:   client,
 		name:     "tls-client",
 		limits:   newLimits(opts.Resilience),
 		envProxy: selectedProxy == "",
-	}, nil
+	}
+	if t.envProxy {
+		socksOptions := append(options[:len(options):len(options)], tlsclient.WithDialContext(envDialer((&net.Dialer{}).DialContext)))
+		if t.socksClient, err = tlsclient.NewHttpClient(tlsclient.NewNoopLogger(), socksOptions...); err != nil {
+			return nil, err
+		}
+	}
+	return t, nil
 }
 
 func (t *simpleTransport) Do(ctx context.Context, req *fasthttp.Request, rsp *fasthttp.Response) error {
@@ -293,6 +307,7 @@ func (t *simpleTransport) send(ctx context.Context, req *fasthttp.Request) (*htt
 	if err != nil {
 		return nil, nil, w.fail(err)
 	}
+	httpReq = httpReq.WithContext(withTarget(httpReq.Context(), httpReq.URL))
 	resp, err := t.httpClient.Do(httpReq)
 	if err != nil {
 		return nil, nil, w.fail(err)
@@ -424,34 +439,43 @@ func (t *tlsClientTransport) send(ctx context.Context, req *fasthttp.Request, se
 		return nil, nil, w.fail(err)
 	}
 	setHeaders(httpReq, req)
-	if err := t.useEnvProxy(httpReq.URL); err != nil {
+	httpReq = httpReq.WithContext(withTarget(httpReq.Context(), httpReq.URL))
+	client, err := t.clientFor(httpReq)
+	if err != nil {
 		return nil, nil, w.fail(err)
 	}
-	httpResp, err := t.client.Do(httpReq)
+	httpResp, err := client.Do(httpReq)
 	if err != nil {
 		return nil, nil, w.fail(err)
 	}
 	return httpResp, w, nil
 }
 
-// useEnvProxy sets the client's proxy from the environment for target, as
-// net/http does per request. tls-client reads no proxy variables itself.
-func (t *tlsClientTransport) useEnvProxy(target *url.URL) error {
+// clientFor returns the client for req. With no --proxy, it takes the
+// proxy from the environment for req, as net/http does per request
+// (tls-client reads no proxy variables itself): a SOCKS proxy goes through
+// socksClient, and an HTTP proxy is set on the main client.
+func (t *tlsClientTransport) clientFor(req *fhttp.Request) (tlsclient.HttpClient, error) {
 	if !t.envProxy {
-		return nil
+		return t.client, nil
 	}
-	p, err := proxyFromEnv(target)
+	if p, err := envSOCKS(req.Context()); err != nil || p != nil {
+		return t.socksClient, err
+	}
+	p, err := proxyFromEnv(req.URL)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	want := ""
 	if p != nil {
 		want = p.String()
 	}
-	if want == t.client.GetProxy() {
-		return nil
+	if want != t.client.GetProxy() {
+		if err := t.client.SetProxy(want); err != nil {
+			return nil, err
+		}
 	}
-	return t.client.SetProxy(want)
+	return t.client, nil
 }
 
 func (t *tlsClientTransport) Name() string {
