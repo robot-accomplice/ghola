@@ -45,6 +45,8 @@ var setters = map[string]setter{
 	"request-target":     func(o *config.Options, v string, _ *Command) error { o.RequestTarget = v; return nil },
 	"config":             func(*config.Options, string, *Command) error { return nil }, // read in WithConfig
 	"no-config":          func(*config.Options, string, *Command) error { return nil }, // read in WithConfig
+	"cond-etag-save":     func(o *config.Options, v string, _ *Command) error { o.Output.ETagSave = v; return nil },
+	"cond-etag-compare":  func(*config.Options, string, *Command) error { return nil }, // read in Apply
 	"save-headers":       func(o *config.Options, v string, _ *Command) error { o.Output.SaveHeaders = v; return nil },
 	"show-headers":       func(o *config.Options, v string, _ *Command) error { o.Output.Include = v == "true"; return nil },
 	"quiet":              func(o *config.Options, v string, _ *Command) error { o.Output.Silent = v == "true"; return nil },
@@ -179,6 +181,9 @@ func Apply(c *Command) (*config.Options, error) {
 		return nil, &UsageError{Msg: err.Error()}
 	}
 	applyCondTime(o, c.Last("cond-time"), os.Stderr)
+	if err := applyETagCompare(o, c.Last("cond-etag-compare")); err != nil {
+		return nil, &UsageError{Msg: err.Error()}
+	}
 	if err := addQuery(o, c.Values["query"]); err != nil {
 		return nil, &UsageError{Msg: err.Error()}
 	}
@@ -355,10 +360,8 @@ func applyCondTime(o *config.Options, value string, warn io.Writer) {
 		}
 		return
 	}
-	for _, h := range o.Headers {
-		if k, _, _ := strings.Cut(h, ":"); strings.EqualFold(strings.TrimSpace(k), name) {
-			return
-		}
+	if hasHeader(o.Headers, name) {
+		return
 	}
 	o.Headers = append(o.Headers, name+": "+t.UTC().Format(http.TimeFormat))
 	o.Output.CondTime = true
@@ -374,6 +377,41 @@ func condTime(value string) (time.Time, bool) {
 		}
 	}
 	return time.Time{}, false
+}
+
+// applyETagCompare sends If-None-Match with the ETag in the
+// --cond-etag-compare file, as curl --etag-compare does. A file that does
+// not exist yet, or an empty one, sends no condition: on the first run of
+// "--cond-etag-compare f --cond-etag-save f", f does not exist. A header
+// that -H sets wins.
+func applyETagCompare(o *config.Options, path string) error {
+	if path == "" {
+		return nil
+	}
+	b, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("--cond-etag-compare: %w", err)
+	}
+	etag, _, _ := strings.Cut(string(b), "\n")
+	if etag = strings.TrimSpace(etag); etag == "" || hasHeader(o.Headers, "If-None-Match") {
+		return nil
+	}
+	o.Headers = append(o.Headers, "If-None-Match: "+etag)
+	o.Output.CondTime = true
+	return nil
+}
+
+// hasHeader reports a header that -H sets.
+func hasHeader(headers []string, name string) bool {
+	for _, h := range headers {
+		if k, _, _ := strings.Cut(h, ":"); strings.EqualFold(strings.TrimSpace(k), name) {
+			return true
+		}
+	}
+	return false
 }
 
 // setJSON sends a JSON body: Content-Type and Accept are

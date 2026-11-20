@@ -114,10 +114,13 @@ func Download(ctx context.Context, opts *config.Options, stream Streamer) error 
 	}
 	meta, err := fetchToFile(ctx, opts, stream, limiter, progress)
 	if errors.Is(err, errNotModified) {
-		return nil // the --cond-time condition is not met: the file stays as it is
+		return nil // the condition is not met: the file stays as it is
 	}
 	if err != nil {
 		return err // the state file stays, so a resume can check the version
+	}
+	if err := opts.Output.SaveETag(meta.StatusCode, meta.ETag); err != nil {
+		return err
 	}
 	if err := removeState(opts.Output.File); err != nil {
 		return err

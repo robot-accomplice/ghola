@@ -32,6 +32,23 @@ func OpenOutput(o OutputOptions, name string, flags int, ownFile bool) (*os.File
 	return f, WriteError(err)
 }
 
+// SaveETag writes the ETag of a 2xx answer to --cond-etag-save, as curl
+// --etag-save does: the value as the server sent it, and a newline. With
+// no ETag the file is empty. Another status leaves the file as it is, so
+// a 304 to --cond-etag-compare keeps the saved ETag.
+func (o OutputOptions) SaveETag(status int, etag string) error {
+	if o.ETagSave == "" || status < 200 || status > 299 {
+		return nil
+	}
+	if etag != "" {
+		etag += "\n"
+	}
+	if err := os.WriteFile(o.ETagSave, []byte(etag), 0o644); err != nil {
+		return fmt.Errorf("--cond-etag-save: %w", WriteError(err))
+	}
+	return nil
+}
+
 // TooLarge reports a declared length above --max-size. -1 is unknown.
 func (o OutputOptions) TooLarge(length int64) bool {
 	return o.MaxSize > 0 && length > o.MaxSize

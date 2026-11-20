@@ -28,6 +28,9 @@ func ProcessResponse(w, ew io.Writer, opts *config.Options, req *fasthttp.Reques
 		return fmt.Errorf("%w: %d %s", config.ErrHTTPStatus, rsp.StatusCode(), fasthttp.StatusMessage(rsp.StatusCode()))
 	}
 
+	if err := opts.Output.SaveETag(rsp.StatusCode(), string(rsp.Header.Peek("ETag"))); err != nil {
+		return err
+	}
 	body, err := bodyReader(opts, rsp)
 	if err != nil {
 		return err
