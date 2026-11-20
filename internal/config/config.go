@@ -97,6 +97,9 @@ type OutputOptions struct {
 	// for it; main sets a new one for each URL.
 	Template *Template
 	Info     *TransferInfo
+	// PerURL holds one -o for each URL, in order, when several URLs have
+	// several -o. main sets each URL's target from it.
+	PerURL []string
 	// CondTime: the request has a --cond-time or --cond-etag-compare
 	// condition. A 304 then writes no file, as curl -z does.
 	CondTime bool
@@ -402,6 +405,13 @@ func applyChainShortcuts(opts *Options) {
 		opts.URL = info.DefaultRPC
 		opts.URLs = []string{opts.URL}
 	}
+}
+
+// TakeRemoteName sets the file to the remote name of opts.URL, inside
+// -o DIR/, for each URL of a run with several.
+func TakeRemoteName(opts *Options) {
+	opts.Output.File = ""
+	inferWgetFilename(opts)
 }
 
 func inferWgetFilename(opts *Options) {

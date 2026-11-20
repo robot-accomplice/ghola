@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // ErrTooLarge marks a body larger than --max-size. curl exits 63 for it.
@@ -47,6 +48,21 @@ func (o OutputOptions) SaveETag(status int, etag string) error {
 		return fmt.Errorf("--cond-etag-save: %w", WriteError(err))
 	}
 	return nil
+}
+
+// SetTarget sets the output for -o VALUE: "-" is stdout; a value that
+// ends in / or names a folder gets the remote file name inside it; else
+// it is the file.
+func (o *OutputOptions) SetTarget(v string) {
+	o.Stdout, o.RemoteName, o.Dir, o.File = false, false, "", ""
+	switch info, err := os.Stat(v); {
+	case v == "-":
+		o.Stdout = true
+	case strings.HasSuffix(v, "/") || strings.HasSuffix(v, string(filepath.Separator)) || (err == nil && info.IsDir()):
+		o.RemoteName, o.Dir = true, v
+	default:
+		o.File = v
+	}
 }
 
 // TooLarge reports a declared length above --max-size. -1 is unknown.

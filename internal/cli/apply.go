@@ -204,6 +204,9 @@ func Apply(c *Command) (*config.Options, error) {
 		return nil, err
 	}
 	config.TakeURLs(o, urls)
+	if err := pairOutputs(o, c.Values["output"]); err != nil {
+		return nil, &UsageError{Msg: err.Error()}
+	}
 	if err := applyNetrc(o, c); err != nil {
 		return nil, &UsageError{Msg: err.Error()}
 	}
@@ -296,16 +299,25 @@ func setInt(field func(*config.Options) *int) setter {
 // setOutput handles -o FILE, -o - (stdout) and -o DIR/ (the remote name
 // inside the folder).
 func setOutput(o *config.Options, v string, _ *Command) error {
-	if v == "-" {
-		o.Output.Stdout = true
+	o.Output.SetTarget(v)
+	return nil
+}
+
+// pairOutputs pairs several -o with several URLs, in order (v1 spec,
+// output group): one -o DIR/ serves all URLs, or each URL gets its own
+// -o. Another count is an error, so a second URL cannot replace the
+// file of the first.
+func pairOutputs(o *config.Options, outputs []string) error {
+	if len(o.URLs) < 2 || len(outputs) == 0 {
 		return nil
 	}
-	if info, err := os.Stat(v); strings.HasSuffix(v, "/") || strings.HasSuffix(v, string(filepath.Separator)) || (err == nil && info.IsDir()) {
-		o.Output.RemoteName = true
-		o.Output.Dir = v
+	if len(outputs) == 1 && o.Output.Dir != "" {
 		return nil
 	}
-	o.Output.File = v
+	if len(outputs) != len(o.URLs) {
+		return fmt.Errorf("%d URLs and %d -o: give one -o for each URL, or one -o DIR/ for all", len(o.URLs), len(outputs))
+	}
+	o.Output.PerURL = outputs
 	return nil
 }
 

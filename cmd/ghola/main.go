@@ -306,9 +306,15 @@ func transferAll(ctx context.Context, opts *config.Options, do client.Doer, stre
 	// failure's, as in curl (v1 defaults, item 10B, decided by Jon on
 	// 2026-11-18).
 	last := config.NoError.Int()
-	for _, u := range opts.URLs {
+	for i, u := range opts.URLs {
 		one := *opts
 		one.URL = u
+		if len(opts.Output.PerURL) == len(opts.URLs) {
+			one.Output.SetTarget(opts.Output.PerURL[i]) // one -o for each URL, in order
+		}
+		if one.Output.RemoteName && len(opts.URLs) > 1 {
+			config.TakeRemoteName(&one) // each URL under its own name
+		}
 		if code := fetchWithTemplate(ctx, &one, do, stream, w); code != config.NoError.Int() {
 			last = code
 		}

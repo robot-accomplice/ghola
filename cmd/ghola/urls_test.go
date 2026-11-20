@@ -52,3 +52,34 @@ func TestExecute_SeveralURLs(t *testing.T) {
 		t.Errorf("two failures: exit %d, want 7, the last one", code)
 	}
 }
+
+// Several -o pair with several URLs in order (v1 spec, output group), so
+// a second URL cannot replace the file of the first. One -o DIR/ serves
+// all URLs, and another count is an argument error.
+func TestExecute_OutputForEachURL(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		io.WriteString(w, r.URL.Path) //nolint:errcheck
+	}))
+	defer srv.Close()
+	dir := t.TempDir()
+	a, b := dir+"/a", dir+"/b"
+	if code := runGhola(t, "-q", "-o", a, "-o", b, srv.URL+"/one", srv.URL+"/two"); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	for f, want := range map[string]string{a: "/one", b: "/two"} {
+		if got, _ := os.ReadFile(f); string(got) != want {
+			t.Errorf("%s = %q, want %q", f, got, want)
+		}
+	}
+	if code := runGhola(t, "-q", "-o", dir+"/", srv.URL+"/three", srv.URL+"/four"); code != 0 {
+		t.Fatalf("-o DIR/: exit %d", code)
+	}
+	for _, f := range []string{"three", "four"} {
+		if got, _ := os.ReadFile(dir + "/" + f); string(got) != "/"+f {
+			t.Errorf("-o DIR/: %s = %q", f, got)
+		}
+	}
+	if code := runGhola(t, "-q", "-o", a, srv.URL+"/one", srv.URL+"/two"); code != 2 {
+		t.Errorf("one -o FILE for two URLs: exit %d, want 2", code)
+	}
+}

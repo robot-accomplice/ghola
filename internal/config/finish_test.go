@@ -115,10 +115,19 @@ func TestFinish_HeaderRemovalIsAccepted(t *testing.T) {
 	}
 }
 
-// One output takes one URL (audit finding M9).
+// One -o FILE and one --har file take one URL (audit finding M9), so
+// two bodies cannot share one file. The remote name and one -o for each
+// URL serve several (v1 spec, output group).
 func TestFinish_SeveralURLsWithOneOutput(t *testing.T) {
-	if err := finish(t, withURL(&Options{Output: OutputOptions{File: "f"}}, "a", "b")); err == nil {
-		t.Fatal("-o with two URLs was accepted")
+	for _, o := range []OutputOptions{{File: "f"}, {HAR: "h.har"}} {
+		if err := finish(t, withURL(&Options{Output: o}, "a", "b")); err == nil {
+			t.Errorf("%+v with two URLs was accepted", o)
+		}
+	}
+	for _, o := range []OutputOptions{{RemoteName: true}, {File: "f", PerURL: []string{"f", "g"}}} {
+		if err := finish(t, withURL(&Options{Output: o}, "a", "b")); err != nil {
+			t.Errorf("%+v with two URLs: %v", o, err)
+		}
 	}
 }
 
