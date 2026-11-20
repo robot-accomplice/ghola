@@ -292,6 +292,12 @@ redirectLoop:
 	}
 }
 
+// Release gives the request and the answer of FetchURL back.
+func Release(req *fasthttp.Request, rsp *fasthttp.Response) {
+	fasthttp.ReleaseRequest(req)
+	fasthttp.ReleaseResponse(rsp)
+}
+
 // selectProxy returns the proxy from --proxy or --proxy-file, or "" when
 // neither is set. Then the transport takes the proxy from the environment.
 // FetchURL and the download path both call it, so a proxy cannot reach one

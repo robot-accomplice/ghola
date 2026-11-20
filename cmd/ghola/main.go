@@ -188,7 +188,7 @@ func runJob(c *cli.Command, w *os.File) (code int, done bool) {
 		return config.NoError.Int(), true
 	}
 	switch c.Job {
-	case cli.JobFetch, cli.JobDownload, cli.JobInspect:
+	case cli.JobFetch, cli.JobDownload, cli.JobInspect, cli.JobMirror:
 		return 0, false
 	case cli.JobJobs:
 		return runJobsCommand(c.Args, w), true
@@ -338,6 +338,9 @@ func transferAll(ctx context.Context, opts *config.Options, do client.Doer, stre
 	// A failure does not stop the run, and the exit code is the last
 	// failure's, as in curl (v1 defaults, item 10B, decided by Jon on
 	// 2026-11-18).
+	if opts.Mirror.On {
+		return runMirror(ctx, opts, do, stream)
+	}
 	runs := make([]config.Options, len(opts.URLs))
 	for i, u := range opts.URLs {
 		runs[i] = *opts

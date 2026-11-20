@@ -208,9 +208,11 @@ type StealthOptions struct {
 
 // ResilienceOptions controls retry, timeout, redirect, and buffer behavior.
 type ResilienceOptions struct {
-	Timeout   int
-	Retries   int
-	Backoff   int
+	Timeout int
+	Retries int
+	Backoff int
+	// Wait is the pause between requests (--wait).
+	Wait      time.Duration
 	RetryHTTP bool
 	Location  bool
 	// RetryMaxTime stops retries once this time has passed since the
@@ -285,6 +287,7 @@ type Options struct {
 	RequestTarget string
 
 	Output     OutputOptions
+	Mirror     MirrorOptions
 	Stealth    StealthOptions
 	Resilience ResilienceOptions
 	ProxyCfg   ProxyOptions
