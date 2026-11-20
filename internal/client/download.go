@@ -112,6 +112,7 @@ func Download(ctx context.Context, opts *config.Options, stream Streamer) error 
 	if err != nil {
 		return err
 	}
+	stream = withAuthStream(stream) // outside, so the jar and --save-headers see the 401 too
 	meta, err := fetchToFile(ctx, opts, stream, limiter, progress)
 	if errors.Is(err, errNotModified) {
 		return nil // the condition is not met: the file stays as it is
@@ -532,6 +533,8 @@ func (g singleGet) checkStatus(opts *config.Options, meta gholatransport.StreamM
 		return fmt.Errorf("%w %d", errRetryStatus, meta.StatusCode)
 	case opts.Output.CondTime && meta.StatusCode == fasthttp.StatusNotModified:
 		return errNotModified
+	case answersChallenge(opts, meta.StatusCode):
+		return errAuthChallenge
 	case opts.Output.FailsOn(meta.StatusCode):
 		return fmt.Errorf("%w: %d", config.ErrHTTPStatus, meta.StatusCode)
 	}

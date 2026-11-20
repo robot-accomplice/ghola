@@ -94,6 +94,7 @@ func newFetchState(opts *config.Options, do Doer) (*fetchState, error) {
 			return transport.Do(ctx, req, resp)
 		}
 	}
+	s.do = withAuthAnswer(s.do) // --auth digest and any
 
 	return s, nil
 }

@@ -220,6 +220,9 @@ type Options struct {
 	// file name (--data-literal).
 	DataLiteral bool
 	User        string
+	// Auth is the --auth method for User: "basic" (or ""), "digest" or
+	// "any".
+	Auth        string
 	Concurrency int
 	Chain       string
 	// PathAsIs sends the URL path without removing ./ and ../

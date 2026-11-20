@@ -53,7 +53,7 @@ func setHeaders(req *fasthttp.Request, opts *config.Options, active profile.Brow
 		req.Header.Set("Accept-Encoding", gholatransport.AcceptEncoding)
 	}
 
-	if opts.User != "" && trusted {
+	if opts.User != "" && trusted && !waitsForChallenge(opts) {
 		auth := base64.StdEncoding.EncodeToString([]byte(opts.User))
 		req.Header.Set("Authorization", "Basic "+auth)
 	}

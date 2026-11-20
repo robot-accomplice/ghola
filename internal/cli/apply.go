@@ -57,6 +57,7 @@ var setters = map[string]setter{
 	"tls-crl":       func(o *config.Options, v string, _ *Command) error { o.Stealth.CRL = v; return nil },
 	"tls-ocsp":      func(o *config.Options, v string, _ *Command) error { o.Stealth.OCSP = v == "true"; return nil },
 	"tls-cert-type": func(o *config.Options, v string, _ *Command) error { o.Stealth.CertType = v; return nil },
+	"auth":          setAuth,
 	"save-headers":  func(o *config.Options, v string, _ *Command) error { o.Output.SaveHeaders = v; return nil },
 	"show-headers":  func(o *config.Options, v string, _ *Command) error { o.Output.Include = v == "true"; return nil },
 	"quiet":         func(o *config.Options, v string, _ *Command) error { o.Output.Silent = v == "true"; return nil },
@@ -422,6 +423,19 @@ func hasHeader(headers []string, name string) bool {
 		}
 	}
 	return false
+}
+
+// setAuth reads --auth. NTLM and Negotiate need the system's SSPI or
+// Kerberos, which ghola does not reach yet; they are refused, not dropped.
+func setAuth(o *config.Options, v string, _ *Command) error {
+	switch v {
+	case "basic", "digest", "any":
+		o.Auth = v
+		return nil
+	case "ntlm", "negotiate":
+		return fmt.Errorf("--auth %s is not built yet: it needs the system's SSPI or Kerberos; use basic, digest or any", v)
+	}
+	return fmt.Errorf("--auth %q: use basic, digest, any, ntlm or negotiate", v)
 }
 
 // setJSON sends a JSON body: Content-Type and Accept are
