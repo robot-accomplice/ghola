@@ -294,8 +294,8 @@ func downloadSegmented(ctx context.Context, opts *config.Options, stream Streame
 			os.Remove(opts.Output.File)
 		}
 	}()
-	if err := f.Truncate(size); err != nil {
-		return fmt.Errorf("preallocate output file: %w", config.WriteError(err))
+	if err := reserve(f, size, opts.Output.FileAllocation); err != nil {
+		return err
 	}
 
 	// With --source, each worker reads from one mirror and takes the next
@@ -411,6 +411,11 @@ func singlePlan(opts *config.Options) (flags int, offset int64, rangeHeader stri
 }
 
 func downloadSingle(ctx context.Context, opts *config.Options, stream Streamer, url string, limiter *rateLimiter, progress *progressWriter) (gholatransport.StreamMeta, error) {
+	if opts.Output.FileAllocation != "" && opts.Output.FileAllocation != "none" && !opts.Output.Silent {
+		// A reserved file has its full size before the end, so a resume
+		// after a failure would take it as done.
+		fmt.Fprintln(os.Stderr, "Note: --file-allocation applies to a segmented download (-n or --source); a single stream writes in order")
+	}
 	flags, offset, rangeHeader, err := singlePlan(opts)
 	if err != nil {
 		return gholatransport.StreamMeta{}, err

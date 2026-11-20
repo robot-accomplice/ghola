@@ -120,6 +120,8 @@ type OutputOptions struct {
 	RateTotal RateShare
 	// RateTotalValue is the --rate-max-total value.
 	RateTotalValue string
+	// FileAllocation is --file-allocation: none, prealloc, falloc or trunc.
+	FileAllocation string
 	// Checksum is the --checksum digest that the body must match.
 	Checksum *Digest
 	// SaveHeaders is the --save-headers path ("-" is stdout). HeaderOut is

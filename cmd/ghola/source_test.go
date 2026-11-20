@@ -55,3 +55,20 @@ func TestExecute_Source(t *testing.T) {
 		t.Errorf("a broken mirror: %d bytes, %d requests to it", len(got), dead.Load())
 	}
 }
+
+// A segmented download gives the same bytes with each --file-allocation
+// mode that this system has.
+func TestExecute_FileAllocation(t *testing.T) {
+	body := bytes.Repeat([]byte("ghola-"), 1<<19) // 3 MiB
+	var hits atomic.Int32
+	u := mirror(t, body, 0, false, &hits)
+	for _, mode := range []string{"none", "trunc", "prealloc"} {
+		f := filepath.Join(t.TempDir(), mode)
+		if code := runGhola(t, "download", "-q", "-n", "4", "--file-allocation", mode, "-o", f, u); code != 0 {
+			t.Fatalf("%s: exit %d", mode, code)
+		}
+		if got, _ := os.ReadFile(f); !bytes.Equal(got, body) {
+			t.Errorf("%s: the file differs (%d bytes)", mode, len(got))
+		}
+	}
+}
