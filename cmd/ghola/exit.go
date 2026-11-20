@@ -32,11 +32,11 @@ func exitFor(err error) config.ExitCode {
 		return config.UnsupportedProtocol
 	case errors.Is(err, gholatransport.ErrFileRead):
 		return config.FileCouldntRead
-	case errors.Is(err, gholatransport.ErrFTPLogin):
+	case errors.Is(err, gholatransport.ErrLoginDenied):
 		return config.FTPLoginDenied
-	case errors.Is(err, gholatransport.ErrFTPNotFound):
+	case errors.Is(err, gholatransport.ErrRemoteNotFound):
 		return config.RemoteFileNotFound
-	case errors.Is(err, gholatransport.ErrFTPProxy):
+	case errors.Is(err, gholatransport.ErrNoHTTPProxy):
 		return config.UnsupportedProtocol
 	case errors.Is(err, gholatransport.ErrBadEncoding):
 		return config.BadContentEncoding
@@ -46,7 +46,7 @@ func exitFor(err error) config.ExitCode {
 		return config.RecvFailed
 	case errors.As(err, &dnsErr):
 		return config.CouldntResolveHost
-	case isCertError(err):
+	case isCertError(err), errors.Is(err, gholatransport.ErrSSHHostKey):
 		return config.PeerFailedVerification
 	case isTLSError(err):
 		return config.TLSConnectFailed

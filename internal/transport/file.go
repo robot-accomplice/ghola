@@ -1,7 +1,6 @@
 package transport
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -14,7 +13,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/robot-accomplice/ghola/internal/config"
 	"github.com/valyala/fasthttp"
@@ -27,7 +25,7 @@ var ErrFileRead = errors.New("could not read the file:// file")
 // SchemeFile is the scheme of a local file URL (plan phase 5, decision D1).
 const SchemeFile = "file"
 
-// protocolTransport serves file:// and ftp(s):// URLs itself and sends
+// protocolTransport serves file://, ftp(s)://, sftp:// and scp:// URLs itself and sends
 // every other URL to the network transport. It sits in front of both
 // stacks, so stdout and -o, and both stacks, handle these protocols the
 // same way. Their answers look like HTTP answers (200, 206, Content-Length,
@@ -46,6 +44,12 @@ func (t protocolTransport) serve(ctx context.Context, req *fasthttp.Request) (a 
 		return a, true, err
 	case SchemeFTP, SchemeFTPS:
 		a, err = t.serveFTP(ctx, req)
+		return a, true, err
+	case SchemeSFTP:
+		a, err = t.serveSFTP(ctx, req)
+		return a, true, err
+	case SchemeSCP:
+		a, err = t.serveSCP(ctx, req)
 		return a, true, err
 	}
 	return fileAnswer{}, false, nil
@@ -104,7 +108,7 @@ func serveFile(req *fasthttp.Request) (fileAnswer, error) {
 		if err := os.WriteFile(path, req.Body(), 0o644); err != nil {
 			return fileAnswer{}, fmt.Errorf("write %s: %w", path, err)
 		}
-		return fileAnswer{status: http.StatusOK, header: http.Header{}, body: io.NopCloser(bytes.NewReader(nil))}, nil
+		return emptyAnswer(), nil
 	default:
 		return fileAnswer{}, fmt.Errorf("file://: the %s method is not supported", method)
 	}
@@ -143,27 +147,13 @@ func readFile(path, rangeHeader string, head bool) (fileAnswer, error) {
 		defer f.Close()
 		return listDir(f, head)
 	}
-	size := info.Size()
-	h := http.Header{}
-	h.Set("Accept-Ranges", "bytes")
-	h.Set("Last-Modified", info.ModTime().UTC().Format(http.TimeFormat))
-	status, start, length := http.StatusOK, int64(0), size
-	if rangeHeader != "" {
-		var ok bool
-		if start, length, ok = parseRange(rangeHeader, size); !ok {
-			f.Close()
-			h.Set("Content-Range", "bytes */"+strconv.FormatInt(size, 10))
-			return fileAnswer{status: http.StatusRequestedRangeNotSatisfiable, header: h, body: io.NopCloser(bytes.NewReader(nil))}, nil
-		}
-		status = http.StatusPartialContent
-		h.Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, start+length-1, size))
-	}
-	h.Set("Content-Length", strconv.FormatInt(length, 10))
-	if head {
+	a, start, ok := rangeAnswer(info.Size(), info.ModTime(), rangeHeader)
+	if !ok || head {
 		f.Close()
-		return fileAnswer{status: status, header: h, body: io.NopCloser(bytes.NewReader(nil)), length: length}, nil
+		return a, nil
 	}
-	return fileAnswer{status: status, header: h, body: sectionCloser{io.NewSectionReader(f, start, length), f}, length: length}, nil
+	a.body = sectionCloser{io.NewSectionReader(f, start, a.length), f}
+	return a, nil
 }
 
 // parseRange reads "bytes=a-", "bytes=a-b" and "bytes=-n" for a file of
@@ -203,17 +193,7 @@ func listDir(f *os.File, head bool) (fileAnswer, error) {
 		return fileAnswer{}, fmt.Errorf("%w: %w", ErrFileRead, err)
 	}
 	sort.Strings(names)
-	var b bytes.Buffer
-	for _, n := range names {
-		b.WriteString(n + "\n")
-	}
-	h := http.Header{}
-	h.Set("Content-Length", strconv.Itoa(b.Len()))
-	h.Set("Last-Modified", time.Now().UTC().Format(http.TimeFormat))
-	if head {
-		b.Reset()
-	}
-	return fileAnswer{status: http.StatusOK, header: h, body: io.NopCloser(&b), length: int64(b.Len())}, nil
+	return listAnswer(names, head), nil
 }
 
 // sectionCloser reads a part of a file and closes the file.
