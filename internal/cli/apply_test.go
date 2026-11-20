@@ -84,7 +84,7 @@ func TestApply_Units(t *testing.T) {
 // An option of a phase that is not built is refused with its phase, so no
 // option is accepted and then ignored.
 func TestApply_UnbuiltOptionIsRefused(t *testing.T) {
-	for _, args := range [][]string{{"--alt-svc", "cache.txt", "u"}, {"--doh", "https://dns.example/q", "u"}, {"--http", "2", "u"}, {"--proxy-tls-ca", "x", "u"}} {
+	for _, args := range [][]string{{"--alt-svc", "cache.txt", "u"}, {"--doh", "https://dns.example/q", "u"}, {"--http", "2", "u"}, {"--tls-ech", "u"}} {
 		if _, err := Apply(apply(t, args...)); err == nil || !strings.Contains(err.Error(), "not built yet") {
 			t.Errorf("%q: err = %v", args, err)
 		}
@@ -200,5 +200,17 @@ func TestApply_Netrc(t *testing.T) {
 	}
 	if o, _ := Apply(apply(t, "--auth-netrc-file", path, "https://other/f")); o.User != "" {
 		t.Errorf("another host got %q", o.User)
+	}
+}
+
+// Each --proxy-tls-* option sets the proxy's TLS through the --tls-*
+// setter, and leaves the server's TLS as it is.
+func TestApply_ProxyTLS(t *testing.T) {
+	o, err := Apply(apply(t, "--proxy-tls-ca", "p.pem", "--no-proxy-tls-verify", "--tls-ca", "s.pem", "--proxy", "https://p:3128", "u"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.ProxyCfg.TLS.CACert != "p.pem" || !o.ProxyCfg.TLS.Insecure || o.Stealth.CACert != "s.pem" || o.Stealth.Insecure {
+		t.Errorf("proxy TLS %+v, server CA %q, insecure %v", o.ProxyCfg.TLS, o.Stealth.CACert, o.Stealth.Insecure)
 	}
 }

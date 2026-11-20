@@ -188,10 +188,8 @@ func Apply(c *Command) (*config.Options, error) {
 			return nil, &UsageError{Msg: err.Error()}
 		}
 	}
-	for name := range c.Values {
-		if strings.HasPrefix(name, "proxy-tls-") {
-			return nil, usagef("--%s is in the v1 spec but not built yet (phase 2)", name)
-		}
+	if err := applyProxyTLS(o, c); err != nil {
+		return nil, err
 	}
 	urls, err := expandURLs(c.Args, c.Last("url-glob") != "false")
 	if err != nil {
@@ -451,6 +449,27 @@ func setAuth(o *config.Options, v string, _ *Command) error {
 		return fmt.Errorf("--auth %s is not built yet: it needs the system's SSPI or Kerberos; use basic, digest or any", v)
 	}
 	return fmt.Errorf("--auth %q: use basic, digest, any, ntlm or negotiate", v)
+}
+
+// applyProxyTLS runs the --tls-* setter of each --proxy-tls-* option on
+// the proxy's own TLS settings, so the two share their rules.
+func applyProxyTLS(o *config.Options, c *Command) error {
+	for name, values := range c.Values {
+		base, ok := strings.CutPrefix(name, "proxy-")
+		if !ok || !strings.HasPrefix(base, "tls-") {
+			continue
+		}
+		set, ok := setters[base]
+		if !ok {
+			return usagef("--%s is in the v1 spec but not built yet (phase 2)", name)
+		}
+		proxy := &config.Options{Stealth: o.ProxyCfg.TLS}
+		if err := set(proxy, values[len(values)-1], &Command{Values: map[string][]string{base: values}}); err != nil {
+			return &UsageError{Msg: fmt.Sprintf("--%s: %v", name, err)}
+		}
+		o.ProxyCfg.TLS = proxy.Stealth
+	}
+	return nil
 }
 
 // setJSON sends a JSON body: Content-Type and Accept are

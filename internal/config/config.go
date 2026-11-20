@@ -210,6 +210,9 @@ type ProxyOptions struct {
 	File        string
 	Strategy    string
 	HealthCheck bool
+	// TLS holds the --proxy-tls-* options, in the fields of the --tls-*
+	// options, for an https proxy.
+	TLS StealthOptions
 	// Bypass is the --proxy-bypass list of hosts that go direct, in
 	// no_proxy's format. nil reads no_proxy; it then applies only to a
 	// proxy from the environment, as before.

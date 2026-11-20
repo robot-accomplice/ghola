@@ -243,17 +243,8 @@ func newNetwork(opts *config.Options, selectedProxy string) (Transport, error) {
 		DialContext:            envDialer(base, opts.ProxyCfg.Bypass),
 		MaxResponseHeaderBytes: maxHeaderBytes(opts.Resilience.BufferSize),
 	}
-	if selectedProxy != "" {
-		proxyURL, err := url.Parse(selectedProxy)
-		if err != nil {
-			return nil, fmt.Errorf("parse proxy url: %w", err)
-		}
-		httpTransport.Proxy = http.ProxyURL(proxyURL)
-		httpTransport.DialContext = base // the environment does not apply
-		if isSOCKS(proxyURL) {
-			httpTransport.Proxy = nil
-			httpTransport.DialContext = socksDialer(proxyURL, base)
-		}
+	if err := useFixedProxy(httpTransport, selectedProxy, opts.ProxyCfg.TLS, base); err != nil {
+		return nil, err
 	}
 	httpClient := &http.Client{
 		Transport: httpTransport,
@@ -267,6 +258,37 @@ func newNetwork(opts *config.Options, selectedProxy string) (Transport, error) {
 		name:       "net/http",
 		limits:     newLimits(opts.Resilience),
 	}, nil
+}
+
+// useFixedProxy sets --proxy on the net/http transport: SOCKS through the
+// shared dialer, and an https proxy with the --proxy-tls-* options
+// through proxyTLSDial. The environment then does not apply.
+func useFixedProxy(tr *http.Transport, selectedProxy string, proxyTLS config.StealthOptions, base dialFunc) error {
+	if selectedProxy == "" {
+		if hasProxyTLS(proxyTLS) {
+			return fmt.Errorf("the --proxy-tls-* options need an https:// --proxy")
+		}
+		return nil
+	}
+	proxyURL, err := url.Parse(selectedProxy)
+	if err != nil {
+		return fmt.Errorf("parse proxy url: %w", err)
+	}
+	tr.Proxy, tr.DialContext = http.ProxyURL(proxyURL), base
+	switch {
+	case isSOCKS(proxyURL):
+		tr.Proxy, tr.DialContext = nil, socksDialer(proxyURL, base)
+	case hasProxyTLS(proxyTLS) && strings.EqualFold(proxyURL.Scheme, "https"):
+		if tr.DialContext, err = proxyTLSDial(proxyURL, proxyTLS, base); err != nil {
+			return err
+		}
+		plain := *proxyURL
+		plain.Scheme = "http" // the dial function adds the TLS
+		tr.Proxy = http.ProxyURL(&plain)
+	case hasProxyTLS(proxyTLS):
+		return fmt.Errorf("the --proxy-tls-* options need an https:// --proxy, not %s://", proxyURL.Scheme)
+	}
+	return nil
 }
 
 // maxHeaderBytes is the response header limit. --buffer-size can raise
@@ -297,7 +319,7 @@ func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transpor
 	// pass a CA pool or a client certificate to tls-client; fail loud
 	// rather than ignore the options. A pin would be per host on
 	// tls-client, and --tls-pin covers every host of the transfer.
-	if opts.Stealth.ClientCert != "" || opts.Stealth.CACert != "" || hasTLSOptions(opts.Stealth) {
+	if opts.Stealth.ClientCert != "" || opts.Stealth.CACert != "" || hasTLSOptions(opts.Stealth) || hasProxyTLS(opts.ProxyCfg.TLS) {
 		return nil, fmt.Errorf("the --tls-* options other than --no-tls-verify do not work with --impersonate yet: the browser profile sets the TLS handshake")
 	}
 
