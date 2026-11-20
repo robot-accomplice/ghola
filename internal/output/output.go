@@ -5,6 +5,7 @@ package output
 import (
 	"bytes"
 	"fmt"
+	"hash"
 	"io"
 	"os"
 	"strings"
@@ -72,10 +73,21 @@ func ProcessResponse(w, ew io.Writer, opts *config.Options, req *fasthttp.Reques
 			return fmt.Errorf("write output: %w", config.WriteError(err))
 		}
 	}
+	digest := opts.Output.DigestFor(rsp.StatusCode(), string(rsp.Header.Peek("Content-Digest")), string(rsp.Header.Peek("Content-Encoding")))
+	var sum hash.Hash
+	if digest != nil {
+		sum = digest.NewHash()
+		body = io.TeeReader(body, sum)
+	}
 	n, err := io.Copy(config.MarkWrites(bodyOut(w, opts)), body)
 	opts.Output.Info.AddSize(n)
 	if err != nil {
 		return fmt.Errorf("copy response body: %w", err)
+	}
+	if digest != nil {
+		if err := digest.Check(sum.Sum(nil), "the body"); err != nil {
+			return err
+		}
 	}
 
 	printTiming(ew, opts, elapsed)

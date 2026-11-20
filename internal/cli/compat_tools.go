@@ -154,6 +154,7 @@ const aria2Table = `
 --referer                      => --referer %s
 --all-proxy                    => --proxy %s
 --no-proxy                     => --proxy-bypass %s
+--checksum                     => --checksum %s
 --ca-certificate               => --tls-ca %s
 --certificate                  => --tls-cert %s
 --private-key                  => --tls-key %s

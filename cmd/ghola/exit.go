@@ -24,6 +24,8 @@ func exitFor(err error) config.ExitCode {
 	switch {
 	case errors.Is(err, config.ErrHTTPStatus):
 		return config.HTTPError
+	case errors.Is(err, config.ErrChecksum):
+		return config.ChecksumFailed
 	case errors.Is(err, config.ErrTooLarge):
 		return config.FileSizeExceeded
 	case errors.Is(err, config.ErrWrite):

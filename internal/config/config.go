@@ -63,6 +63,9 @@ const (
 	// RecvFailed indicates a failure after the connection was ready, for
 	// example a reset or a TLS alert after the handshake (curl 56).
 	RecvFailed ExitCode = 56
+	// ChecksumFailed indicates a body that does not match --checksum or
+	// Content-Digest. 32 is aria2's code for it; curl does not use 32.
+	ChecksumFailed ExitCode = 32
 	// FileSizeExceeded indicates a body larger than --max-size (curl 63).
 	FileSizeExceeded ExitCode = 63
 	// PeerFailedVerification indicates that the server certificate or its
@@ -106,6 +109,8 @@ type OutputOptions struct {
 	TraceOut   io.Writer
 	TraceASCII bool
 	TraceTime  bool
+	// Checksum is the --checksum digest that the body must match.
+	Checksum *Digest
 	// SaveHeaders is the --save-headers path ("-" is stdout). HeaderOut is
 	// that file, which ghola opens once for the whole command.
 	SaveHeaders  string

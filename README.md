@@ -191,6 +191,7 @@ ghola uses curl's exit codes for the same causes, so a script written for curl r
 | 23 | ghola could not write the output (stdout or the `-o` file) |
 | 26 | ghola could not read a local file (`-d @file`, `--upload`, `--form name=@file`) |
 | 28 | A time limit ended the transfer (`--timeout`, `--timeout-connect`, `--stall-time`) |
+| 32 | The body does not match `--checksum` or the server's `Content-Digest` (aria2's code; curl does not use 32) |
 | 35 | The TLS handshake failed |
 | 37 | ghola could not read the file of a `file://` URL |
 | 67 | The FTP server refused the login |

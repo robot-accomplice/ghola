@@ -150,6 +150,7 @@ func TestExitFor_WrappedCauses(t *testing.T) {
 		{fmt.Errorf("x: %w", gholatransport.ErrCertStatus), 91},
 		{fmt.Errorf("x: %w", gholatransport.ErrCertRevoked), 60},
 		{fmt.Errorf("x: %w", gholatransport.ErrNoAddress), 6},
+		{fmt.Errorf("x: %w", config.ErrChecksum), 32},
 		// A TLS alert during the handshake (before GotConn).
 		{fmt.Errorf("x: %w", &net.OpError{Op: "remote error", Err: errors.New("tls: handshake failure")}), 35},
 		{fmt.Errorf("x: %w: %w", gholatransport.ErrRecv, errors.New("connection reset")), 56},

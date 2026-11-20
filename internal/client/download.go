@@ -120,6 +120,13 @@ func Download(ctx context.Context, opts *config.Options, stream Streamer) error 
 	if err != nil {
 		return err // the state file stays, so a resume can check the version
 	}
+	if d := opts.Output.DigestFor(meta.StatusCode, meta.Header.Get("Content-Digest"), meta.ContentEncoding); d != nil && opts.Output.Range == "" {
+		// The file stays: the digest may be the wrong one, and the bytes
+		// are what the server sent.
+		if err := d.CheckFile(opts.Output.File); err != nil {
+			return err
+		}
+	}
 	if err := opts.Output.SaveETag(meta.StatusCode, meta.ETag); err != nil {
 		return err
 	}
