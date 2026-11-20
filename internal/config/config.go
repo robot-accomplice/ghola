@@ -260,8 +260,11 @@ type Options struct {
 	Auth        string
 	Concurrency int
 	// Jobs runs up to this many transfers at the same time (--jobs).
-	Jobs  int
-	Chain string
+	Jobs int
+	// Sources are other mirrors of the same file (--source). The
+	// segments of a download go to all of them.
+	Sources []string
+	Chain   string
 	// PathAsIs sends the URL path without removing ./ and ../
 	// (--url-path-as-is).
 	PathAsIs bool

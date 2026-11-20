@@ -83,6 +83,13 @@ var setters = map[string]setter{
 	},
 	"input":        func(*config.Options, string, *Command) error { return nil }, // read in Apply
 	"input-format": func(*config.Options, string, *Command) error { return nil }, // read in Apply
+	"source": func(o *config.Options, _ string, c *Command) error {
+		o.Sources = nil
+		for _, u := range c.Values["source"] {
+			o.Sources = append(o.Sources, config.NormalizeURL(u))
+		}
+		return nil
+	},
 	"save-headers": func(o *config.Options, v string, _ *Command) error { o.Output.SaveHeaders = v; return nil },
 	"show-headers": func(o *config.Options, v string, _ *Command) error { o.Output.Include = v == "true"; return nil },
 	"quiet":        func(o *config.Options, v string, _ *Command) error { o.Output.Silent = v == "true"; return nil },
@@ -249,7 +256,7 @@ func Apply(c *Command) (*config.Options, error) {
 
 // applyDefaults sets the v1 defaults that depend on other options.
 func applyDefaults(o *config.Options, c *Command) {
-	byteRange := o.Output.ContinueAt != "" || o.Output.Range != "" || o.Concurrency > 1
+	byteRange := o.Output.ContinueAt != "" || o.Output.Range != "" || o.Concurrency > 1 || len(o.Sources) > 0
 	if byteRange && !c.Has("compressed") {
 		o.Stealth.Compressed = false // byte ranges apply to the encoded body: ask for identity
 	}

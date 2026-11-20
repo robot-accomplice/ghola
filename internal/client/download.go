@@ -270,7 +270,7 @@ func canSegment(opts *config.Options, meta gholatransport.StreamMeta) bool {
 // mightSegment reports whether the options allow a segmented download. Only
 // then is the URL probed first.
 func mightSegment(opts *config.Options) bool {
-	return opts.Concurrency > 1 &&
+	return (opts.Concurrency > 1 || len(opts.Sources) > 0) &&
 		opts.Data == "" &&
 		opts.Output.File != "" &&
 		!opts.Stealth.Compressed && // wired in Task 9; field exists by then
@@ -298,23 +298,38 @@ func downloadSegmented(ctx context.Context, opts *config.Options, stream Streame
 		return fmt.Errorf("preallocate output file: %w", config.WriteError(err))
 	}
 
-	ranges := splitRanges(size, opts.Concurrency)
+	// With --source, each worker reads from one mirror and takes the next
+	// piece from one queue, so a faster mirror takes more pieces.
+	mirrors := append([]string{url}, opts.Sources...)
+	workers := max(opts.Concurrency, len(mirrors))
+	parts := workers
+	if len(mirrors) > 1 {
+		parts *= piecesPerWorker
+	}
+	ranges := splitRanges(size, parts)
+	queue := make(chan byteRange, len(ranges))
+	for _, r := range ranges {
+		queue <- r
+	}
+	close(queue)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	errs := make(chan error, len(ranges))
+	errs := make(chan error, workers)
 	var wg sync.WaitGroup
-	for _, r := range ranges {
+	for w := range workers {
 		wg.Add(1)
-		go func(r byteRange) {
+		go func(home int) {
 			defer wg.Done()
-			if err := fetchSegment(ctx, opts, stream, url, f, r, limiter, progress); err != nil {
-				cancel()
-				errs <- err
-				return
+			for r := range queue {
+				if err := fetchFromMirrors(ctx, opts, stream, mirrors, home, f, r, limiter, progress); err != nil {
+					cancel()
+					errs <- err
+					return
+				}
 			}
 			errs <- nil
-		}(r)
+		}(w % len(mirrors))
 	}
 	wg.Wait()
 	close(errs)
@@ -332,6 +347,23 @@ func downloadSegmented(ctx context.Context, opts *config.Options, stream Streame
 	}
 	if first != nil {
 		return fmt.Errorf("download segment: %w", first)
+	}
+	return nil
+}
+
+// piecesPerWorker splits a download with mirrors into more pieces than
+// workers, so a fast mirror can take more of them.
+const piecesPerWorker = 4
+
+// fetchFromMirrors fetches one piece from the worker's own mirror, and
+// once from the next mirror when that fails.
+func fetchFromMirrors(ctx context.Context, opts *config.Options, stream Streamer, mirrors []string, home int, f *os.File, r byteRange, limiter *rateLimiter, progress *progressWriter) error {
+	err := fetchSegment(ctx, opts, stream, mirrors[home], f, r, limiter, progress)
+	if err == nil || len(mirrors) == 1 || ctx.Err() != nil {
+		return err
+	}
+	if err2 := fetchSegment(ctx, opts, stream, mirrors[(home+1)%len(mirrors)], f, r, limiter, progress); err2 != nil {
+		return errors.Join(err, err2)
 	}
 	return nil
 }

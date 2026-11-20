@@ -64,12 +64,15 @@ func inputLines(r io.Reader) ([]inputEntry, error) {
 			}
 			opts[len(opts)-1] = append(opts[len(opts)-1], "--"+trimmed)
 		default:
+			// Several URIs on one line are mirrors of one file, as in aria2.
 			uris := strings.Split(trimmed, "\t")
-			if len(uris) > 1 {
-				return nil, fmt.Errorf("--input line %d: several URIs of one file (mirrors) are not built yet", n)
-			}
 			entries = append(entries, inputEntry{url: uris[0]})
+			var mirrors []string
+			for _, u := range uris[1:] {
+				mirrors = append(mirrors, "--source", strings.TrimSpace(u))
+			}
 			opts = append(opts, nil)
+			entries[len(entries)-1].args = mirrors
 		}
 	}
 	if err := sc.Err(); err != nil {
@@ -80,7 +83,7 @@ func inputLines(r io.Reader) ([]inputEntry, error) {
 		if err != nil {
 			return nil, fmt.Errorf("--input, the options of %s: %w", entries[i].url, err)
 		}
-		entries[i].args = args
+		entries[i].args = append(entries[i].args, args...)
 	}
 	return entries, nil
 }
