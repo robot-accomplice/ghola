@@ -62,6 +62,10 @@ const curlTable = `
 --json                         => --json %s
 --oauth2-bearer                => --auth-bearer %s
 --url-query                    => --query %s
+--resolve                      => --resolve %s
+--connect-to                   => --connect-to %s
+-4 --ipv4                      => --ip 4
+-6 --ipv6                      => --ip 6
 `
 
 // wget saves under the remote name (ghola download), follows up to 20
@@ -86,6 +90,8 @@ const wgetTable = `
 --limit-rate                   => --rate-max %s
 --max-redirect                 => --follow-max %s
 --load-cookies --save-cookies  => --cookie-jar %s
+-4 --inet4-only                => --ip 4
+-6 --inet6-only                => --ip 6
 `
 
 // aria2c saves under the remote name, follows redirects, and tries 5
@@ -106,6 +112,7 @@ const aria2Table = `
 -t --timeout                   => --stall-time %s
 --retry-wait                   => --retry-delay %s
 --max-download-limit           => --rate-max %s
+--disable-ipv6                 => --ip 4
 --load-cookies --save-cookies  => --cookie-jar %s
 `
 

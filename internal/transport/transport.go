@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -112,6 +113,10 @@ type tlsClientTransport struct {
 	// tls-client takes a proxy URL or a dial function, not both, so the
 	// shared SOCKS dialer needs a client of its own. nil without envProxy.
 	socksClient tlsclient.HttpClient
+	// rulesDirect: --resolve, --connect-to or --ip are set without --proxy.
+	// The main client then dials with the rules (and SOCKS from the
+	// environment), and an HTTP proxy from the environment is refused.
+	rulesDirect bool
 }
 
 // buildTLSConfig assembles a *tls.Config from the TLS-related options, or
@@ -173,6 +178,11 @@ func newNetwork(opts *config.Options, selectedProxy string) (Transport, error) {
 	// net/http streams resp.Body whatever the Content-Length. fasthttp's
 	// client read a body with a known length into memory, which caused the
 	// v0.6.0 large-download OOM, and it was removed for decision D3.
+	rules, err := newNetRules(opts.Net)
+	if err != nil {
+		return nil, err
+	}
+	base := rules.dial((&net.Dialer{}).DialContext) // --connect-to, --resolve, --ip
 	httpTransport := &http.Transport{
 		TLSClientConfig:   tlsCfg,
 		ForceAttemptHTTP2: true,
@@ -182,7 +192,7 @@ func newNetwork(opts *config.Options, selectedProxy string) (Transport, error) {
 		Proxy:              httpProxyFromEnv,
 		// With no --proxy, a SOCKS proxy from the environment goes through
 		// the shared SOCKS dialer. --proxy replaces both below.
-		DialContext:            envDialer((&net.Dialer{}).DialContext),
+		DialContext:            envDialer(base),
 		MaxResponseHeaderBytes: maxHeaderBytes(opts.Resilience.BufferSize),
 	}
 	if selectedProxy != "" {
@@ -191,10 +201,10 @@ func newNetwork(opts *config.Options, selectedProxy string) (Transport, error) {
 			return nil, fmt.Errorf("parse proxy url: %w", err)
 		}
 		httpTransport.Proxy = http.ProxyURL(proxyURL)
-		httpTransport.DialContext = (&net.Dialer{}).DialContext // the environment does not apply
+		httpTransport.DialContext = base // the environment does not apply
 		if isSOCKS(proxyURL) {
 			httpTransport.Proxy = nil
-			httpTransport.DialContext = socksDialer(proxyURL, (&net.Dialer{}).DialContext)
+			httpTransport.DialContext = socksDialer(proxyURL, base)
 		}
 	}
 	httpClient := &http.Client{
@@ -253,18 +263,30 @@ func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transpor
 	if opts.Resilience.Timeout > 0 {
 		options = append(options, tlsclient.WithTimeoutMilliseconds(opts.Resilience.Timeout))
 	}
+	rules, err := newNetRules(opts.Net)
+	if err != nil {
+		return nil, err
+	}
+	base := rules.dial((&net.Dialer{}).DialContext) // --connect-to, --resolve, --ip
 	if selectedProxy != "" {
 		proxyURL, err := url.Parse(selectedProxy)
 		if err != nil {
 			return nil, fmt.Errorf("parse proxy url: %w", err)
 		}
-		if isSOCKS(proxyURL) {
+		switch {
+		case isSOCKS(proxyURL):
 			// tls-client has no local-DNS socks5 and runs its own SOCKS4; the
 			// shared dialer gives both stacks the same SOCKS behaviour.
-			options = append(options, tlsclient.WithDialContext(socksDialer(proxyURL, (&net.Dialer{}).DialContext)))
-		} else {
+			options = append(options, tlsclient.WithDialContext(socksDialer(proxyURL, base)))
+		case rules != nil:
+			return nil, ErrRulesNeedDirect
+		default:
 			options = append(options, tlsclient.WithProxyUrl(selectedProxy))
 		}
+	} else if rules != nil {
+		// The rules need ghola's dial function, so this client cannot take
+		// an HTTP proxy from the environment: clientFor refuses one.
+		options = append(options, tlsclient.WithDialContext(envDialer(base)))
 	}
 	if !opts.Stealth.HTTP3 {
 		options = append(options, tlsclient.WithDisableHttp3())
@@ -275,13 +297,14 @@ func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transpor
 		return nil, err
 	}
 	t := &tlsClientTransport{
-		client:   client,
-		name:     "tls-client",
-		limits:   newLimits(opts.Resilience),
-		envProxy: selectedProxy == "",
+		client:      client,
+		name:        "tls-client",
+		limits:      newLimits(opts.Resilience),
+		envProxy:    selectedProxy == "",
+		rulesDirect: selectedProxy == "" && rules != nil,
 	}
-	if t.envProxy {
-		socksOptions := append(options[:len(options):len(options)], tlsclient.WithDialContext(envDialer((&net.Dialer{}).DialContext)))
+	if t.envProxy && !t.rulesDirect {
+		socksOptions := append(options[:len(options):len(options)], tlsclient.WithDialContext(envDialer(base)))
 		if t.socksClient, err = tlsclient.NewHttpClient(tlsclient.NewNoopLogger(), socksOptions...); err != nil {
 			return nil, err
 		}
@@ -457,6 +480,12 @@ func (t *tlsClientTransport) send(ctx context.Context, req *fasthttp.Request, se
 // socksClient, and an HTTP proxy is set on the main client.
 func (t *tlsClientTransport) clientFor(req *fhttp.Request) (tlsclient.HttpClient, error) {
 	if !t.envProxy {
+		return t.client, nil
+	}
+	if t.rulesDirect {
+		if p, err := proxyFromEnv(req.URL); err != nil || (p != nil && !isSOCKS(p)) {
+			return nil, errors.Join(ErrRulesNeedDirect, err)
+		}
 		return t.client, nil
 	}
 	if p, err := envSOCKS(req.Context()); err != nil || p != nil {

@@ -54,15 +54,24 @@ var setters = map[string]setter{
 	"form":         func(o *config.Options, _ string, c *Command) error { o.Form = c.Values["form"]; return nil },
 	"upload":       setUpload,
 	"json":         setJSON,
-	"auth-bearer":  setBearer,
-	"query":        func(*config.Options, string, *Command) error { return nil }, // applied to the URLs in Apply
-	"range":        func(o *config.Options, v string, _ *Command) error { o.Output.Range = v; return nil },
-	"continue":     setContinue,
-	"continue-at":  func(o *config.Options, v string, _ *Command) error { o.Output.ContinueAt = v; return nil },
-	"chain":        func(o *config.Options, v string, _ *Command) error { o.Chain = v; return nil },
-	"compressed":   func(o *config.Options, v string, _ *Command) error { o.Stealth.Compressed = v == "true"; return nil },
-	"follow":       func(o *config.Options, v string, _ *Command) error { o.Resilience.Location = v == "true"; return nil },
-	"follow-max":   setInt(func(o *config.Options) *int { return &o.Resilience.MaxRedirs }),
+	"ip": func(o *config.Options, v string, _ *Command) error {
+		o.Net.IPVersion = strings.TrimPrefix(v, "any")
+		return nil
+	},
+	"resolve": func(o *config.Options, _ string, c *Command) error { o.Net.Resolve = c.Values["resolve"]; return nil },
+	"connect-to": func(o *config.Options, _ string, c *Command) error {
+		o.Net.ConnectTo = c.Values["connect-to"]
+		return nil
+	},
+	"auth-bearer": setBearer,
+	"query":       func(*config.Options, string, *Command) error { return nil }, // applied to the URLs in Apply
+	"range":       func(o *config.Options, v string, _ *Command) error { o.Output.Range = v; return nil },
+	"continue":    setContinue,
+	"continue-at": func(o *config.Options, v string, _ *Command) error { o.Output.ContinueAt = v; return nil },
+	"chain":       func(o *config.Options, v string, _ *Command) error { o.Chain = v; return nil },
+	"compressed":  func(o *config.Options, v string, _ *Command) error { o.Stealth.Compressed = v == "true"; return nil },
+	"follow":      func(o *config.Options, v string, _ *Command) error { o.Resilience.Location = v == "true"; return nil },
+	"follow-max":  setInt(func(o *config.Options) *int { return &o.Resilience.MaxRedirs }),
 	"follow-trusted": func(o *config.Options, v string, _ *Command) error {
 		o.Resilience.LocationTrusted = v == "true"
 		return nil

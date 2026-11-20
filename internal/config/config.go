@@ -179,6 +179,15 @@ type Options struct {
 	Stealth    StealthOptions
 	Resilience ResilienceOptions
 	ProxyCfg   ProxyOptions
+	Net        NetOptions
+}
+
+// NetOptions change where a TCP connection goes (--ip, --resolve,
+// --connect-to). The host name of the URL stays for TLS and Host.
+type NetOptions struct {
+	IPVersion string   // "4", "6", or "" for both
+	Resolve   []string // host:port:address
+	ConnectTo []string // host:port:host2:port2
 }
 
 // Version is set at build time via -ldflags.
