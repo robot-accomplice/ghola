@@ -45,3 +45,22 @@ func TestExecute_Next(t *testing.T) {
 		t.Errorf("--next with download: exit %d, want 2", code)
 	}
 }
+
+// ghola curl splits at curl's -: and --next: each group translates on its
+// own, so a header of the first URL does not reach the second.
+func TestExecute_CurlNext(t *testing.T) {
+	var mu sync.Mutex
+	seen := map[string]string{}
+	srv := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		seen[r.URL.Path] = r.Header.Get("X-A")
+		mu.Unlock()
+	}))
+	defer srv.Close()
+	if code := runGhola(t, "curl", "-s", "-H", "X-A: one", srv.URL+"/one", "-:", "-s", srv.URL+"/two"); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	if v, ok := seen["/two"]; seen["/one"] != "one" || !ok || v != "" {
+		t.Errorf("headers seen: %v", seen)
+	}
+}

@@ -39,8 +39,14 @@ func execute(ctx context.Context, args []string, do client.Doer, stream client.S
 	if err != nil {
 		return argError(err)
 	}
+	return runGroups(ctx, groups, false, do, stream, w)
+}
+
+// runGroups runs each group in turn. hideErrors is curl -s of a
+// compatibility command.
+func runGroups(ctx context.Context, groups [][]string, hideErrors bool, do client.Doer, stream client.Streamer, w *os.File) int {
 	if len(groups) == 1 {
-		return executeOne(ctx, args, do, stream, w)
+		return executeOne(ctx, groups[0], hideErrors, do, stream, w)
 	}
 	for _, g := range groups {
 		if _, err := cli.Parse(g); err != nil {
@@ -49,7 +55,7 @@ func execute(ctx context.Context, args []string, do client.Doer, stream client.S
 	}
 	last := config.NoError.Int()
 	for _, g := range groups {
-		if code := executeOne(ctx, g, do, stream, w); code != config.NoError.Int() {
+		if code := executeOne(ctx, g, hideErrors, do, stream, w); code != config.NoError.Int() {
 			last = code
 		}
 	}
@@ -57,7 +63,7 @@ func execute(ctx context.Context, args []string, do client.Doer, stream client.S
 }
 
 // executeOne runs one group of options and URLs.
-func executeOne(ctx context.Context, args []string, do client.Doer, stream client.Streamer, w *os.File) int {
+func executeOne(ctx context.Context, args []string, hideErrors bool, do client.Doer, stream client.Streamer, w *os.File) int {
 	c, err := cli.Parse(args)
 	if err != nil {
 		return argError(err)
@@ -65,7 +71,6 @@ func executeOne(ctx context.Context, args []string, do client.Doer, stream clien
 	if c, err = cli.WithConfig(args, c); err != nil {
 		return argError(err)
 	}
-	hideErrors := false
 	if from := compatCommands[c.Job]; from != nil {
 		native, err := from(c.Args)
 		if err != nil {
@@ -74,6 +79,12 @@ func executeOne(ctx context.Context, args []string, do client.Doer, stream clien
 		if native.ShowNative {
 			fmt.Fprintln(w, "ghola "+cli.ShellQuote(native.Args))
 			return config.NoError.Int()
+		}
+		if groups, err := cli.SplitNext(native.Args); err != nil || len(groups) > 1 {
+			if err != nil {
+				return argError(err)
+			}
+			return runGroups(ctx, groups, native.HideErrors, do, stream, w) // curl --next
 		}
 		if c, err = cli.Parse(native.Args); err != nil {
 			return argError(err)
