@@ -25,11 +25,11 @@ func hasTLSOptions(st config.StealthOptions) bool {
 	return st.TLSMin != "" || st.TLSMax != "" || st.CADir != "" || len(st.Pins) > 0
 }
 
-func setTLSVersions(cfg *tls.Config, min, max string) error {
+func setTLSVersions(cfg *tls.Config, lowest, highest string) error {
 	for _, v := range []struct {
 		name, value string
 		field       *uint16
-	}{{"--tls-min", min, &cfg.MinVersion}, {"--tls-max", max, &cfg.MaxVersion}} {
+	}{{"--tls-min", lowest, &cfg.MinVersion}, {"--tls-max", highest, &cfg.MaxVersion}} {
 		if v.value == "" {
 			continue
 		}
@@ -40,7 +40,7 @@ func setTLSVersions(cfg *tls.Config, min, max string) error {
 		*v.field = ver
 	}
 	if cfg.MinVersion != 0 && cfg.MaxVersion != 0 && cfg.MinVersion > cfg.MaxVersion {
-		return fmt.Errorf("--tls-min %s is above --tls-max %s", min, max)
+		return fmt.Errorf("--tls-min %s is above --tls-max %s", lowest, highest)
 	}
 	return nil
 }
