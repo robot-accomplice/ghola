@@ -224,6 +224,8 @@ type Options struct {
 	// file name (--data-literal).
 	DataLiteral bool
 	User        string
+	// SigV4 signs each request with User (--auth-aws-sigv4).
+	SigV4 *SigV4
 	// Auth is the --auth method for User: "basic" (or ""), "digest" or
 	// "any".
 	Auth        string

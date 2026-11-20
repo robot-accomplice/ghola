@@ -2,8 +2,11 @@ package client
 
 import (
 	"encoding/base64"
+	"fmt"
 	"net/url"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/robot-accomplice/ghola/internal/config"
 	"github.com/robot-accomplice/ghola/internal/profile"
@@ -53,7 +56,16 @@ func setHeaders(req *fasthttp.Request, opts *config.Options, active profile.Brow
 		req.Header.Set("Accept-Encoding", gholatransport.AcceptEncoding)
 	}
 
-	if opts.User != "" && trusted && !waitsForChallenge(opts) {
+	switch {
+	case opts.User == "" || !trusted || waitsForChallenge(opts):
+	case opts.SigV4 != nil:
+		// Apply checked the first host. A host after a redirect gets the
+		// key only with --follow-trusted; when its name holds no region,
+		// the request goes unsigned, and ghola says so.
+		if err := signSigV4(*opts.SigV4, req, opts.User, time.Now()); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: %v; the request is not signed\n", err)
+		}
+	default:
 		auth := base64.StdEncoding.EncodeToString([]byte(opts.User))
 		req.Header.Set("Authorization", "Basic "+auth)
 	}

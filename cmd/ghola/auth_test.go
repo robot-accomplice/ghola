@@ -96,3 +96,22 @@ func TestExecute_AuthAnyBasic(t *testing.T) {
 		t.Errorf("exit %d", got)
 	}
 }
+
+// --auth-aws-sigv4 signs the request with -u instead of sending Basic,
+// and a host that names no region is an argument error at once.
+func TestExecute_AuthSigV4(t *testing.T) {
+	var got atomic.Value
+	ts := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		got.Store(r.Header.Get("Authorization") + "|" + r.Header.Get("X-Amz-Content-Sha256"))
+	}))
+	defer ts.Close()
+	if code := runGhola(t, "-q", "--auth-aws-sigv4", "aws:amz:us-east-1:s3", "-u", "AK:SK", ts.URL+"/b/k"); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	if s, _ := got.Load().(string); !strings.HasPrefix(s, "AWS4-HMAC-SHA256 Credential=AK/") || !strings.HasSuffix(s, "|e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855") {
+		t.Errorf("Authorization|payload hash = %q", s)
+	}
+	if code := runGhola(t, "-q", "--auth-aws-sigv4", "aws", "-u", "AK:SK", ts.URL); code != 2 {
+		t.Errorf("a host without a region: exit %d, want 2", code)
+	}
+}

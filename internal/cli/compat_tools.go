@@ -53,6 +53,7 @@ const curlTable = `
 --basic                        => --auth basic
 --digest                       => --auth digest
 --anyauth                      => --auth any
+--aws-sigv4                    => --auth-aws-sigv4 %s
 --ntlm                         => --auth ntlm
 --negotiate                    => --auth negotiate
 -x --proxy                     => --proxy %s

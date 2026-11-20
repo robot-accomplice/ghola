@@ -63,16 +63,17 @@ var setters = map[string]setter{
 		o.Output.Template = t
 		return err
 	},
-	"hsts":         func(o *config.Options, v string, _ *Command) error { o.HSTS = v; return nil },
-	"save-headers": func(o *config.Options, v string, _ *Command) error { o.Output.SaveHeaders = v; return nil },
-	"show-headers": func(o *config.Options, v string, _ *Command) error { o.Output.Include = v == "true"; return nil },
-	"quiet":        func(o *config.Options, v string, _ *Command) error { o.Output.Silent = v == "true"; return nil },
-	"progress":     setProgress,
-	"verbose":      func(o *config.Options, v string, _ *Command) error { o.Output.Verbose = v == "true"; return nil },
-	"har":          func(o *config.Options, v string, _ *Command) error { o.Output.HAR = v; return nil },
-	"method":       func(o *config.Options, v string, _ *Command) error { o.Method = strings.ToUpper(v); return nil },
-	"head":         setHead,
-	"header":       func(o *config.Options, _ string, c *Command) error { o.Headers = c.Values["header"]; return nil },
+	"hsts":           func(o *config.Options, v string, _ *Command) error { o.HSTS = v; return nil },
+	"auth-aws-sigv4": func(*config.Options, string, *Command) error { return nil }, // read in Apply
+	"save-headers":   func(o *config.Options, v string, _ *Command) error { o.Output.SaveHeaders = v; return nil },
+	"show-headers":   func(o *config.Options, v string, _ *Command) error { o.Output.Include = v == "true"; return nil },
+	"quiet":          func(o *config.Options, v string, _ *Command) error { o.Output.Silent = v == "true"; return nil },
+	"progress":       setProgress,
+	"verbose":        func(o *config.Options, v string, _ *Command) error { o.Output.Verbose = v == "true"; return nil },
+	"har":            func(o *config.Options, v string, _ *Command) error { o.Output.HAR = v; return nil },
+	"method":         func(o *config.Options, v string, _ *Command) error { o.Method = strings.ToUpper(v); return nil },
+	"head":           setHead,
+	"header":         func(o *config.Options, _ string, c *Command) error { o.Headers = c.Values["header"]; return nil },
 	"user-agent": func(o *config.Options, v string, _ *Command) error {
 		o.Stealth.Agent, o.Stealth.AgentExplicit = v, true
 		return nil
@@ -198,6 +199,11 @@ func Apply(c *Command) (*config.Options, error) {
 		return nil, &UsageError{Msg: err.Error()}
 	}
 	applyCondTime(o, c.Last("cond-time"), os.Stderr)
+	if v := c.Last("auth-aws-sigv4"); v != "" {
+		if o.SigV4, err = config.ParseSigV4(v, o.URL); err != nil {
+			return nil, &UsageError{Msg: err.Error()}
+		}
+	}
 	if err := applyETagCompare(o, c.Last("cond-etag-compare")); err != nil {
 		return nil, &UsageError{Msg: err.Error()}
 	}
