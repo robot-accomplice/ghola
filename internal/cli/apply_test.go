@@ -126,3 +126,12 @@ func equalInts(a, b []int) bool {
 	}
 	return true
 }
+
+// A negative count is an argument error (audit finding H5).
+func TestApply_NegativeCountIsRefused(t *testing.T) {
+	for _, args := range [][]string{{"-r", "-1", "u"}, {"--follow-max", "-2", "u"}} {
+		if _, err := Apply(apply(t, args...)); err == nil {
+			t.Errorf("%q was accepted", args)
+		}
+	}
+}

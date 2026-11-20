@@ -10,7 +10,7 @@ section 5A). The spec data lives in three CSV files in docs/cli/:
 
 The script checks the data and fails on an error:
     1. Each option name and each short letter is used once.
-    2. Each flag that `ghola --help` lists has a row in v0-to-v1.csv.
+    2. Each v0 flag (docs/cli/v0-flags.txt) has a row in v0-to-v1.csv.
     3. Each option in a v1 column (mapping or task) exists in v1-options.csv.
 
 Then it measures each task: the number of options and the number of
@@ -37,7 +37,6 @@ import json
 import os
 import re
 import shlex
-import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -114,9 +113,10 @@ def option_tokens(cmd):
 
 
 def ghola_v0_flags():
-    out = subprocess.run(["go", "run", "./cmd/ghola", "--help"], cwd=ROOT, capture_output=True, text=True)
-    text = out.stdout + out.stderr
-    return sorted(set(re.findall(r"^\s+(?:-[A-Za-z], )?(--[a-z0-9-]+)", text, re.M)))
+    """The long flags of ghola v0, frozen in docs/cli/v0-flags.txt: the v0 parser"""
+    """is gone in v1, so its --help cannot list them any more."""
+    with open(os.path.join(CLI, "v0-flags.txt"), encoding="utf-8") as f:
+        return sorted(l.strip() for l in f if l.startswith("--"))
 
 
 def check_mapping(opts, mapping):

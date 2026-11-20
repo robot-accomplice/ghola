@@ -41,7 +41,7 @@ func TestExecute_SeveralURLs(t *testing.T) {
 	}
 
 	hits.Store(0)
-	code, _ := run("-f", srv.URL+"/missing", srv.URL+"/two")
+	code, _ := run(srv.URL+"/missing", srv.URL+"/two") // failing at 400 is the v1 default
 	if code != 22 || hits.Load() != 1 {
 		t.Errorf("first URL fails: exit %d, %d requests; want 22 and 1", code, hits.Load())
 	}

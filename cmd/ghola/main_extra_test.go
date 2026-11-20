@@ -42,7 +42,7 @@ func TestExecute_FormBody(t *testing.T) {
 	ff := filepath.Join(dir, "field.txt")
 	os.WriteFile(ff, []byte("field-content"), 0644) //nolint:errcheck
 
-	code := execute(bg(), []string{"-F", "name=value", "-F", "upload=@" + ff, "http://test"}, do, nil, os.Stdout)
+	code := execute(bg(), []string{"--form", "name=value", "--form", "upload=@" + ff, "http://test"}, do, nil, os.Stdout)
 	if code != config.NoError.Int() {
 		t.Errorf("exit code = %d, want NoError", code)
 	}
@@ -60,7 +60,7 @@ func TestExecute_FormBadFile(t *testing.T) {
 	do, cleanup := testDoer(func(ctx *fasthttp.RequestCtx) {})
 	defer cleanup()
 
-	code := execute(bg(), []string{"-F", "f=@/nonexistent/file.bin", "http://test"}, do, nil, os.Stdout)
+	code := execute(bg(), []string{"--form", "f=@/nonexistent/file.bin", "http://test"}, do, nil, os.Stdout)
 	if code != config.ReadFileFailed.Int() {
 		t.Errorf("exit code = %d, want ReadFileFailed (%d)", code, config.ReadFileFailed.Int())
 	}
@@ -75,7 +75,7 @@ func TestExecute_DataBinaryInline(t *testing.T) {
 	})
 	defer cleanup()
 
-	code := execute(bg(), []string{"--data-binary", "raw\x00binary", "http://test"}, do, nil, os.Stdout)
+	code := execute(bg(), []string{"-d", "raw\x00binary", "http://test"}, do, nil, os.Stdout)
 	if code != config.NoError.Int() {
 		t.Errorf("exit code = %d, want NoError", code)
 	}
@@ -98,7 +98,7 @@ func TestExecute_DataBinaryAtFile(t *testing.T) {
 	})
 	defer cleanup()
 
-	code := execute(bg(), []string{"--data-binary", "@" + f, "http://test"}, do, nil, os.Stdout)
+	code := execute(bg(), []string{"-d", "@" + f, "http://test"}, do, nil, os.Stdout)
 	if code != config.NoError.Int() {
 		t.Errorf("exit code = %d, want NoError", code)
 	}
@@ -112,7 +112,7 @@ func TestExecute_DataBinaryAtFileMissing(t *testing.T) {
 	do, cleanup := testDoer(func(ctx *fasthttp.RequestCtx) {})
 	defer cleanup()
 
-	code := execute(bg(), []string{"--data-binary", "@/no/such/file.bin", "http://test"}, do, nil, os.Stdout)
+	code := execute(bg(), []string{"-d", "@/no/such/file.bin", "http://test"}, do, nil, os.Stdout)
 	if code != config.ReadFileFailed.Int() {
 		t.Errorf("exit code = %d, want ReadFileFailed (%d)", code, config.ReadFileFailed.Int())
 	}
@@ -127,7 +127,7 @@ func TestExecute_DataURLEncode(t *testing.T) {
 	})
 	defer cleanup()
 
-	code := execute(bg(), []string{"--data-urlencode", "key=hello world", "http://test"}, do, nil, os.Stdout)
+	code := execute(bg(), []string{"--field", "key=hello world", "http://test"}, do, nil, os.Stdout)
 	if code != config.NoError.Int() {
 		t.Errorf("exit code = %d, want NoError", code)
 	}
@@ -208,7 +208,7 @@ func TestExecute_StreamingDownloadSilentError(t *testing.T) {
 
 	dir := t.TempDir()
 	out := filepath.Join(dir, "silent.bin")
-	code := execute(bg(), []string{"-s", "-o", out, "http://test"}, nil, errStream, os.Stdout)
+	code := execute(bg(), []string{"-q", "-r", "0", "-o", out, "http://test"}, nil, errStream, os.Stdout)
 	if code != config.SendFailed.Int() {
 		t.Errorf("exit code = %d, want SendFailed (%d)", code, config.SendFailed.Int())
 	}
@@ -247,7 +247,7 @@ func TestExecute_Non2xxFail(t *testing.T) {
 	})
 	defer cleanup()
 
-	code := execute(bg(), []string{"-f", "http://test"}, do, nil, os.Stdout)
+	code := execute(bg(), []string{"http://test"}, do, nil, os.Stdout)
 	if code != config.HTTPError.Int() {
 		t.Errorf("exit code = %d, want HTTPError (%d)", code, config.HTTPError.Int())
 	}

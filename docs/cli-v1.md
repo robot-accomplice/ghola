@@ -384,7 +384,7 @@ v1.0.0 removes the v0 flags (plan step 8). A v0 flag stops with an argument erro
 | `-X / --request` | -m / --method |  |
 | `-r / --retry N` | --retry-max N | The default is now 3 for idempotent methods. |
 | `--retry-http` | (default) | --retry-status sets the codes. |
-| `--serve` | ghola serve | No alias (v1 defaults item 11). |
+| `--serve` | ghola serve | There is no alias. |
 | `-s / --silent` | -q / --quiet | v1 -q still writes errors (as curl -sS). |
 | `-S / --snoop` | ghola inspect URL | The job is a word. |
 | `--speed-limit` | --stall-rate RATE |  |

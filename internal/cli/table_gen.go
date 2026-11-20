@@ -195,7 +195,7 @@ var v0Table = []V0Flag{
 	{V0: "-X / --request", V1: "-m / --method", Note: ""},
 	{V0: "-r / --retry N", V1: "--retry-max N", Note: "The default is now 3 for idempotent methods."},
 	{V0: "--retry-http", V1: "(default)", Note: "--retry-status sets the codes."},
-	{V0: "--serve", V1: "ghola serve", Note: "No alias (v1 defaults item 11)."},
+	{V0: "--serve", V1: "ghola serve", Note: "There is no alias."},
 	{V0: "-s / --silent", V1: "-q / --quiet", Note: "v1 -q still writes errors (as curl -sS)."},
 	{V0: "-S / --snoop", V1: "ghola inspect URL", Note: "The job is a word."},
 	{V0: "--speed-limit", V1: "--stall-rate RATE", Note: ""},

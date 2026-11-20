@@ -101,6 +101,9 @@ func unknown(flag string) error {
 	name, _, _ := strings.Cut(flag, "=")
 	if v0 := v0Index[name]; v0 != nil {
 		msg := fmt.Sprintf("%s is a ghola v0 flag. In v1 it is %s.", name, v0.V1)
+		if v0.V1 == "(default)" {
+			msg = fmt.Sprintf("%s is a ghola v0 flag. In v1 this is the default.", name)
+		}
 		if v0.Note != "" {
 			msg += " " + v0.Note
 		}

@@ -13,9 +13,11 @@ import (
 	"time"
 
 	"github.com/robot-accomplice/ghola/internal/bridge"
+	"github.com/robot-accomplice/ghola/internal/cli"
 	"github.com/robot-accomplice/ghola/internal/client"
 	"github.com/robot-accomplice/ghola/internal/config"
 	"github.com/robot-accomplice/ghola/internal/output"
+	"github.com/robot-accomplice/ghola/internal/profile"
 	gholatransport "github.com/robot-accomplice/ghola/internal/transport"
 	"github.com/valyala/fasthttp"
 )
@@ -27,22 +29,76 @@ func main() {
 }
 
 func execute(ctx context.Context, args []string, do client.Doer, stream client.Streamer, w *os.File) int {
-	opts, done, err := config.ParseFlags(args)
+	c, err := cli.Parse(args)
 	if err != nil {
-		reportArgError(os.Stderr, err, useColor(os.Stderr))
-		return config.BadFlag.Int()
+		return argError(err)
 	}
-	if done {
-		return config.NoError.Int()
+	if code, done := runJob(c, w); done {
+		return code
 	}
+	opts, err := cli.Apply(c)
+	if err != nil {
+		return argError(err)
+	}
+	if c.Job == cli.JobInspect {
+		opts.Output.Snoop = true
+	}
+	return transfer(ctx, opts, do, stream, w)
+}
 
-	if opts.Serve {
+// argError reports an argument error with the short usage around it, as
+// Jon decided on 2026-11-12, and returns exit 2.
+func argError(err error) int {
+	reportArgError(os.Stderr, &config.UsageError{Err: err, Usage: cli.ShortUsage(config.Version)}, useColor(os.Stderr))
+	return config.BadFlag.Int()
+}
+
+// runJob runs --help, --version and the jobs that do not transfer. done is
+// false for fetch, download and inspect, which transfer.
+func runJob(c *cli.Command, w *os.File) (code int, done bool) {
+	switch {
+	case c.Has("help"):
+		text, err := cli.Help(config.Version, c.Last("help"))
+		if err != nil {
+			return argError(err), true
+		}
+		fmt.Fprint(w, text)
+		return config.NoError.Int(), true
+	case c.Has("version"):
+		fmt.Fprintf(w, "ghola version %s\n", config.Version)
+		return config.NoError.Int(), true
+	}
+	switch c.Job {
+	case cli.JobFetch, cli.JobDownload, cli.JobInspect:
+		return 0, false
+	case cli.JobServe:
 		if err := bridge.ListenAndServe(bridge.Addr); err != nil {
 			fmt.Fprintf(os.Stderr, "bridge: %v\n", err)
-			return config.SendFailed.Int()
+			return config.SendFailed.Int(), true
 		}
-		return config.NoError.Int()
+		return config.NoError.Int(), true
+	case cli.JobProfiles:
+		for _, name := range profile.ProfileNames() {
+			fmt.Fprintln(w, name)
+		}
+		return config.NoError.Int(), true
+	case cli.JobExplain:
+		if len(c.Args) != 1 {
+			return argError(fmt.Errorf("ghola explain takes one exit code, such as 28")), true
+		}
+		text, err := cli.Explain(c.Args[0])
+		if err != nil {
+			return argError(err), true
+		}
+		fmt.Fprint(w, text)
+		return config.NoError.Int(), true
+	default:
+		return argError(fmt.Errorf("ghola %s is in the v1 spec but not built yet", c.Job)), true
 	}
+}
+
+// transfer reads the request body sources and fetches each URL.
+func transfer(ctx context.Context, opts *config.Options, do client.Doer, stream client.Streamer, w *os.File) int {
 
 	if opts.Transfer != "" {
 		b, err := os.ReadFile(opts.Transfer)

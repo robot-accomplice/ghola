@@ -188,9 +188,14 @@ func statusList(v string) ([]int, error) {
 	return out, nil
 }
 
+// setInt stores a count. A count cannot be negative: before, -r -1 crashed
+// the bridge (audit finding H5).
 func setInt(field func(*config.Options) *int) setter {
 	return func(o *config.Options, v string, _ *Command) error {
 		n, err := strconv.Atoi(v)
+		if err == nil && n < 0 {
+			return fmt.Errorf("%s cannot be negative", v)
+		}
 		*field(o) = n
 		return err
 	}
