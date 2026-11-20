@@ -101,10 +101,10 @@ func native(t *testing.T, from func([]string) (*Compat, error), args ...string) 
 // counts tries, and -T is wget's DNS, connect and read timeout.
 func TestFromWget(t *testing.T) {
 	cases := map[string][]string{
-		"download -r 0 --no-compressed -o dl/ https://h/f":                          {"-P", "dl", "https://h/f"},
-		"-r 0 --no-compressed -q -d a=1 -o - https://h/e":                           {"-qO-", "--post-data=a=1", "https://h/e"},
-		"-r 0 --no-compressed -r 2 -o dl/f.txt https://h/f":                         {"--tries=3", "-P", "dl", "-O", "f.txt", "https://h/f"},
-		"download -r 0 --no-compressed --timeout-connect 5 --stall-time 5 -u a:b u": {"-T", "5", "--user=a", "--password=b", "u"},
+		"download -r 0 --no-compressed --no-url-glob --auth-netrc -o dl/ https://h/f":                          {"-P", "dl", "https://h/f"},
+		"-r 0 --no-compressed --no-url-glob --auth-netrc -q -d a=1 -o - https://h/e":                           {"-qO-", "--post-data=a=1", "https://h/e"},
+		"-r 0 --no-compressed --no-url-glob --auth-netrc -r 2 -o dl/f.txt https://h/f":                         {"--tries=3", "-P", "dl", "-O", "f.txt", "https://h/f"},
+		"download -r 0 --no-compressed --no-url-glob --auth-netrc --timeout-connect 5 --stall-time 5 -u a:b u": {"-T", "5", "--user=a", "--password=b", "u"},
 	}
 	for want, args := range cases {
 		if got := native(t, FromWget, args...); got != want {
@@ -121,7 +121,7 @@ func TestFromWget(t *testing.T) {
 // accepted and dropped.
 func TestFromAria2c(t *testing.T) {
 	got := native(t, FromAria2c, "-x16", "-s16", "-k1M", "-d", "dl", "-o", "f.iso", "--max-tries=2", "--timeout=3", "https://h/f.iso")
-	want := "download -r 4 --retry-delay 0 --no-compressed -n 16 -n 16 -r 1 --stall-time 3 -o dl/f.iso https://h/f.iso"
+	want := "download -r 4 --retry-delay 0 --no-compressed --no-url-glob --auth-netrc -n 16 -n 16 -r 1 --stall-time 3 -o dl/f.iso https://h/f.iso"
 	if got != want {
 		t.Errorf("\n got %s\nwant %s", got, want)
 	}

@@ -25,6 +25,8 @@ const (
 	// UnsupportedProtocol indicates a protocol that ghola does not follow,
 	// for example a redirect to file:// (curl 1).
 	UnsupportedProtocol ExitCode = 1
+	// URLMalformat indicates a bad URL glob (curl 3).
+	URLMalformat ExitCode = 3
 	// BadFlag indicates invalid or missing CLI arguments (curl 2).
 	BadFlag ExitCode = 2
 	// CouldntResolveHost indicates that DNS did not resolve the host (curl 6).

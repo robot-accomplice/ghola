@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"github.com/robot-accomplice/ghola/internal/cli"
 	"github.com/robot-accomplice/ghola/internal/client"
 	"github.com/robot-accomplice/ghola/internal/config"
+	"github.com/robot-accomplice/ghola/internal/glob"
 	"github.com/robot-accomplice/ghola/internal/output"
 	"github.com/robot-accomplice/ghola/internal/profile"
 	gholatransport "github.com/robot-accomplice/ghola/internal/transport"
@@ -53,7 +55,7 @@ func execute(ctx context.Context, args []string, do client.Doer, stream client.S
 	}
 	opts, err := cli.Apply(c)
 	if err != nil {
-		return argError(err)
+		return argErrorOrGlob(err)
 	}
 	opts.Output.HideErrors = hideErrors
 	if c.Job == cli.JobInspect {
@@ -66,6 +68,17 @@ func execute(ctx context.Context, args []string, do client.Doer, stream client.S
 // arguments (v1 spec, section 6).
 var compatCommands = map[string]func([]string) (*cli.Compat, error){
 	cli.JobCurl: cli.FromCurl, cli.JobWget: cli.FromWget, cli.JobAria2c: cli.FromAria2c,
+}
+
+// argError reports an argument error. A bad URL glob exits 3, as curl's
+// "URL using bad/illegal format".
+func argErrorOrGlob(err error) int {
+	var ge *glob.Error
+	if errors.As(err, &ge) {
+		reportArgError(os.Stderr, &config.UsageError{Err: err, Usage: cli.ShortUsage(config.Version)}, useColor(os.Stderr))
+		return config.URLMalformat.Int()
+	}
+	return argError(err)
 }
 
 // argError reports an argument error with the short usage around it, as

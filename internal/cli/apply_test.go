@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -167,4 +168,37 @@ func contains(list []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// URL globs expand by default, as in curl; --no-url-glob keeps them.
+func TestApply_URLGlob(t *testing.T) {
+	o, err := Apply(apply(t, "https://h/{a,b}/f[1-2]"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"https://h/a/f1", "https://h/a/f2", "https://h/b/f1", "https://h/b/f2"}; strings.Join(o.URLs, " ") != strings.Join(want, " ") {
+		t.Errorf("URLs = %q", o.URLs)
+	}
+	if o, _ := Apply(apply(t, "--no-url-glob", "https://h/{a,b}")); len(o.URLs) != 1 {
+		t.Errorf("--no-url-glob expanded: %q", o.URLs)
+	}
+	if _, err := Apply(apply(t, "https://h/[3-1]")); err == nil || !strings.Contains(err.Error(), "bad range") {
+		t.Errorf("bad glob: err = %v", err)
+	}
+}
+
+// --auth-netrc-file gives the credentials of the URL's host; -u wins.
+func TestApply_Netrc(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "netrc")
+	os.WriteFile(path, []byte("machine h login alice password s3cret\n"), 0o600) //nolint:errcheck
+	o, err := Apply(apply(t, "--auth-netrc-file", path, "https://h/f"))
+	if err != nil || o.User != "alice:s3cret" {
+		t.Fatalf("user %q, err %v", o.User, err)
+	}
+	if o, _ := Apply(apply(t, "--auth-netrc-file", path, "-u", "bob:x", "https://h/f")); o.User != "bob:x" {
+		t.Errorf("-u did not win: %q", o.User)
+	}
+	if o, _ := Apply(apply(t, "--auth-netrc-file", path, "https://other/f")); o.User != "" {
+		t.Errorf("another host got %q", o.User)
+	}
 }

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -9,6 +10,8 @@ import (
 	"strings"
 
 	"github.com/robot-accomplice/ghola/internal/config"
+	"github.com/robot-accomplice/ghola/internal/glob"
+	"github.com/robot-accomplice/ghola/internal/netrc"
 	"github.com/valyala/fasthttp"
 )
 
@@ -46,14 +49,17 @@ var setters = map[string]setter{
 		o.Stealth.Agent, o.Stealth.AgentExplicit = v, true
 		return nil
 	},
-	"referer":      func(o *config.Options, v string, _ *Command) error { o.Stealth.Referer = v; return nil },
-	"data":         func(o *config.Options, v string, _ *Command) error { o.Data = v; return nil },
-	"data-literal": func(o *config.Options, v string, _ *Command) error { o.Data, o.DataLiteral = v, true; return nil },
-	"retry-status": setRetryStatus,
-	"field":        func(o *config.Options, _ string, c *Command) error { o.DataURLEncode = c.Values["field"]; return nil },
-	"form":         func(o *config.Options, _ string, c *Command) error { o.Form = c.Values["form"]; return nil },
-	"upload":       setUpload,
-	"json":         setJSON,
+	"referer":         func(o *config.Options, v string, _ *Command) error { o.Stealth.Referer = v; return nil },
+	"data":            func(o *config.Options, v string, _ *Command) error { o.Data = v; return nil },
+	"data-literal":    func(o *config.Options, v string, _ *Command) error { o.Data, o.DataLiteral = v, true; return nil },
+	"retry-status":    setRetryStatus,
+	"field":           func(o *config.Options, _ string, c *Command) error { o.DataURLEncode = c.Values["field"]; return nil },
+	"form":            func(o *config.Options, _ string, c *Command) error { o.Form = c.Values["form"]; return nil },
+	"upload":          setUpload,
+	"json":            setJSON,
+	"url-glob":        func(*config.Options, string, *Command) error { return nil }, // read in Apply
+	"auth-netrc":      func(*config.Options, string, *Command) error { return nil }, // read in Apply
+	"auth-netrc-file": func(*config.Options, string, *Command) error { return nil }, // read in Apply
 	"ip": func(o *config.Options, v string, _ *Command) error {
 		o.Net.IPVersion = strings.TrimPrefix(v, "any")
 		return nil
@@ -146,7 +152,14 @@ func Apply(c *Command) (*config.Options, error) {
 			return nil, usagef("--%s is in the v1 spec but not built yet (phase 2)", name)
 		}
 	}
-	config.TakeURLs(o, c.Args)
+	urls, err := expandURLs(c.Args, c.Last("url-glob") != "false")
+	if err != nil {
+		return nil, err
+	}
+	config.TakeURLs(o, urls)
+	if err := applyNetrc(o, c); err != nil {
+		return nil, &UsageError{Msg: err.Error()}
+	}
 	if err := addQuery(o, c.Values["query"]); err != nil {
 		return nil, &UsageError{Msg: err.Error()}
 	}
@@ -239,6 +252,60 @@ func setOutput(o *config.Options, v string, _ *Command) error {
 
 func setProgress(o *config.Options, v string, _ *Command) error {
 	o.Output.Progress = map[string]string{"true": "on", "false": "off"}[v]
+	return nil
+}
+
+// expandURLs expands curl's URL globs ({a,b}, [1-9]) unless
+// --no-url-glob. A bad glob is a *glob.Error, which exits 3, as in curl.
+func expandURLs(args []string, globbing bool) ([]string, error) {
+	if !globbing {
+		return args, nil
+	}
+	var out []string
+	for _, a := range args {
+		p, err := glob.Parse(a)
+		if err != nil {
+			return nil, err
+		}
+		p.Each(func(u string, _ []string) bool { out = append(out, u); return true })
+	}
+	return out, nil
+}
+
+// applyNetrc reads the credentials for the first URL's host from the
+// netrc file (--auth-netrc reads ~/.netrc, --auth-netrc-file a given
+// file), unless -u gives them. A user in the URL picks its entry. The
+// credentials go only to that host, as -u does (audit finding H1).
+func applyNetrc(o *config.Options, c *Command) error {
+	path := c.Last("auth-netrc-file")
+	if path == "" && c.Last("auth-netrc") != "true" {
+		return nil
+	}
+	if o.User != "" || o.URL == "" {
+		return nil
+	}
+	explicit := path != ""
+	if !explicit {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return err
+		}
+		path = filepath.Join(home, ".netrc")
+	}
+	entries, err := netrc.ParseFile(path)
+	if errors.Is(err, os.ErrNotExist) && !explicit {
+		return nil // no ~/.netrc: no credentials, as curl -n, wget and aria2c do
+	}
+	if err != nil {
+		return fmt.Errorf("--auth-netrc: %w", err)
+	}
+	u, err := url.Parse(o.URL)
+	if err != nil {
+		return nil
+	}
+	if e, ok := netrc.Find(entries, u.Hostname(), u.User.Username()); ok {
+		o.User = e.Login + ":" + e.Password
+	}
 	return nil
 }
 

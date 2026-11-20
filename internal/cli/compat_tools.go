@@ -62,6 +62,8 @@ const curlTable = `
 --json                         => --json %s
 --oauth2-bearer                => --auth-bearer %s
 --url-query                    => --query %s
+-n --netrc                     => --auth-netrc
+--netrc-file                   => --auth-netrc-file %s
 --pinnedpubkey                 => --tls-pin %s
 --capath                       => --tls-ca-dir %s
 --tlsv1.2                      => --tls-min 1.2
@@ -120,6 +122,8 @@ const aria2Table = `
 --retry-wait                   => --retry-delay %s
 --max-download-limit           => --rate-max %s
 --disable-ipv6                 => --ip 4
+-n --no-netrc                  => --no-auth-netrc
+--netrc-path                   => --auth-netrc-file %s
 --load-cookies --save-cookies  => --cookie-jar %s
 `
 
@@ -185,8 +189,8 @@ func curlSpecial(t *translation, name, value string, _ bool) (bool, error) {
 
 var wgetSpec = &toolSpec{
 	name:         JobWget,
-	defaults:     strings.Fields("-r 0 --no-compressed"),
-	valueLetters: "aABDeiIloOPQRtTUwX", // the wget and Wget2 manuals
+	defaults:     strings.Fields("-r 0 --no-compressed --no-url-glob --auth-netrc"), // wget reads ~/.netrc by default
+	valueLetters: "aABDeiIloOPQRtTUwX",                                              // the wget and Wget2 manuals
 	equals:       true,
 	// With -O, wget writes one URL to a file or stdout: a fetch, which also
 	// takes a body. Without it, wget saves under the remote name.
@@ -223,8 +227,8 @@ func wgetSpecial(t *translation, name, value string, _ bool) (bool, error) {
 
 var aria2Spec = &toolSpec{
 	name:         JobAria2c,
-	defaults:     strings.Fields("download -r 4 --retry-delay 0 --no-compressed"),
-	valueLetters: "MOTUdijklmostux", // aria2c 1.37.0 --help=#all
+	defaults:     strings.Fields("download -r 4 --retry-delay 0 --no-compressed --no-url-glob --auth-netrc"), // aria2c reads ~/.netrc by default
+	valueLetters: "MOTUdijklmostux",                                                                          // aria2c 1.37.0 --help=#all
 	equals:       true,
 	flags:        parseToolTable(aria2Table),
 	ignored: words("--no-conf -k --min-split-size --console-log-level " +
