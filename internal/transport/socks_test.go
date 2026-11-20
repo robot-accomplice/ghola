@@ -340,9 +340,12 @@ func TestSOCKSProxy_FromTheEnvironment(t *testing.T) {
 func TestProxyFlag_IgnoresAnEnvironmentSOCKSProxy(t *testing.T) {
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	defer target.Close()
+	// The test proxy connects only to the test's own target, whatever the
+	// request names, so it can never reach another host.
+	targetAddr := target.Listener.Addr().String()
 	httpProxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodConnect { // tls-client tunnels HTTP targets too
-			up, err := net.Dial("tcp", r.Host)
+			up, err := net.Dial("tcp", targetAddr)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadGateway)
 				return
@@ -355,7 +358,7 @@ func TestProxyFlag_IgnoresAnEnvironmentSOCKSProxy(t *testing.T) {
 			up.Close()
 			return
 		}
-		resp, err := http.Get(r.URL.String()) // forward the absolute-form request
+		resp, err := http.Get(target.URL + "/") // forward to the fixed target
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadGateway)
 			return
