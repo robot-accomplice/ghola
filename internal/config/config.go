@@ -97,6 +97,9 @@ type OutputOptions struct {
 	// for it; main sets a new one for each URL.
 	Template *Template
 	Info     *TransferInfo
+	// InputArgs holds the native options of each --input URL, by the
+	// index in URLs; nil for a URL of the command line.
+	InputArgs [][]string
 	// PerURL holds one -o for each URL, in order, when several URLs have
 	// several -o. main sets each URL's target from it.
 	PerURL []string

@@ -20,6 +20,10 @@ func takeURLs(opts *Options, args []string) {
 // withScheme returns u with http:// in front when it has no scheme.
 // url.Parse cannot decide this: it reads "localhost:8080" as the scheme
 // "localhost".
+// NormalizeURL gives a URL without a scheme the default one, as the
+// command line does.
+func NormalizeURL(u string) string { return withScheme(u) }
+
 func withScheme(u string) string {
 	if strings.Contains(u, "://") {
 		return u

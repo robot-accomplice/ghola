@@ -81,6 +81,8 @@ var setters = map[string]setter{
 		o.Output.RateTotalValue = v
 		return err
 	},
+	"input":        func(*config.Options, string, *Command) error { return nil }, // read in Apply
+	"input-format": func(*config.Options, string, *Command) error { return nil }, // read in Apply
 	"save-headers": func(o *config.Options, v string, _ *Command) error { o.Output.SaveHeaders = v; return nil },
 	"show-headers": func(o *config.Options, v string, _ *Command) error { o.Output.Include = v == "true"; return nil },
 	"quiet":        func(o *config.Options, v string, _ *Command) error { o.Output.Silent = v == "true"; return nil },
@@ -210,6 +212,9 @@ func Apply(c *Command) (*config.Options, error) {
 		return nil, err
 	}
 	config.TakeURLs(o, urls)
+	if err := applyInput(o, c); err != nil {
+		return nil, &UsageError{Msg: err.Error()}
+	}
 	if err := pairOutputs(o, c.Values["output"]); err != nil {
 		return nil, &UsageError{Msg: err.Error()}
 	}

@@ -343,6 +343,11 @@ func transferAll(ctx context.Context, opts *config.Options, do client.Doer, stre
 		if len(opts.Output.PerURL) == len(opts.URLs) {
 			runs[i].Output.SetTarget(opts.Output.PerURL[i]) // one -o for each URL, in order
 		}
+		if i < len(opts.Output.InputArgs) {
+			if err := cli.ApplyInputArgs(&runs[i], opts.Output.InputArgs[i]); err != nil {
+				return argError(err) // Apply parsed them; a setter may still refuse a value
+			}
+		}
 		if runs[i].Output.RemoteName && len(opts.URLs) > 1 {
 			config.TakeRemoteName(&runs[i]) // each URL under its own name
 		}
