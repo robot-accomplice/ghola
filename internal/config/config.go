@@ -95,6 +95,9 @@ type OutputOptions struct {
 	// Progress forces the progress meter: "on" shows it also when stderr is
 	// not a terminal, "off" hides it, "" shows it only on a terminal.
 	Progress string
+	// HideErrors drops the error message on stderr. Only ghola curl -s
+	// (without -S) sets it, as curl does; native -q keeps the errors.
+	HideErrors bool
 	// Dir is the folder of -o DIR/: the remote file name goes inside it.
 	Dir string
 	// FailFrom400 is the v1 rule for Fail: status 400 and above fails, as

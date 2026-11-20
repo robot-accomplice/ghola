@@ -176,7 +176,7 @@ func fetch(ctx context.Context, opts *config.Options, do client.Doer, stream cli
 
 	if config.ShouldStream(opts) {
 		if err := client.Download(ctx, opts, stream); err != nil {
-			if !opts.Output.Silent {
+			if !opts.Output.HideErrors {
 				fmt.Fprintf(os.Stderr, "Failed: %s\n", err)
 			}
 			return exitFor(err).Int()
@@ -194,7 +194,7 @@ func fetch(ctx context.Context, opts *config.Options, do client.Doer, stream cli
 	req, rsp, err := client.FetchURL(ctx, opts, do)
 	elapsed := time.Since(start)
 	if err != nil {
-		if !opts.Output.Silent {
+		if !opts.Output.HideErrors {
 			fmt.Fprintf(os.Stderr, "Failed: %s\n", err)
 		}
 		return exitFor(err).Int()

@@ -125,16 +125,17 @@ func TestProcessResponse_Silent(t *testing.T) {
 	defer fasthttp.ReleaseResponse(rsp)
 
 	rsp.Header.SetStatusCode(200)
-	rsp.SetBodyString("should not appear")
+	rsp.SetBodyString("the body")
 
-	var buf bytes.Buffer
+	// -q hides notes and the meter, not the body (v1 spec), as curl -s.
+	var buf, errBuf bytes.Buffer
 	opts := &config.Options{Output: config.OutputOptions{Silent: true}}
-	err := ProcessResponse(&buf, io.Discard, opts, req, rsp, 0)
+	err := ProcessResponse(&buf, &errBuf, opts, req, rsp, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if buf.Len() != 0 {
-		t.Errorf("silent mode should produce no output, got %q", buf.String())
+	if buf.String() != "the body" || errBuf.Len() != 0 {
+		t.Errorf("stdout %q, stderr %q; want the body and nothing on stderr", buf.String(), errBuf.String())
 	}
 }
 

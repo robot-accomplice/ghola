@@ -54,10 +54,6 @@ func ProcessResponse(w, ew io.Writer, opts *config.Options, req *fasthttp.Reques
 		return nil
 	}
 
-	if opts.Output.Silent {
-		return nil
-	}
-
 	if opts.Output.Verbose {
 		printVerbose(ew, opts, req)
 	}
