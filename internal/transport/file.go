@@ -25,7 +25,7 @@ var ErrFileRead = errors.New("could not read the file:// file")
 // SchemeFile is the scheme of a local file URL (plan phase 5, decision D1).
 const SchemeFile = "file"
 
-// protocolTransport serves file://, ftp(s)://, sftp:// and scp:// URLs itself and sends
+// protocolTransport serves file://, ftp(s)://, sftp://, scp:// and ws(s):// URLs itself and sends
 // every other URL to the network transport. It sits in front of both
 // stacks, so stdout and -o, and both stacks, handle these protocols the
 // same way. Their answers look like HTTP answers (200, 206, Content-Length,
@@ -50,6 +50,9 @@ func (t protocolTransport) serve(ctx context.Context, req *fasthttp.Request) (a 
 		return a, true, err
 	case SchemeSCP:
 		a, err = t.serveSCP(ctx, req)
+		return a, true, err
+	case SchemeWS, SchemeWSS:
+		a, err = t.serveWebSocket(ctx, req)
 		return a, true, err
 	}
 	return fileAnswer{}, false, nil
