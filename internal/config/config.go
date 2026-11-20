@@ -63,6 +63,9 @@ const (
 	// PeerFailedVerification indicates that the server certificate or its
 	// host name did not verify (curl 60).
 	PeerFailedVerification ExitCode = 60
+	// PinnedKeyMismatch indicates that the server key does not match
+	// --tls-pin (curl 90).
+	PinnedKeyMismatch ExitCode = 90
 	// BadContentEncoding indicates a Content-Encoding that --compressed
 	// cannot decode (curl 61).
 	BadContentEncoding ExitCode = 61
@@ -123,6 +126,13 @@ type StealthOptions struct {
 	CACert         string
 	ClientCert     string
 	ClientKey      string
+	// TLSMin and TLSMax are "1.2" or "1.3" (--tls-min, --tls-max).
+	TLSMin, TLSMax string
+	// CADir is a folder of CA certificates (--tls-ca-dir).
+	CADir string
+	// Pins are sha256//BASE64 hashes of the server's public key
+	// (--tls-pin), as curl --pinnedpubkey takes them.
+	Pins []string
 }
 
 // ResilienceOptions controls retry, timeout, redirect, and buffer behavior.

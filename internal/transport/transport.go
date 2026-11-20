@@ -6,7 +6,6 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/tls"
-	"crypto/x509"
 	"errors"
 	"fmt"
 	"io"
@@ -14,7 +13,6 @@ import (
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
-	"os"
 	"strings"
 
 	fhttp "github.com/bogdanfinn/fhttp"
@@ -123,20 +121,25 @@ type tlsClientTransport struct {
 // returns nil when none are set (use the transport default). -k disables
 // verification; --cacert pins a custom CA; --cert/--key add a client cert.
 func buildTLSConfig(opts *config.Options) (*tls.Config, error) {
-	if !opts.Stealth.Insecure && opts.Stealth.CACert == "" && opts.Stealth.ClientCert == "" {
+	st := opts.Stealth
+	if !st.Insecure && st.CACert == "" && st.ClientCert == "" && !hasTLSOptions(st) {
 		return nil, nil
 	}
-	cfg := &tls.Config{InsecureSkipVerify: opts.Stealth.Insecure} //nolint:gosec // opt-in via -k
-	if opts.Stealth.CACert != "" {
-		pem, err := os.ReadFile(opts.Stealth.CACert)
+	cfg := &tls.Config{InsecureSkipVerify: st.Insecure} //nolint:gosec // opt-in via -k
+	if err := setTLSVersions(cfg, st.TLSMin, st.TLSMax); err != nil {
+		return nil, err
+	}
+	pool, err := caPool(st.CACert, st.CADir)
+	if err != nil {
+		return nil, err
+	}
+	cfg.RootCAs = pool
+	if len(st.Pins) > 0 {
+		pins, err := parsePins(st.Pins)
 		if err != nil {
-			return nil, fmt.Errorf("read --cacert: %w", err)
+			return nil, err
 		}
-		pool := x509.NewCertPool()
-		if !pool.AppendCertsFromPEM(pem) {
-			return nil, fmt.Errorf("--cacert %q contains no valid certificates", opts.Stealth.CACert)
-		}
-		cfg.RootCAs = pool
+		cfg.VerifyConnection = pins.verify
 	}
 	if opts.Stealth.ClientCert != "" {
 		if opts.Stealth.ClientKey == "" {
@@ -245,11 +248,12 @@ func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transpor
 		return nil, fmt.Errorf("no tls-client profile mapping for %q", activeProfile.Name)
 	}
 
-	// Client certs and a custom CA are not supported on the impersonation
-	// backend (tls-client exposes no client-cert/CA-pool API in the vendored
-	// version); fail loud rather than silently ignoring them.
-	if opts.Stealth.ClientCert != "" || opts.Stealth.CACert != "" {
-		return nil, fmt.Errorf("--cert/--key/--cacert are not supported with --impersonate; use the default transport")
+	// The browser profile sets the TLS handshake, and ghola does not yet
+	// pass a CA pool or a client certificate to tls-client; fail loud
+	// rather than ignore the options. A pin would be per host on
+	// tls-client, and --tls-pin covers every host of the transfer.
+	if opts.Stealth.ClientCert != "" || opts.Stealth.CACert != "" || hasTLSOptions(opts.Stealth) {
+		return nil, fmt.Errorf("--tls-ca, --tls-ca-dir, --tls-cert, --tls-key, --tls-min, --tls-max and --tls-pin do not work with --impersonate yet: the browser profile sets the TLS handshake")
 	}
 
 	options := []tlsclient.HttpClientOption{
