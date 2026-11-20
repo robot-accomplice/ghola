@@ -25,6 +25,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	ftpserver "github.com/fclairamb/ftpserverlib"
 )
 
 // reqLog is one request as the server saw it. It is the record of what a
@@ -48,6 +50,9 @@ type server struct {
 	silentURL string
 	silentMu  sync.Mutex
 	silentCs  []net.Conn
+	ftp       *ftpserver.FtpServer
+	ftpAddr   string
+	localFile string // a local copy of /file/1m, for file:// scenarios
 
 	mu    sync.Mutex
 	logs  map[string][]reqLog
@@ -86,6 +91,13 @@ func newServer(dir string) (*server, error) {
 	}
 	s.silentURL = "https://" + s.silent.Addr().String() + "/"
 	go s.holdSilent()
+	if s.ftpAddr, err = s.startFTP(); err != nil {
+		return nil, err
+	}
+	s.localFile = filepath.Join(dir, "local-1m")
+	if err := os.WriteFile(s.localFile, s.content(parseSize("1m")), 0o644); err != nil {
+		return nil, err
+	}
 	return s, nil
 }
 
@@ -103,6 +115,9 @@ func (s *server) holdSilent() {
 }
 
 func (s *server) close() {
+	if s.ftp != nil {
+		s.ftp.Stop() //nolint:errcheck
+	}
 	s.silent.Close()
 	s.silentMu.Lock()
 	for _, c := range s.silentCs {

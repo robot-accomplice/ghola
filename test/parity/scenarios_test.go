@@ -57,6 +57,25 @@ func downloadTo(path string, extra map[string][]string) map[string]func(e *Env) 
 	return runs
 }
 
+// eachToFile is toFile on a URL for each tool.
+func eachToFile(url func(e *Env) string) map[string]func(e *Env) Spec {
+	runs := map[string]func(e *Env) Spec{}
+	for name := range toFileArgs {
+		runs[name] = func(e *Env) Spec { return toFile(name, url(e)) }
+	}
+	return runs
+}
+
+// resumeURL is resumeFrom for a URL that is not on the HTTP server.
+func resumeURL(url func(e *Env) string) map[string]func(e *Env) Spec {
+	return map[string]func(e *Env) Spec{
+		"ghola": seeded("1m", func(e *Env) Spec { return args("-C", "-", "-o", "f", url(e)) }),
+		"curl":  seeded("1m", func(e *Env) Spec { return args("-sS", "-C", "-", "-o", "f", url(e)) }),
+		"wget":  seeded("1m", func(e *Env) Spec { return args("-q", "-c", "-O", "f", url(e)) }),
+		"aria2": seeded("1m", func(e *Env) Spec { return args("-q", "-c", "--allow-overwrite=true", "-o", "f", url(e)) }),
+	}
+}
+
 // resumeFrom is the "resume the file f from URL" command of each tool.
 func resumeFrom(path string) map[string]func(e *Env) Spec {
 	return map[string]func(e *Env) Spec{
@@ -190,6 +209,19 @@ var scenarios = []scenario{
 	{ID: "resume_liar", Finding: "C3", What: "resume from a server that ignores Range", Runs: resumeFrom("/liar/1m"), Check: resumeOK("1m")},
 	{ID: "resume_badrange", Finding: "C3", What: "resume with a wrong Content-Range", Runs: resumeFrom("/badrange/1m"), Check: resumeOK("1m")},
 	{ID: "resume_changed", Finding: "GAP-if-range", What: "resume when the remote file changed", Runs: resumeChanged("/changing/1m"), Check: changedOK("1m")},
+
+	// ---- Other protocols (plan phase 5) ----
+	{ID: "ftp_download", Finding: "phase5", What: "download a file over FTP", Runs: eachToFile(func(e *Env) string { return e.FTPURL("1m") }), Check: all(exitZero, fileIs("f", ref("1m")))},
+	{ID: "ftp_resume", Finding: "phase5", What: "resume a 300 KiB partial file over FTP", Runs: resumeURL(func(e *Env) string { return e.FTPURL("1m") }), Check: all(exitZero, fileIs("f", ref("1m")))},
+	{ID: "ftp_missing", Finding: "phase5", What: "a missing FTP file is an error", Runs: eachToFile(func(e *Env) string { return e.FTPURL("none") }), Check: exitNonzero},
+	{
+		ID: "file_download", Finding: "phase5", What: "copy a local file:// URL (Wget2 and aria2 have no file://)",
+		Runs: map[string]func(e *Env) Spec{
+			"ghola": func(e *Env) Spec { return toFile("ghola", e.FileURL()) },
+			"curl":  func(e *Env) Spec { return toFile("curl", e.FileURL()) },
+		},
+		Check: all(exitZero, fileIs("f", ref("1m"))),
+	},
 
 	// ---- Redirects and credentials ----
 	{
