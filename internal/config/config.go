@@ -125,6 +125,9 @@ type OutputOptions struct {
 	// --name=value, which "ghola jobs resume" runs again.
 	NoSession   bool
 	SessionArgs []string
+	// Background is --background; Log is --log, where the messages go.
+	Background bool
+	Log        string
 	// OnComplete and OnError run after a download (--on-complete,
 	// --on-error).
 	OnComplete, OnError string

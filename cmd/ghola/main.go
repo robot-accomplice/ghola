@@ -100,6 +100,14 @@ func executeOne(ctx context.Context, args []string, hideErrors bool, do client.D
 		return argErrorOrGlob(err)
 	}
 	opts.Output.HideErrors = hideErrors
+	if code, done := startBackground(opts, args, w); done {
+		return code
+	}
+	restore, err := openLog(opts)
+	if err != nil {
+		return argError(err)
+	}
+	defer restore()
 	if c.Job == cli.JobInspect {
 		opts.Output.Snoop = true
 	}
