@@ -1,8 +1,10 @@
 package transport
 
 import (
+	"context"
 	"fmt"
 	"net"
+	"net/http"
 	"net/url"
 	"os"
 	"strings"
@@ -27,6 +29,10 @@ func proxyFromEnv(target *url.URL) (*url.URL, error) {
 		}
 	case "https":
 		raw = firstEnv("https_proxy", "HTTPS_PROXY")
+	}
+	if raw == "" {
+		// As in curl, ALL_PROXY serves a scheme whose own variable is unset.
+		raw = firstEnv("all_proxy", "ALL_PROXY")
 	}
 	if raw == "" || noProxy(target.Hostname(), firstEnv("no_proxy", "NO_PROXY")) {
 		return nil, nil
@@ -80,4 +86,52 @@ func noProxy(host, list string) bool {
 		}
 	}
 	return false
+}
+
+// targetKey is the context key that carries the URL of a request to the
+// dial function, which sees only host:port.
+type targetKey struct{}
+
+func withTarget(ctx context.Context, target *url.URL) context.Context {
+	return context.WithValue(ctx, targetKey{}, target)
+}
+
+// envSOCKS returns the SOCKS proxy that the environment names for the
+// request in ctx, or nil when the environment names none or an HTTP proxy.
+func envSOCKS(ctx context.Context) (*url.URL, error) {
+	target, _ := ctx.Value(targetKey{}).(*url.URL)
+	if target == nil {
+		return nil, nil
+	}
+	p, err := proxyFromEnv(target)
+	if err != nil || p == nil || !isSOCKS(p) {
+		return nil, err
+	}
+	return p, nil
+}
+
+// envDialer dials through the SOCKS proxy that the environment names for
+// the request, with the shared SOCKS dialer, and else dials directly. An
+// HTTP proxy from the environment is the stack's own job.
+func envDialer(base dialFunc) dialFunc {
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		p, err := envSOCKS(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if p != nil {
+			return socksDialer(p, base)(ctx, network, addr)
+		}
+		return base(ctx, network, addr)
+	}
+}
+
+// httpProxyFromEnv is the net/http Proxy function: the environment proxy
+// for the request, unless it is SOCKS, which envDialer serves.
+func httpProxyFromEnv(r *http.Request) (*url.URL, error) {
+	p, err := proxyFromEnv(r.URL)
+	if err != nil || p == nil || isSOCKS(p) {
+		return nil, err
+	}
+	return p, nil
 }
