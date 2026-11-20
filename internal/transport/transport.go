@@ -192,6 +192,9 @@ func New(opts *config.Options, selectedProxy string) (Transport, error) {
 			return nil, err
 		}
 	}
+	if out := opts.Output.TraceOut; out != nil {
+		t.trace = &tracer{w: out, ascii: opts.Output.TraceASCII, times: opts.Output.TraceTime}
+	}
 	if selectedProxy != "" && opts.ProxyCfg.Bypass != nil {
 		// A host in --proxy-bypass goes direct, also after a redirect.
 		if t.direct, err = newNetwork(opts, ""); err != nil {
@@ -384,7 +387,7 @@ func (t *simpleTransport) Do(ctx context.Context, req *fasthttp.Request, rsp *fa
 	if err != nil {
 		return err
 	}
-	fillResponse(rsp, resp.StatusCode, resp.Header, w.body(resp.Body), resp.ContentLength)
+	fillResponse(ctx, rsp, resp.StatusCode, resp.Header, w.body(resp.Body), resp.ContentLength)
 	return nil
 }
 
@@ -460,7 +463,10 @@ func noEngineUserAgent[H ~map[string][]string](h H) {
 // The stream is set before the headers: a Content-Length header from the
 // server then replaces the length. tls-client reports -1 even when the
 // server sent the header.
-func fillResponse(rsp *fasthttp.Response, status int, header map[string][]string, body io.ReadCloser, contentLength int64) {
+func fillResponse(ctx context.Context, rsp *fasthttp.Response, status int, header map[string][]string, body io.ReadCloser, contentLength int64) {
+	if tr, ok := ctx.Value(tracerKey{}).(*tracer); ok {
+		body = tracedBody{tr.reader(body), body} // --trace sees the body as ghola reads it
+	}
 	rsp.SetStatusCode(status)
 	rsp.SetBodyStream(body, int(contentLength))
 	for key, values := range header {
@@ -491,7 +497,7 @@ func (t *tlsClientTransport) Do(ctx context.Context, req *fasthttp.Request, rsp 
 	if err != nil {
 		return err
 	}
-	fillResponse(rsp, httpResp.StatusCode, httpResp.Header, w.body(httpResp.Body), httpResp.ContentLength)
+	fillResponse(ctx, rsp, httpResp.StatusCode, httpResp.Header, w.body(httpResp.Body), httpResp.ContentLength)
 	return nil
 }
 

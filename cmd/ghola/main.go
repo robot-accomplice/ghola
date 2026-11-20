@@ -90,6 +90,25 @@ func openHeaderFile(opts *config.Options, w *os.File) (int, bool) {
 	return 0, true
 }
 
+// openTraceFile opens the --trace file once for the command, as curl
+// does. "-" is stderr, so the trace does not mix with the body.
+func openTraceFile(opts *config.Options) (int, bool) {
+	switch opts.Output.Trace {
+	case "":
+		return 0, true
+	case "-":
+		opts.Output.TraceOut = os.Stderr
+		return 0, true
+	}
+	f, err := os.Create(opts.Output.Trace)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "--trace: %v\n", err)
+		return config.WriteFileFailed.Int(), false
+	}
+	opts.Output.TraceOut = f
+	return 0, true
+}
+
 // compatCommands translate the syntax of curl, wget and aria2c into native
 // arguments (v1 spec, section 6).
 var compatCommands = map[string]func([]string) (*cli.Compat, error){
@@ -175,6 +194,12 @@ func transfer(ctx context.Context, opts *config.Options, do client.Doer, stream 
 		return code
 	}
 	if f, ok := opts.Output.HeaderOut.(*os.File); ok && f != w {
+		defer f.Close()
+	}
+	if code, ok := openTraceFile(opts); !ok {
+		return code
+	}
+	if f, ok := opts.Output.TraceOut.(*os.File); ok && f != os.Stderr {
 		defer f.Close()
 	}
 	return transferAll(ctx, opts, do, stream, w)

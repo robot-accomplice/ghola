@@ -65,6 +65,9 @@ var setters = map[string]setter{
 	},
 	"hsts":           func(o *config.Options, v string, _ *Command) error { o.HSTS = v; return nil },
 	"auth-aws-sigv4": func(*config.Options, string, *Command) error { return nil }, // read in Apply
+	"trace":          func(o *config.Options, v string, _ *Command) error { o.Output.Trace = v; return nil },
+	"trace-format":   func(o *config.Options, v string, _ *Command) error { o.Output.TraceASCII = v == "ascii"; return nil },
+	"trace-time":     func(o *config.Options, v string, _ *Command) error { o.Output.TraceTime = v == "true"; return nil },
 	"save-headers":   func(o *config.Options, v string, _ *Command) error { o.Output.SaveHeaders = v; return nil },
 	"show-headers":   func(o *config.Options, v string, _ *Command) error { o.Output.Include = v == "true"; return nil },
 	"quiet":          func(o *config.Options, v string, _ *Command) error { o.Output.Silent = v == "true"; return nil },

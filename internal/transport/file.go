@@ -39,6 +39,8 @@ type protocolTransport struct {
 	direct Transport
 	// hsts is the --hsts cache, nil without it.
 	hsts *hstsCache
+	// trace writes --trace, nil without it.
+	trace *tracer
 }
 
 // networkFor returns the network transport for u: direct for a host in
@@ -84,6 +86,9 @@ func (t protocolTransport) prepare(ctx context.Context, req *fasthttp.Request) c
 	if t.opts.RequestTarget != "" {
 		ctx = context.WithValue(ctx, requestTargetKey{}, t.opts.RequestTarget)
 	}
+	if t.trace != nil {
+		ctx = context.WithValue(ctx, tracerKey{}, t.trace)
+	}
 	return ctx
 }
 
@@ -109,15 +114,21 @@ func (t protocolTransport) Do(ctx context.Context, req *fasthttp.Request, rsp *f
 	ctx = t.prepare(ctx, req)
 	a, ok, err := t.serve(ctx, req)
 	if !ok {
+		if t.trace != nil {
+			t.trace.request(req)
+		}
 		if err := t.networkFor(req.URI()).Do(ctx, req, rsp); err != nil {
 			return err
+		}
+		if t.trace != nil {
+			t.trace.block("<= Recv header", rsp.Header.Header()) // the body: fillResponse
 		}
 		return t.recordHSTS(req, string(rsp.Header.Peek("Strict-Transport-Security")))
 	}
 	if err != nil {
 		return err
 	}
-	fillResponse(rsp, a.status, a.header, a.body, a.length)
+	fillResponse(ctx, rsp, a.status, a.header, a.body, a.length)
 	return nil
 }
 
@@ -125,6 +136,10 @@ func (t protocolTransport) Stream(ctx context.Context, req *fasthttp.Request, si
 	ctx = t.prepare(ctx, req)
 	a, ok, err := t.serve(ctx, req)
 	if !ok {
+		if t.trace != nil {
+			t.trace.request(req)
+			sink = traceSink{sink, t.trace}
+		}
 		meta, err := t.networkFor(req.URI()).Stream(ctx, req, sink)
 		if err == nil {
 			err = t.recordHSTS(req, meta.Header.Get("Strict-Transport-Security"))

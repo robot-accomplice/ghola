@@ -99,6 +99,13 @@ type OutputOptions struct {
 	CondTime bool
 	// ETagSave is the --cond-etag-save path.
 	ETagSave string
+	// Trace is the --trace path ("-" is stderr); TraceOut is that file,
+	// which ghola opens once for the command. TraceASCII is
+	// --trace-format ascii, and TraceTime is --trace-time.
+	Trace      string
+	TraceOut   io.Writer
+	TraceASCII bool
+	TraceTime  bool
 	// SaveHeaders is the --save-headers path ("-" is stdout). HeaderOut is
 	// that file, which ghola opens once for the whole command.
 	SaveHeaders  string
