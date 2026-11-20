@@ -12,6 +12,4 @@ package parity
 // So a fix cannot land without proof, and a regression cannot land at all.
 // The findings are in docs/audits/2026-11-12-v0.7.0-vs-curl-aria2-wget.md.
 // Recorded against v0.8.0 on 2026-11-15.
-var known = map[string]string{
-	"resume_changed": "GAP-if-range: resume does not send If-Range (no tested tool does)",
-}
+var known = map[string]string{}

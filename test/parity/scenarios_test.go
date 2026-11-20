@@ -67,6 +67,21 @@ func resumeFrom(path string) map[string]func(e *Env) Spec {
 	}
 }
 
+// resumeChanged resumes a partial file of /changing. For ghola the partial
+// file is what an earlier, interrupted ghola download left: the first bytes
+// of version 0 and the state file that names version 0 (ETag "v0"). The
+// other tools keep no record of the version, so they get the plain seed.
+func resumeChanged(path string) map[string]func(e *Env) Spec {
+	runs := resumeFrom(path)
+	runs["ghola"] = func(e *Env) Spec {
+		s := args("-C", "-", "-o", "f", e.URL(path))
+		s.Seed = changingVersion(e.s, parseSize("1m"), 0)[:seedLen]
+		s.SeedFiles = map[string][]byte{"f.ghola": []byte(`{"url":"` + e.URL(path) + `","etag":"\"v0\""}`)}
+		return s
+	}
+	return runs
+}
+
 // segmented is the "download URL in 4 parts" command of the tools that can.
 func segmented(path string) map[string]func(e *Env) Spec {
 	return map[string]func(e *Env) Spec{
@@ -174,7 +189,7 @@ var scenarios = []scenario{
 	{ID: "resume_ok", Finding: "ok", What: "resume a 300 KiB partial file", Runs: resumeFrom("/file/1m"), Check: all(exitZero, fileIs("f", ref("1m")))},
 	{ID: "resume_liar", Finding: "C3", What: "resume from a server that ignores Range", Runs: resumeFrom("/liar/1m"), Check: resumeOK("1m")},
 	{ID: "resume_badrange", Finding: "C3", What: "resume with a wrong Content-Range", Runs: resumeFrom("/badrange/1m"), Check: resumeOK("1m")},
-	{ID: "resume_changed", Finding: "GAP-if-range", What: "resume when the remote file changed", Runs: resumeFrom("/changing/1m"), Check: changedOK("1m")},
+	{ID: "resume_changed", Finding: "GAP-if-range", What: "resume when the remote file changed", Runs: resumeChanged("/changing/1m"), Check: changedOK("1m")},
 
 	// ---- Redirects and credentials ----
 	{

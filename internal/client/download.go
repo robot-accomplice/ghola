@@ -95,6 +95,9 @@ func Download(ctx context.Context, opts *config.Options, stream Streamer) error 
 
 	meta, err := fetchToFile(ctx, opts, stream, limiter, progress)
 	if err != nil {
+		return err // the state file stays, so a resume can check the version
+	}
+	if err := removeState(opts.Output.File); err != nil {
 		return err
 	}
 
@@ -341,6 +344,11 @@ func downloadSingle(ctx context.Context, opts *config.Options, stream Streamer, 
 		return gholatransport.StreamMeta{}, err
 	}
 	plan := singleGet{flags: flags, offset: offset, rangeHeader: rangeHeader, limiter: limiter, progress: progress}
+	if offset > 0 {
+		if plan.ifRange, err = loadIfRange(opts.Output.File); err != nil {
+			return gholatransport.StreamMeta{}, err
+		}
+	}
 
 	_, meta, err := followRedirects(opts, url, func(url string) (gholatransport.StreamMeta, error) {
 		return plan.getWithRetry(ctx, opts, stream, url)
@@ -382,7 +390,8 @@ type singleGet struct {
 	rangeHeader string
 	limiter     *rateLimiter
 	progress    *progressWriter
-	retryStatus bool // refuse a retryable status: a retry follows
+	retryStatus bool   // refuse a retryable status: a retry follows
+	ifRange     string // the validator of the partial file's version, from its state file
 }
 
 // get sends one GET for url and writes an accepted body to the file. A
@@ -397,6 +406,9 @@ func (g singleGet) get(ctx context.Context, opts *config.Options, stream Streame
 	buildDownloadRequest(req, opts, url, fasthttp.MethodGet, opts.Data)
 	if g.rangeHeader != "" {
 		req.Header.Set("Range", g.rangeHeader)
+	}
+	if g.ifRange != "" {
+		req.Header.Set("If-Range", g.ifRange)
 	}
 
 	// Sink nesting (innermost first): file -> rate limit -> progress.
@@ -455,18 +467,39 @@ func (g singleGet) check(opts *config.Options, f *lazyFile) func(gholatransport.
 		if opts.Output.FailsOn(meta.StatusCode) {
 			return fmt.Errorf("%w: %d", config.ErrHTTPStatus, meta.StatusCode)
 		}
-		if g.offset > 0 {
-			if err := expectRange(g.offset, -1)(meta); err != nil {
-				return err
-			}
+		if err := g.checkResume(opts, f, meta); err != nil {
+			return err
 		}
 		applyRemoteName(opts, meta)
 		f.name = opts.Output.File
 		if g.progress != nil {
 			g.progress.setTotal(meterTotal(opts, meta))
 		}
-		return f.open()
+		if err := f.open(); err != nil {
+			return err
+		}
+		if g.rangeHeader != "" && g.offset == 0 {
+			return nil // a --range part is not a whole file: there is nothing to resume
+		}
+		return saveState(f.name, opts.URL, meta)
 	}
+}
+
+// checkResume accepts a resume answer. A 206 must start at the offset. A 200
+// to a request with If-Range means that the remote file changed: the server
+// sends the whole new version, and the file starts again from byte 0.
+func (g singleGet) checkResume(opts *config.Options, f *lazyFile, meta gholatransport.StreamMeta) error {
+	if g.offset == 0 {
+		return nil
+	}
+	if g.ifRange != "" && meta.StatusCode == fasthttp.StatusOK {
+		f.flags = f.flags&^os.O_APPEND | os.O_TRUNC
+		if !opts.Output.Silent {
+			fmt.Fprintf(os.Stderr, "Note: %s changed on the server since the partial download; starting again from byte 0\n", opts.Output.File)
+		}
+		return nil
+	}
+	return expectRange(g.offset, -1)(meta)
 }
 
 // meterTotal returns the meter's total for the accepted response, or -1 when
