@@ -24,6 +24,9 @@ import (
 // the timing line) goes to ew. It returns a non-nil error if the body cannot
 // be read or written.
 func ProcessResponse(w, ew io.Writer, opts *config.Options, req *fasthttp.Request, rsp *fasthttp.Response, elapsed time.Duration) error {
+	if opts.Output.TraceTime {
+		ew = timedLines{ew} // --trace-time also times the -v lines
+	}
 	if opts.Output.FailsOn(rsp.StatusCode()) {
 		return fmt.Errorf("%w: %d %s", config.ErrHTTPStatus, rsp.StatusCode(), fasthttp.StatusMessage(rsp.StatusCode()))
 	}
@@ -137,6 +140,17 @@ func printVerbose(ew io.Writer, opts *config.Options, req *fasthttp.Request) {
 	if opts.Stealth.CookieJar != "" {
 		fmt.Fprintf(ew, "Cookie Jar: %s\n", opts.Stealth.CookieJar)
 	}
+}
+
+// timedLines puts the time in front of each -v line. Each line is one
+// write.
+type timedLines struct{ w io.Writer }
+
+func (t timedLines) Write(p []byte) (int, error) {
+	if _, err := io.WriteString(t.w, time.Now().Format("15:04:05.000000 ")); err != nil {
+		return 0, err
+	}
+	return t.w.Write(p)
 }
 
 func printTiming(ew io.Writer, opts *config.Options, elapsed time.Duration) {
