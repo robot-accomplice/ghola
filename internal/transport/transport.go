@@ -35,6 +35,24 @@ type StreamMeta struct {
 	ContentRange  string // Content-Range, "" when absent
 	Location      string // Location, "" when absent
 	RetryAfter    string // Retry-After, "" when absent
+	ETag          string // ETag, "" when absent
+}
+
+// streamMeta builds the StreamMeta of a response. Both stacks call it with
+// their own header lookup (net/http and fhttp have different Header types),
+// so a new field reaches both.
+func streamMeta(status int, length int64, header func(string) string) StreamMeta {
+	return StreamMeta{
+		StatusCode:    status,
+		ContentLength: length, // -1 when unknown, per net/http
+		AcceptRanges:  strings.EqualFold(header("Accept-Ranges"), "bytes"),
+		LastModified:  header("Last-Modified"),
+		Disposition:   header("Content-Disposition"),
+		ContentRange:  header("Content-Range"),
+		Location:      header("Location"),
+		RetryAfter:    header("Retry-After"),
+		ETag:          header("ETag"),
+	}
 }
 
 // HeaderChecker is implemented by a sink that must see the response headers
@@ -324,16 +342,7 @@ func (t *simpleTransport) Stream(ctx context.Context, req *fasthttp.Request, sin
 	body := w.body(resp.Body)
 	defer body.Close()
 
-	meta := StreamMeta{
-		StatusCode:    resp.StatusCode,
-		ContentLength: resp.ContentLength, // -1 when unknown, per net/http
-		AcceptRanges:  strings.EqualFold(resp.Header.Get("Accept-Ranges"), "bytes"),
-		LastModified:  resp.Header.Get("Last-Modified"),
-		Disposition:   resp.Header.Get("Content-Disposition"),
-		ContentRange:  resp.Header.Get("Content-Range"),
-		Location:      resp.Header.Get("Location"),
-		RetryAfter:    resp.Header.Get("Retry-After"),
-	}
+	meta := streamMeta(resp.StatusCode, resp.ContentLength, resp.Header.Get)
 	return meta, CopyBody(sink, meta, body)
 }
 
@@ -424,16 +433,7 @@ func (t *tlsClientTransport) Stream(ctx context.Context, req *fasthttp.Request, 
 	body := w.body(httpResp.Body)
 	defer body.Close()
 
-	meta := StreamMeta{
-		StatusCode:    httpResp.StatusCode,
-		ContentLength: httpResp.ContentLength, // -1 when unknown, per net/http
-		AcceptRanges:  strings.EqualFold(httpResp.Header.Get("Accept-Ranges"), "bytes"),
-		LastModified:  httpResp.Header.Get("Last-Modified"),
-		Disposition:   httpResp.Header.Get("Content-Disposition"),
-		ContentRange:  httpResp.Header.Get("Content-Range"),
-		Location:      httpResp.Header.Get("Location"),
-		RetryAfter:    httpResp.Header.Get("Retry-After"),
-	}
+	meta := streamMeta(httpResp.StatusCode, httpResp.ContentLength, httpResp.Header.Get)
 	return meta, CopyBody(sink, meta, body)
 }
 

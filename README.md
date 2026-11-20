@@ -44,7 +44,8 @@ Attribution: the direction for Ghola's browser-like fetching work was inspired b
 | `-w, --wget` | **Wget mode** -- auto-saves to local file using the inferred remote filename. |
 | `-u <user:pass>` | **Basic Auth** -- native HTTP basic authentication. |
 | `-T <file>` | **Upload** -- send a local file as the request body. |
-| `-o <file>` | **Output** -- write response body to a file. |
+| `-o <file>` | **Output** -- write response body to a file. While the download runs, `<file>.ghola` records the `ETag` or `Last-Modified` of the remote version. ghola removes it when the download is done. |
+| `-C -` | **Resume** a partial file. With a `<file>.ghola` state file, the request sends `If-Range`: when the remote file changed, the server sends the new version and ghola writes it from byte 0, so old and new bytes are never joined. Without a state file (a partial file from another tool), ghola resumes as curl does. |
 | `-H <header>` | **Custom headers** -- repeatable. A GET has no `Content-Type`. `-d`, `--data-binary` and `--data-urlencode` send `application/x-www-form-urlencoded`, as in curl. `--chain` sends `application/json`. A `Content-Type` from `-H` wins. |
 | `-X <method>` | **HTTP method** -- defaults to GET, auto-switches to POST when `-d` is used. |
 | `-i` | **Include headers** in output. |
