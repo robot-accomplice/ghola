@@ -2,12 +2,18 @@ package main
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
 
 // TestMain points the config folder at an empty one, so that the config
 // file of the developer who runs the tests cannot change their results.
 func TestMain(m *testing.M) {
+	if out := os.Getenv("GHOLA_TEST_HOOK_OUT"); out != "" {
+		// The test binary is the --on-complete command of TestExecute_Hooks.
+		os.WriteFile(out, []byte(strings.Join(os.Args[1:], "|")), 0o600) //nolint:errcheck
+		os.Exit(0)
+	}
 	dir, err := os.MkdirTemp("", "ghola-config")
 	if err != nil {
 		panic(err)

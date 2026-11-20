@@ -442,8 +442,11 @@ func fetch(ctx context.Context, opts *config.Options, do client.Doer, stream cli
 
 	if config.ShouldStream(opts) {
 		if err := client.Download(ctx, opts, stream); err != nil {
-			return failed(opts, err)
+			code := failed(opts, err)
+			runHook(opts.Output.OnError, opts)
+			return code
 		}
+		runHook(opts.Output.OnComplete, opts)
 		return config.NoError.Int()
 	}
 
