@@ -62,6 +62,8 @@ const (
 	// RecvFailed indicates a failure after the connection was ready, for
 	// example a reset or a TLS alert after the handshake (curl 56).
 	RecvFailed ExitCode = 56
+	// FileSizeExceeded indicates a body larger than --max-size (curl 63).
+	FileSizeExceeded ExitCode = 63
 	// PeerFailedVerification indicates that the server certificate or its
 	// host name did not verify (curl 60).
 	PeerFailedVerification ExitCode = 60
@@ -103,6 +105,13 @@ type OutputOptions struct {
 	// HideErrors drops the error message on stderr. Only ghola curl -s
 	// (without -S) sets it, as curl does; native -q keeps the errors.
 	HideErrors bool
+	// CreateDirs creates the missing folders of the output file.
+	CreateDirs bool
+	// NoOverwrite refuses to replace an existing output file (the default
+	// of ghola download; --output-overwrite turns it off).
+	NoOverwrite bool
+	// MaxSize stops a body larger than this many bytes (--max-size).
+	MaxSize int64
 	// Dir is the folder of -o DIR/: the remote file name goes inside it.
 	Dir string
 	// FailFrom400 is the v1 rule for Fail: status 400 and above fails, as

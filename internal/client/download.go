@@ -266,9 +266,12 @@ func mightSegment(opts *config.Options) bool {
 // removes the output file, so that a preallocated file of the full size
 // never looks like a finished download.
 func downloadSegmented(ctx context.Context, opts *config.Options, stream Streamer, url string, size int64, limiter *rateLimiter, progress *progressWriter) (err error) {
-	f, err := os.OpenFile(opts.Output.File, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if opts.Output.TooLarge(size) {
+		return config.ErrTooLarge
+	}
+	f, err := config.OpenOutput(opts.Output, opts.Output.File, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, false)
 	if err != nil {
-		return fmt.Errorf("create output file: %w", config.WriteError(err))
+		return fmt.Errorf("create output file: %w", err)
 	}
 	defer func() {
 		f.Close()
@@ -420,7 +423,7 @@ type singleGet struct {
 // redirect answer gives errRedirect and writes nothing. opened reports that
 // the file opened.
 func (g singleGet) get(ctx context.Context, opts *config.Options, stream Streamer, url string) (meta gholatransport.StreamMeta, opened bool, err error) {
-	f := &lazyFile{name: opts.Output.File, flags: g.flags}
+	f := &lazyFile{name: opts.Output.File, flags: g.flags, out: opts.Output, own: g.offset > 0}
 	defer f.Close()
 
 	req := fasthttp.AcquireRequest()
@@ -438,7 +441,7 @@ func (g singleGet) get(ctx context.Context, opts *config.Options, stream Streame
 	// When --compressed, decodeSink wraps the whole chain so that the bytes
 	// from the network are decoded before they reach the file (and rate
 	// limiting / progress count plain bytes on disk).
-	var sink io.Writer = f
+	sink := opts.Output.LimitSize(f, g.offset)
 	if g.limiter != nil {
 		sink = newRateLimitedWriter(sink, g.limiter)
 	}
@@ -492,6 +495,9 @@ func (g singleGet) check(opts *config.Options, f *lazyFile) func(gholatransport.
 		if err := g.checkResume(opts, f, meta); err != nil {
 			return err
 		}
+		if meta.ContentLength >= 0 && opts.Output.TooLarge(g.offset+meta.ContentLength) {
+			return config.ErrTooLarge // before the file opens, as curl checks it
+		}
 		applyRemoteName(opts, meta)
 		f.name = opts.Output.File
 		if g.progress != nil {
@@ -541,13 +547,15 @@ func meterTotal(opts *config.Options, meta gholatransport.StreamMeta) int64 {
 type lazyFile struct {
 	name  string
 	flags int
+	out   config.OutputOptions
+	own   bool // a resume: the file is ghola's own partial file
 	f     *os.File
 }
 
 func (l *lazyFile) open() error {
-	f, err := os.OpenFile(l.name, l.flags, 0644)
+	f, err := config.OpenOutput(l.out, l.name, l.flags, l.own)
 	if err != nil {
-		return fmt.Errorf("open output file: %w", config.WriteError(err))
+		return fmt.Errorf("open output file: %w", err)
 	}
 	l.f = f
 	return nil

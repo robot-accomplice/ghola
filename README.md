@@ -199,6 +199,7 @@ ghola uses curl's exit codes for the same causes, so a script written for curl r
 | 55 | The request failed for another cause |
 | 56 | The connection failed after it was ready (for example, a reset, or a TLS alert after the handshake) |
 | 60 | The server certificate did not verify, or the SSH host key is not in `~/.ssh/known_hosts` |
+| 63 | The body is larger than `--max-size` |
 | 61 | The `Content-Encoding` of the answer cannot be decoded (`--no-compressed` gets it as it is) |
 | 90 | The server public key does not match `--tls-pin` |
 

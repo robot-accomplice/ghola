@@ -47,7 +47,7 @@ func ProcessResponse(w, ew io.Writer, opts *config.Options, req *fasthttp.Reques
 	}
 
 	if opts.Output.File != "" {
-		if err := writeFile(opts.Output.File, body); err != nil {
+		if err := writeFile(opts.Output, opts.Output.File, body); err != nil {
 			return err
 		}
 		printTiming(ew, opts, elapsed)
@@ -84,6 +84,10 @@ func bodyReader(opts *config.Options, rsp *fasthttp.Response) (io.Reader, error)
 	if err != nil {
 		return nil, err
 	}
+	if opts.Output.TooLarge(int64(rsp.Header.ContentLength())) {
+		return nil, config.ErrTooLarge
+	}
+	body = opts.Output.LimitReader(body)
 	if opts.Stealth.Compressed {
 		if body, err = transport.DecodeBody(body, string(rsp.Header.Peek("Content-Encoding"))); err != nil {
 			return nil, err
@@ -93,10 +97,10 @@ func bodyReader(opts *config.Options, rsp *fasthttp.Response) (io.Reader, error)
 }
 
 // writeFile copies body to the file at name.
-func writeFile(name string, body io.Reader) error {
-	f, err := os.OpenFile(name, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+func writeFile(out config.OutputOptions, name string, body io.Reader) error {
+	f, err := config.OpenOutput(out, name, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, false)
 	if err != nil {
-		return fmt.Errorf("write output file: %w", config.WriteError(err))
+		return fmt.Errorf("write output file: %w", err)
 	}
 	_, err = io.Copy(config.MarkWrites(f), body)
 	if cerr := f.Close(); err == nil {

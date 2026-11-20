@@ -73,6 +73,8 @@ const curlTable = `
 --connect-to                   => --connect-to %s
 -4 --ipv4                      => --ip 4
 -6 --ipv6                      => --ip 6
+--create-dirs                  => --output-create-dirs
+--max-filesize                 => --max-size %s
 `
 
 // wget saves under the remote name (ghola download), follows up to 20
@@ -208,6 +210,7 @@ func wgetSpecial(t *translation, name, value string, _ bool) (bool, error) {
 		t.file = value // - is stdout, as in ghola
 	case "-P", "--directory-prefix":
 		t.dir = value
+		t.out = append(t.out, "--output-create-dirs") // wget creates the prefix folder
 	case "-t", "--tries":
 		return true, t.tries(value)
 	case "-T", "--timeout":
@@ -256,10 +259,8 @@ func aria2Special(t *translation, name, value string, _ bool) (bool, error) {
 			t.out = append(t.out, "--no-tls-verify")
 		}
 	case "--allow-overwrite":
-		// ghola writes over an existing -o file today; the switch for the
-		// download job (--output-overwrite) is phase 2.
-		if value != "true" {
-			return true, usagef("ghola aria2c: --allow-overwrite=%s maps to --output-overwrite, which ghola aria2c does not run yet", value)
+		if value == "true" {
+			t.out = append(t.out, "--output-overwrite")
 		}
 	default:
 		return false, nil

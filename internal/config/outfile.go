@@ -1,0 +1,82 @@
+package config
+
+import (
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+)
+
+// ErrTooLarge marks a body larger than --max-size. curl exits 63 for it.
+var ErrTooLarge = errors.New("the body is larger than --max-size")
+
+// OpenOutput opens an output file with the rules of --output-create-dirs
+// and --output-overwrite. Every file that ghola writes for a transfer
+// opens here. ownFile is true when the file is ghola's own partial file (a
+// resume, or a restart after the remote file changed): that may be
+// replaced whatever --output-overwrite says.
+func OpenOutput(o OutputOptions, name string, flags int, ownFile bool) (*os.File, error) {
+	if o.CreateDirs {
+		if err := os.MkdirAll(filepath.Dir(name), 0o755); err != nil {
+			return nil, WriteError(err)
+		}
+	}
+	if o.NoOverwrite && !ownFile && flags&os.O_APPEND == 0 {
+		flags |= os.O_EXCL
+	}
+	f, err := os.OpenFile(name, flags, 0o644)
+	if errors.Is(err, os.ErrExist) {
+		return nil, fmt.Errorf("%w: %s exists; --output-overwrite replaces it", ErrWrite, name)
+	}
+	return f, WriteError(err)
+}
+
+// TooLarge reports a declared length above --max-size. -1 is unknown.
+func (o OutputOptions) TooLarge(length int64) bool {
+	return o.MaxSize > 0 && length > o.MaxSize
+}
+
+// LimitSize returns w with --max-size applied: a write past the size
+// fails with ErrTooLarge. already counts the bytes before (a resume).
+func (o OutputOptions) LimitSize(w io.Writer, already int64) io.Writer {
+	if o.MaxSize <= 0 {
+		return w
+	}
+	return &sizeGuard{w: w, left: o.MaxSize - already}
+}
+
+type sizeGuard struct {
+	w    io.Writer
+	left int64
+}
+
+func (g *sizeGuard) Write(p []byte) (int, error) {
+	if int64(len(p)) > g.left {
+		return 0, ErrTooLarge
+	}
+	g.left -= int64(len(p))
+	return g.w.Write(p)
+}
+
+// LimitReader is LimitSize for a body that ghola reads (stdout).
+func (o OutputOptions) LimitReader(r io.Reader) io.Reader {
+	if o.MaxSize <= 0 {
+		return r
+	}
+	return &sizeReader{r: r, left: o.MaxSize}
+}
+
+type sizeReader struct {
+	r    io.Reader
+	left int64
+}
+
+func (s *sizeReader) Read(p []byte) (int, error) {
+	n, err := s.r.Read(p)
+	s.left -= int64(n)
+	if s.left < 0 {
+		return 0, ErrTooLarge
+	}
+	return n, err
+}

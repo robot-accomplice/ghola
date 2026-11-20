@@ -146,6 +146,7 @@ func TestExitFor_WrappedCauses(t *testing.T) {
 		{fmt.Errorf("download: %w", client.ErrTooManyRedirects), 47},
 		{fmt.Errorf("x: %w", config.ErrHTTPStatus), 22},
 		{config.WriteError(errors.New("disk full")), 23},
+		{fmt.Errorf("x: %w", config.ErrTooLarge), 63},
 		// A TLS alert during the handshake (before GotConn).
 		{fmt.Errorf("x: %w", &net.OpError{Op: "remote error", Err: errors.New("tls: handshake failure")}), 35},
 		{fmt.Errorf("x: %w: %w", gholatransport.ErrRecv, errors.New("connection reset")), 56},

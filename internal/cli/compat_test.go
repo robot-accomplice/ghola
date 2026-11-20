@@ -55,6 +55,21 @@ func TestFromCurl_RunsWithCurlDefaults(t *testing.T) {
 	}
 }
 
+// --create-dirs and --max-filesize apply as the native output rules.
+func TestFromCurl_OutputRules(t *testing.T) {
+	cmd, err := Parse(fromCurl(t, "--create-dirs", "--max-filesize", "1K", "-o", "d/f", "u").Args)
+	if err != nil {
+		t.Fatal(err)
+	}
+	o, err := Apply(cmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !o.Output.CreateDirs || o.Output.MaxSize != 1024 || o.Output.NoOverwrite {
+		t.Errorf("output = %+v", o.Output)
+	}
+}
+
 // -K reads a config file in curl's syntax.
 func TestFromCurl_Config(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "k.txt")
@@ -101,9 +116,9 @@ func native(t *testing.T, from func([]string) (*Compat, error), args ...string) 
 // counts tries, and -T is wget's DNS, connect and read timeout.
 func TestFromWget(t *testing.T) {
 	cases := map[string][]string{
-		"download -r 0 --no-compressed --no-url-glob --auth-netrc -o dl/ https://h/f":                          {"-P", "dl", "https://h/f"},
+		"download -r 0 --no-compressed --no-url-glob --auth-netrc --output-create-dirs -o dl/ https://h/f":     {"-P", "dl", "https://h/f"},
 		"-r 0 --no-compressed --no-url-glob --auth-netrc -q -d a=1 -o - https://h/e":                           {"-qO-", "--post-data=a=1", "https://h/e"},
-		"-r 0 --no-compressed --no-url-glob --auth-netrc -r 2 -o dl/f.txt https://h/f":                         {"--tries=3", "-P", "dl", "-O", "f.txt", "https://h/f"},
+		"-r 0 --no-compressed --no-url-glob --auth-netrc -r 2 --output-create-dirs -o dl/f.txt https://h/f":    {"--tries=3", "-P", "dl", "-O", "f.txt", "https://h/f"},
 		"download -r 0 --no-compressed --no-url-glob --auth-netrc --timeout-connect 5 --stall-time 5 -u a:b u": {"-T", "5", "--user=a", "--password=b", "u"},
 	}
 	for want, args := range cases {
@@ -125,7 +140,10 @@ func TestFromAria2c(t *testing.T) {
 	if got != want {
 		t.Errorf("\n got %s\nwant %s", got, want)
 	}
-	if _, err := FromAria2c([]string{"--allow-overwrite=false", "u"}); err == nil {
-		t.Error("--allow-overwrite=false was accepted")
+	// aria2c keeps an existing file by default, as ghola download does.
+	for value, want := range map[string]string{"true": " --output-overwrite u", "false": " u"} {
+		if got := native(t, FromAria2c, "--allow-overwrite="+value, "u"); !strings.HasSuffix(got, "--auth-netrc"+want) {
+			t.Errorf("--allow-overwrite=%s: got %s", value, got)
+		}
 	}
 }

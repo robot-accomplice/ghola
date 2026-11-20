@@ -49,17 +49,20 @@ var setters = map[string]setter{
 		o.Stealth.Agent, o.Stealth.AgentExplicit = v, true
 		return nil
 	},
-	"referer":         func(o *config.Options, v string, _ *Command) error { o.Stealth.Referer = v; return nil },
-	"data":            func(o *config.Options, v string, _ *Command) error { o.Data = v; return nil },
-	"data-literal":    func(o *config.Options, v string, _ *Command) error { o.Data, o.DataLiteral = v, true; return nil },
-	"retry-status":    setRetryStatus,
-	"field":           func(o *config.Options, _ string, c *Command) error { o.DataURLEncode = c.Values["field"]; return nil },
-	"form":            func(o *config.Options, _ string, c *Command) error { o.Form = c.Values["form"]; return nil },
-	"upload":          setUpload,
-	"json":            setJSON,
-	"url-glob":        func(*config.Options, string, *Command) error { return nil }, // read in Apply
-	"auth-netrc":      func(*config.Options, string, *Command) error { return nil }, // read in Apply
-	"auth-netrc-file": func(*config.Options, string, *Command) error { return nil }, // read in Apply
+	"referer":            func(o *config.Options, v string, _ *Command) error { o.Stealth.Referer = v; return nil },
+	"data":               func(o *config.Options, v string, _ *Command) error { o.Data = v; return nil },
+	"data-literal":       func(o *config.Options, v string, _ *Command) error { o.Data, o.DataLiteral = v, true; return nil },
+	"retry-status":       setRetryStatus,
+	"field":              func(o *config.Options, _ string, c *Command) error { o.DataURLEncode = c.Values["field"]; return nil },
+	"form":               func(o *config.Options, _ string, c *Command) error { o.Form = c.Values["form"]; return nil },
+	"upload":             setUpload,
+	"json":               setJSON,
+	"output-create-dirs": func(o *config.Options, v string, _ *Command) error { o.Output.CreateDirs = v == "true"; return nil },
+	"output-overwrite":   func(o *config.Options, v string, _ *Command) error { o.Output.NoOverwrite = v == "false"; return nil },
+	"max-size":           setMaxSize,
+	"url-glob":           func(*config.Options, string, *Command) error { return nil }, // read in Apply
+	"auth-netrc":         func(*config.Options, string, *Command) error { return nil }, // read in Apply
+	"auth-netrc-file":    func(*config.Options, string, *Command) error { return nil }, // read in Apply
 	"ip": func(o *config.Options, v string, _ *Command) error {
 		o.Net.IPVersion = strings.TrimPrefix(v, "any")
 		return nil
@@ -164,6 +167,9 @@ func Apply(c *Command) (*config.Options, error) {
 		return nil, &UsageError{Msg: err.Error()}
 	}
 	applyDefaults(o, c)
+	if c.Job == JobDownload && !c.Has("output-overwrite") {
+		o.Output.NoOverwrite = true // ghola download keeps an existing file (the spec default)
+	}
 	if c.Job == JobDownload && o.Output.File == "" && !o.Output.Stdout {
 		o.Output.RemoteName = true // ghola download saves under the remote name
 	}
@@ -361,6 +367,12 @@ func addQuery(o *config.Options, params []string) error {
 	}
 	o.URL = o.URLs[0]
 	return nil
+}
+
+func setMaxSize(o *config.Options, v string, _ *Command) error {
+	n, err := ParseSize(v)
+	o.Output.MaxSize = n
+	return err
 }
 
 func setHead(o *config.Options, v string, _ *Command) error {
