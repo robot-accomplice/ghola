@@ -59,6 +59,9 @@ const curlTable = `
 --retry-delay                  => --retry-delay %s
 --max-redirs                   => --follow-max %s
 -T --upload-file               => --upload %s
+--json                         => --json %s
+--oauth2-bearer                => --auth-bearer %s
+--url-query                    => --query %s
 `
 
 // wget saves under the remote name (ghola download), follows up to 20

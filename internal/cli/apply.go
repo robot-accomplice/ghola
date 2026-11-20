@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -52,6 +53,9 @@ var setters = map[string]setter{
 	"field":        func(o *config.Options, _ string, c *Command) error { o.DataURLEncode = c.Values["field"]; return nil },
 	"form":         func(o *config.Options, _ string, c *Command) error { o.Form = c.Values["form"]; return nil },
 	"upload":       setUpload,
+	"json":         setJSON,
+	"auth-bearer":  setBearer,
+	"query":        func(*config.Options, string, *Command) error { return nil }, // applied to the URLs in Apply
 	"range":        func(o *config.Options, v string, _ *Command) error { o.Output.Range = v; return nil },
 	"continue":     setContinue,
 	"continue-at":  func(o *config.Options, v string, _ *Command) error { o.Output.ContinueAt = v; return nil },
@@ -130,6 +134,9 @@ func Apply(c *Command) (*config.Options, error) {
 		}
 	}
 	config.TakeURLs(o, c.Args)
+	if err := addQuery(o, c.Values["query"]); err != nil {
+		return nil, &UsageError{Msg: err.Error()}
+	}
 	applyDefaults(o, c)
 	if c.Job == JobDownload && o.Output.File == "" && !o.Output.Stdout {
 		o.Output.RemoteName = true // ghola download saves under the remote name
@@ -219,6 +226,60 @@ func setOutput(o *config.Options, v string, _ *Command) error {
 
 func setProgress(o *config.Options, v string, _ *Command) error {
 	o.Output.Progress = map[string]string{"true": "on", "false": "off"}[v]
+	return nil
+}
+
+// setJSON sends a JSON body: Content-Type and Accept are
+// application/json unless -H sets them, as curl --json does.
+func setJSON(o *config.Options, v string, _ *Command) error {
+	o.Data = v
+	for _, h := range []string{"Content-Type", "Accept"} {
+		if !headerSet(o.Headers, h) {
+			o.Headers = append(o.Headers, h+": application/json")
+		}
+	}
+	return nil
+}
+
+// setBearer sends the token as Authorization: Bearer. It is a credential
+// header, so it goes only to the host of the first URL unless
+// --follow-trusted (audit finding H1).
+func setBearer(o *config.Options, v string, _ *Command) error {
+	o.Headers = append(o.Headers, "Authorization: Bearer "+v)
+	return nil
+}
+
+func headerSet(headers []string, name string) bool {
+	for _, h := range headers {
+		if k, _, ok := config.ParseHeader(h); ok && strings.EqualFold(k, name) {
+			return true
+		}
+	}
+	return false
+}
+
+// addQuery adds each --query name=value to every URL, URL-encoded, as
+// curl --url-query does.
+func addQuery(o *config.Options, params []string) error {
+	if len(params) == 0 {
+		return nil
+	}
+	enc := make([]string, 0, len(params))
+	for _, p := range params {
+		name, value, ok := strings.Cut(p, "=")
+		if !ok || name == "" {
+			return fmt.Errorf("--query %q: use name=value", p)
+		}
+		enc = append(enc, url.QueryEscape(name)+"="+url.QueryEscape(value))
+	}
+	for i, u := range o.URLs {
+		sep := "?"
+		if strings.Contains(u, "?") {
+			sep = "&"
+		}
+		o.URLs[i] = u + sep + strings.Join(enc, "&")
+	}
+	o.URL = o.URLs[0]
 	return nil
 }
 

@@ -83,7 +83,7 @@ func TestApply_Units(t *testing.T) {
 // An option of a phase that is not built is refused with its phase, so no
 // option is accepted and then ignored.
 func TestApply_UnbuiltOptionIsRefused(t *testing.T) {
-	for _, args := range [][]string{{"--json", "{}", "u"}, {"--resolve", "h:443:1.2.3.4", "u"}, {"--http", "2", "u"}, {"--proxy-tls-ca", "x", "u"}} {
+	for _, args := range [][]string{{"--hsts", "cache.txt", "u"}, {"--resolve", "h:443:1.2.3.4", "u"}, {"--http", "2", "u"}, {"--proxy-tls-ca", "x", "u"}} {
 		if _, err := Apply(apply(t, args...)); err == nil || !strings.Contains(err.Error(), "not built yet") {
 			t.Errorf("%q: err = %v", args, err)
 		}
@@ -134,4 +134,37 @@ func TestApply_NegativeCountIsRefused(t *testing.T) {
 			t.Errorf("%q was accepted", args)
 		}
 	}
+}
+
+// --json sets the JSON media types unless -H gives them; --auth-bearer
+// is a credential header; --query adds URL-encoded parameters.
+func TestApply_RequestShaping(t *testing.T) {
+	o, err := Apply(apply(t, "--json", `{"a":1}`, "--auth-bearer", "tok", "--query", "q=a b", "--query", "x=1", "https://h/p?k=v"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.Data != `{"a":1}` || o.Method != "POST" {
+		t.Errorf("data %q, method %s", o.Data, o.Method)
+	}
+	for _, want := range []string{"Content-Type: application/json", "Accept: application/json", "Authorization: Bearer tok"} {
+		if !contains(o.Headers, want) {
+			t.Errorf("headers %q lack %q", o.Headers, want)
+		}
+	}
+	if o.URL != "https://h/p?k=v&q=a+b&x=1" {
+		t.Errorf("URL = %q", o.URL)
+	}
+	o, _ = Apply(apply(t, "-H", "Content-Type: application/vnd.x+json", "--json", "{}", "u"))
+	if contains(o.Headers, "Content-Type: application/json") {
+		t.Errorf("--json overrode the -H Content-Type: %q", o.Headers)
+	}
+}
+
+func contains(list []string, s string) bool {
+	for _, x := range list {
+		if x == s {
+			return true
+		}
+	}
+	return false
 }
