@@ -93,6 +93,10 @@ func Download(ctx context.Context, opts *config.Options, stream Streamer) error 
 		progress = newProgressWriter(io.Discard, out, -1)
 	}
 
+	stream, err := withCookieJar(stream, opts)
+	if err != nil {
+		return err
+	}
 	meta, err := fetchToFile(ctx, opts, stream, limiter, progress)
 	if err != nil {
 		return err // the state file stays, so a resume can check the version

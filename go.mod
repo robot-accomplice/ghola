@@ -11,6 +11,7 @@ require (
 	github.com/spf13/pflag v1.1.0
 	github.com/tidwall/gjson v1.20.4
 	github.com/valyala/fasthttp v1.79.0
+	golang.org/x/net v0.62.0
 	golang.org/x/sys v0.50.0
 	golang.org/x/term v0.48.0
 )
@@ -27,6 +28,5 @@ require (
 	github.com/tidwall/pretty v1.3.0 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
-	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 )
