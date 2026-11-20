@@ -41,6 +41,8 @@ type protocolTransport struct {
 	hsts *hstsCache
 	// trace writes --trace, nil without it.
 	trace *tracer
+	// warc writes --warc, nil without it.
+	warc *warcWriter
 }
 
 // networkFor returns the network transport for u: direct for a host in
@@ -94,6 +96,25 @@ func (t protocolTransport) prepare(ctx context.Context, req *fasthttp.Request) c
 
 type requestTargetKey struct{}
 
+// streamWARC streams the answer, and writes the exchange to --warc.
+func (t protocolTransport) streamWARC(ctx context.Context, req *fasthttp.Request, sink io.Writer) (StreamMeta, error) {
+	tmp, err := os.CreateTemp("", "ghola-warc-")
+	if err != nil {
+		return StreamMeta{}, fmt.Errorf("--warc: %w", err)
+	}
+	defer func() { tmp.Close(); os.Remove(tmp.Name()) }()
+	meta, err := t.networkFor(req.URI()).Stream(ctx, req, warcSink{sink, tmp})
+	if err == nil {
+		err = t.recordHSTS(req, meta.Header.Get("Strict-Transport-Security"))
+	}
+	if meta.StatusLine != "" {
+		if werr := t.warc.record(req, meta, tmp); werr != nil && err == nil {
+			err = werr
+		}
+	}
+	return meta, err
+}
+
 // recordHSTS keeps the Strict-Transport-Security of an answer in --hsts.
 func (t protocolTransport) recordHSTS(req *fasthttp.Request, header string) error {
 	if t.hsts == nil {
@@ -139,6 +160,9 @@ func (t protocolTransport) Stream(ctx context.Context, req *fasthttp.Request, si
 		if t.trace != nil {
 			t.trace.request(req)
 			sink = traceSink{sink, t.trace}
+		}
+		if t.warc != nil {
+			return t.streamWARC(ctx, req, sink)
 		}
 		meta, err := t.networkFor(req.URI()).Stream(ctx, req, sink)
 		if err == nil {

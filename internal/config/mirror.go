@@ -26,5 +26,4 @@ type MirrorOptions struct {
 	Quota       int64    // --quota: stop after this many bytes; 0 is no limit
 	Spider      bool     // --spider: check the links and save nothing
 	FileNames   string   // --file-names: unix, windows or ascii; "" is the system's
-	WARC        string   // --warc: also write the exchange as a WARC file
 }

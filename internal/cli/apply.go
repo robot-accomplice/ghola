@@ -139,6 +139,7 @@ var setters = map[string]setter{
 	},
 	"background":   func(o *config.Options, v string, _ *Command) error { o.Output.Background = v == "true"; return nil },
 	"log":          func(o *config.Options, v string, _ *Command) error { o.Output.Log = v; return nil },
+	"warc":         func(o *config.Options, v string, _ *Command) error { o.Output.WARC = v; return nil },
 	"save-headers": func(o *config.Options, v string, _ *Command) error { o.Output.SaveHeaders = v; return nil },
 	"show-headers": func(o *config.Options, v string, _ *Command) error { o.Output.Include = v == "true"; return nil },
 	"quiet":        func(o *config.Options, v string, _ *Command) error { o.Output.Silent = v == "true"; return nil },

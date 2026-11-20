@@ -156,6 +156,25 @@ func openTraceFile(opts *config.Options) (int, bool) {
 	return 0, true
 }
 
+// openWARC opens the --warc file once for the command. The stdout path
+// reads the body outside the transport, where the WARC records are
+// written, so --warc needs a file: -o, ghola download or ghola mirror.
+func openWARC(opts *config.Options) (int, bool) {
+	if opts.Output.WARC == "" {
+		return 0, true
+	}
+	if !opts.Mirror.On && !config.ShouldStream(opts) && opts.Output.Dir == "" && !opts.Output.RemoteName {
+		return argError(fmt.Errorf("--warc records the transfers to a file: use -o, ghola download or ghola mirror")), false
+	}
+	f, err := os.Create(opts.Output.WARC)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "--warc: %v\n", err)
+		return config.WriteFileFailed.Int(), false
+	}
+	opts.Output.WARCOut = f
+	return 0, true
+}
+
 // compatCommands translate the syntax of curl, wget and aria2c into native
 // arguments (v1 spec, section 6).
 var compatCommands = map[string]func([]string) (*cli.Compat, error){
@@ -258,9 +277,16 @@ func transfer(ctx context.Context, opts *config.Options, do client.Doer, stream 
 		}
 		opts.Output.RateTotal = client.NewSharedLimiter(bps) // one limit for every transfer
 	}
+	if code, ok := openWARC(opts); !ok {
+		return code
+	}
+	if f, ok := opts.Output.WARCOut.(*os.File); ok {
+		defer f.Close()
+	}
 	// Parallel --jobs share these files: each block is one locked write.
 	opts.Output.HeaderOut = locked(opts.Output.HeaderOut)
 	opts.Output.TraceOut = locked(opts.Output.TraceOut)
+	opts.Output.WARCOut = locked(opts.Output.WARCOut)
 	return transferAll(ctx, opts, do, stream, w)
 }
 

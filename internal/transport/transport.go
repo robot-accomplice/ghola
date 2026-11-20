@@ -192,6 +192,9 @@ func New(opts *config.Options, selectedProxy string) (Transport, error) {
 			return nil, err
 		}
 	}
+	if out := opts.Output.WARCOut; out != nil {
+		t.warc = &warcWriter{w: out, version: config.Version}
+	}
 	if out := opts.Output.TraceOut; out != nil {
 		t.trace = &tracer{w: out, ascii: opts.Output.TraceASCII, times: opts.Output.TraceTime}
 	}

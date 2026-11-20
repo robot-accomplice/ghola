@@ -125,6 +125,10 @@ type OutputOptions struct {
 	// --name=value, which "ghola jobs resume" runs again.
 	NoSession   bool
 	SessionArgs []string
+	// WARC is the --warc path; WARCOut is that file, which ghola opens
+	// once for the command.
+	WARC    string
+	WARCOut io.Writer
 	// Background is --background; Log is --log, where the messages go.
 	Background bool
 	Log        string

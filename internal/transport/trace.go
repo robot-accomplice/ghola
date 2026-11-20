@@ -71,15 +71,7 @@ func (t *tracer) block(what string, data []byte) {
 // target and Host, then the headers. The stack may add a header of its
 // own, such as Content-Length.
 func (t *tracer) request(req *fasthttp.Request) {
-	var b strings.Builder
-	fmt.Fprintf(&b, "%s %s HTTP/1.1\r\nHost: %s\r\n", req.Header.Method(), req.URI().RequestURI(), req.URI().Host())
-	for k, v := range req.Header.All() {
-		if !strings.EqualFold(string(k), "Host") {
-			fmt.Fprintf(&b, "%s: %s\r\n", k, v)
-		}
-	}
-	b.WriteString("\r\n")
-	t.block("=> Send header", []byte(b.String()))
+	t.block("=> Send header", []byte(requestHead(req)))
 	t.block("=> Send data", req.Body())
 }
 
