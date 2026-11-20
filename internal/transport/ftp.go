@@ -63,7 +63,7 @@ func (t protocolTransport) serveFTP(ctx context.Context, req *fasthttp.Request) 
 	case method == fasthttp.MethodPut:
 		a, err = ftpStore(c, p, req.Body())
 	case method != fasthttp.MethodGet && method != fasthttp.MethodHead:
-		err = fmt.Errorf("ftp://: the %s method is not supported", method)
+		err = fmt.Errorf("FTP: the %s method is not supported", method)
 	case p == "" || strings.HasSuffix(p, "/"):
 		a, err = ftpList(c, p, method == fasthttp.MethodHead)
 	default:
