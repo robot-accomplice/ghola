@@ -155,6 +155,7 @@ const aria2Table = `
 --all-proxy                    => --proxy %s
 --no-proxy                     => --proxy-bypass %s
 --checksum                     => --checksum %s
+-j --max-concurrent-downloads  => --jobs %s
 --ca-certificate               => --tls-ca %s
 --certificate                  => --tls-cert %s
 --private-key                  => --tls-key %s

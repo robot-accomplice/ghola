@@ -166,6 +166,7 @@ var setters = map[string]setter{
 		return nil
 	},
 	"impersonate-accept-language": func(o *config.Options, v string, _ *Command) error { o.Stealth.AcceptLanguage = v; return nil },
+	"jobs":                        setInt(func(o *config.Options) *int { return &o.Jobs }),
 	"connections":                 setInt(func(o *config.Options) *int { return &o.Concurrency }),
 	"http":                        setHTTP,
 }

@@ -251,7 +251,9 @@ type Options struct {
 	// "any".
 	Auth        string
 	Concurrency int
-	Chain       string
+	// Jobs runs up to this many transfers at the same time (--jobs).
+	Jobs  int
+	Chain string
 	// PathAsIs sends the URL path without removing ./ and ../
 	// (--url-path-as-is).
 	PathAsIs bool

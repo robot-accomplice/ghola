@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/robot-accomplice/ghola/internal/bridge"
@@ -240,7 +241,30 @@ func transfer(ctx context.Context, opts *config.Options, do client.Doer, stream 
 	if f, ok := opts.Output.TraceOut.(*os.File); ok && f != os.Stderr {
 		defer f.Close()
 	}
+	// Parallel --jobs share these files: each block is one locked write.
+	opts.Output.HeaderOut = locked(opts.Output.HeaderOut)
+	opts.Output.TraceOut = locked(opts.Output.TraceOut)
 	return transferAll(ctx, opts, do, stream, w)
+}
+
+// lockedWriter makes each write whole when several jobs share a writer.
+type lockedWriter struct {
+	mu sync.Mutex
+	w  io.Writer
+}
+
+func (l *lockedWriter) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.w.Write(p)
+}
+
+// locked returns w behind a lock, or nil for nil.
+func locked(w io.Writer) io.Writer {
+	if w == nil {
+		return nil
+	}
+	return &lockedWriter{w: w}
 }
 
 // transferAll reads the request body sources and fetches each URL.
@@ -305,21 +329,62 @@ func transferAll(ctx context.Context, opts *config.Options, do client.Doer, stre
 	// A failure does not stop the run, and the exit code is the last
 	// failure's, as in curl (v1 defaults, item 10B, decided by Jon on
 	// 2026-11-18).
-	last := config.NoError.Int()
+	runs := make([]config.Options, len(opts.URLs))
 	for i, u := range opts.URLs {
-		one := *opts
-		one.URL = u
+		runs[i] = *opts
+		runs[i].URL = u
 		if len(opts.Output.PerURL) == len(opts.URLs) {
-			one.Output.SetTarget(opts.Output.PerURL[i]) // one -o for each URL, in order
+			runs[i].Output.SetTarget(opts.Output.PerURL[i]) // one -o for each URL, in order
 		}
-		if one.Output.RemoteName && len(opts.URLs) > 1 {
-			config.TakeRemoteName(&one) // each URL under its own name
+		if runs[i].Output.RemoteName && len(opts.URLs) > 1 {
+			config.TakeRemoteName(&runs[i]) // each URL under its own name
 		}
-		if code := fetchWithTemplate(ctx, &one, do, stream, w); code != config.NoError.Int() {
+	}
+	codes, err := runAll(ctx, runs, do, stream, w)
+	if err != nil {
+		return argError(err)
+	}
+	last := config.NoError.Int()
+	for _, code := range codes { // the last failure in URL order, whatever the timing
+		if code != config.NoError.Int() {
 			last = code
 		}
 	}
 	return last
+}
+
+// templateMu keeps the --output-template lines of parallel jobs apart.
+var templateMu sync.Mutex
+
+// runAll runs the transfers, up to --jobs at the same time, and returns
+// each exit code in URL order. Bodies on stdout would mix, so several
+// jobs need a file for each URL. The progress meters of several jobs
+// would share one line, so they are off unless --progress forces them.
+func runAll(ctx context.Context, runs []config.Options, do client.Doer, stream client.Streamer, w *os.File) ([]int, error) {
+	codes := make([]int, len(runs))
+	jobs := max(1, min(runs[0].Jobs, len(runs)))
+	if jobs > 1 {
+		for i := range runs {
+			if runs[i].Output.File == "" && !runs[i].Output.RemoteName {
+				return nil, fmt.Errorf("--jobs %d writes several bodies at once, so it needs a file for each URL: use -o DIR/, one -o for each URL, or ghola download", runs[0].Jobs)
+			}
+			if runs[i].Output.Progress == "" {
+				runs[i].Output.Progress = "off"
+			}
+		}
+	}
+	sem := make(chan struct{}, jobs)
+	var wg sync.WaitGroup
+	for i := range runs {
+		sem <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer func() { <-sem; wg.Done() }()
+			codes[i] = fetchWithTemplate(ctx, &runs[i], do, stream, w)
+		}()
+	}
+	wg.Wait()
+	return codes, nil
 }
 
 // fetchWithTemplate runs fetch, and then writes --output-template for
@@ -336,6 +401,8 @@ func fetchWithTemplate(ctx context.Context, opts *config.Options, do client.Doer
 	if code == config.NoError.Int() {
 		info.File = opts.Output.File
 	}
+	templateMu.Lock()
+	defer templateMu.Unlock()
 	if err := opts.Output.Template.Write(w, os.Stderr, *info); err != nil {
 		fmt.Fprintf(os.Stderr, "--output-template: %v\n", err)
 		return config.WriteFileFailed.Int()
