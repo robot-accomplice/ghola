@@ -6,13 +6,16 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync/atomic"
 	"testing"
 )
 
 // TestExecute_SeveralURLs checks that ghola fetches each URL in order and
 // writes the bodies to stdout one after the other, as curl does (audit
-// finding M9). It stops at the first failure and exits with its code.
+// finding M9). A failure does not stop the run, and the exit code is the
+// last failure's, as curl does (v1 defaults, item 10B): a script that
+// fetches a list gets every file that exists.
 func TestExecute_SeveralURLs(t *testing.T) {
 	var hits atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -41,8 +44,11 @@ func TestExecute_SeveralURLs(t *testing.T) {
 	}
 
 	hits.Store(0)
-	code, _ := run(srv.URL+"/missing", srv.URL+"/two") // failing at 400 is the v1 default
-	if code != 22 || hits.Load() != 1 {
-		t.Errorf("first URL fails: exit %d, %d requests; want 22 and 1", code, hits.Load())
+	code, body := run(srv.URL+"/missing", srv.URL+"/two") // failing at 400 is the v1 default
+	if code != 22 || hits.Load() != 2 || !strings.HasSuffix(body, "/two") {
+		t.Errorf("first URL fails: exit %d, %d requests, stdout %q; want 22, 2 and /two at the end", code, hits.Load(), body)
+	}
+	if code, _ := run("-r", "0", srv.URL+"/missing", deadURL(t)); code != 7 {
+		t.Errorf("two failures: exit %d, want 7, the last one", code)
 	}
 }

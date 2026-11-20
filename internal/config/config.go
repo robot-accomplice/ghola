@@ -90,6 +90,10 @@ type OutputOptions struct {
 	Verbose bool
 	Fail    bool
 	Include bool
+	// Template is the parsed --output-template. Info records the transfer
+	// for it; main sets a new one for each URL.
+	Template *Template
+	Info     *TransferInfo
 	// CondTime: the request has a --cond-time or --cond-etag-compare
 	// condition. A 304 then writes no file, as curl -z does.
 	CondTime bool

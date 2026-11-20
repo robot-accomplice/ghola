@@ -26,6 +26,7 @@ const curlTable = `
 -I --head                      => --head
 -i --include --show-headers    => --show-headers
 -D --dump-header                => --save-headers %s
+-w --write-out                  => --output-template %s
 -z --time-cond                  => --cond-time %s
 --etag-save                    => --cond-etag-save %s
 --etag-compare                 => --cond-etag-compare %s

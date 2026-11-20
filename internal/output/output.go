@@ -69,7 +69,9 @@ func ProcessResponse(w, ew io.Writer, opts *config.Options, req *fasthttp.Reques
 			return fmt.Errorf("write output: %w", config.WriteError(err))
 		}
 	}
-	if _, err := io.Copy(config.MarkWrites(bodyOut(w, opts)), body); err != nil {
+	n, err := io.Copy(config.MarkWrites(bodyOut(w, opts)), body)
+	opts.Output.Info.AddSize(n)
+	if err != nil {
 		return fmt.Errorf("copy response body: %w", err)
 	}
 
@@ -109,7 +111,8 @@ func writeFile(out config.OutputOptions, name string, body io.Reader) error {
 	if err != nil {
 		return fmt.Errorf("write output file: %w", err)
 	}
-	_, err = io.Copy(config.MarkWrites(f), body)
+	n, err := io.Copy(config.MarkWrites(f), body)
+	out.Info.AddSize(n)
 	if cerr := f.Close(); err == nil {
 		err = config.WriteError(cerr)
 	}

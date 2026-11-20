@@ -58,15 +58,20 @@ var setters = map[string]setter{
 	"tls-ocsp":      func(o *config.Options, v string, _ *Command) error { o.Stealth.OCSP = v == "true"; return nil },
 	"tls-cert-type": func(o *config.Options, v string, _ *Command) error { o.Stealth.CertType = v; return nil },
 	"auth":          setAuth,
-	"save-headers":  func(o *config.Options, v string, _ *Command) error { o.Output.SaveHeaders = v; return nil },
-	"show-headers":  func(o *config.Options, v string, _ *Command) error { o.Output.Include = v == "true"; return nil },
-	"quiet":         func(o *config.Options, v string, _ *Command) error { o.Output.Silent = v == "true"; return nil },
-	"progress":      setProgress,
-	"verbose":       func(o *config.Options, v string, _ *Command) error { o.Output.Verbose = v == "true"; return nil },
-	"har":           func(o *config.Options, v string, _ *Command) error { o.Output.HAR = v; return nil },
-	"method":        func(o *config.Options, v string, _ *Command) error { o.Method = strings.ToUpper(v); return nil },
-	"head":          setHead,
-	"header":        func(o *config.Options, _ string, c *Command) error { o.Headers = c.Values["header"]; return nil },
+	"output-template": func(o *config.Options, v string, _ *Command) error {
+		t, err := config.ParseTemplate(v)
+		o.Output.Template = t
+		return err
+	},
+	"save-headers": func(o *config.Options, v string, _ *Command) error { o.Output.SaveHeaders = v; return nil },
+	"show-headers": func(o *config.Options, v string, _ *Command) error { o.Output.Include = v == "true"; return nil },
+	"quiet":        func(o *config.Options, v string, _ *Command) error { o.Output.Silent = v == "true"; return nil },
+	"progress":     setProgress,
+	"verbose":      func(o *config.Options, v string, _ *Command) error { o.Output.Verbose = v == "true"; return nil },
+	"har":          func(o *config.Options, v string, _ *Command) error { o.Output.HAR = v; return nil },
+	"method":       func(o *config.Options, v string, _ *Command) error { o.Method = strings.ToUpper(v); return nil },
+	"head":         setHead,
+	"header":       func(o *config.Options, _ string, c *Command) error { o.Headers = c.Values["header"]; return nil },
 	"user-agent": func(o *config.Options, v string, _ *Command) error {
 		o.Stealth.Agent, o.Stealth.AgentExplicit = v, true
 		return nil

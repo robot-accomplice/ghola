@@ -239,15 +239,51 @@ func transferAll(ctx context.Context, opts *config.Options, do client.Doer, stre
 	}
 
 	// Several URLs go one after the other, as in curl (audit finding M9).
-	// The first failure stops the run and gives the exit code.
+	// A failure does not stop the run, and the exit code is the last
+	// failure's, as in curl (v1 defaults, item 10B, decided by Jon on
+	// 2026-11-18).
+	last := config.NoError.Int()
 	for _, u := range opts.URLs {
 		one := *opts
 		one.URL = u
-		if code := fetch(ctx, &one, do, stream, w); code != config.NoError.Int() {
-			return code
+		if code := fetchWithTemplate(ctx, &one, do, stream, w); code != config.NoError.Int() {
+			last = code
 		}
 	}
-	return config.NoError.Int()
+	return last
+}
+
+// fetchWithTemplate runs fetch, and then writes --output-template for
+// the transfer, also after a failure, as curl -w does.
+func fetchWithTemplate(ctx context.Context, opts *config.Options, do client.Doer, stream client.Streamer, w *os.File) int {
+	if opts.Output.Template == nil {
+		return fetch(ctx, opts, do, stream, w)
+	}
+	info := &config.TransferInfo{URL: opts.URL}
+	opts.Output.Info = info
+	start := time.Now()
+	code := fetch(ctx, opts, do, stream, w)
+	info.Time, info.ExitCode = time.Since(start), code
+	if code == config.NoError.Int() {
+		info.File = opts.Output.File
+	}
+	if err := opts.Output.Template.Write(w, os.Stderr, *info); err != nil {
+		fmt.Fprintf(os.Stderr, "--output-template: %v\n", err)
+		return config.WriteFileFailed.Int()
+	}
+	return code
+}
+
+// failed reports err, records it for %{errormsg}, and returns its exit
+// code.
+func failed(opts *config.Options, err error) int {
+	if info := opts.Output.Info; info != nil {
+		info.ErrorMsg = err.Error()
+	}
+	if !opts.Output.HideErrors {
+		fmt.Fprintf(os.Stderr, "Failed: %s\n", err)
+	}
+	return exitFor(err).Int()
 }
 
 // fetch sends the request for opts.URL and writes the response. It returns
@@ -258,10 +294,7 @@ func fetch(ctx context.Context, opts *config.Options, do client.Doer, stream cli
 
 	if config.ShouldStream(opts) {
 		if err := client.Download(ctx, opts, stream); err != nil {
-			if !opts.Output.HideErrors {
-				fmt.Fprintf(os.Stderr, "Failed: %s\n", err)
-			}
-			return exitFor(err).Int()
+			return failed(opts, err)
 		}
 		return config.NoError.Int()
 	}
@@ -276,10 +309,7 @@ func fetch(ctx context.Context, opts *config.Options, do client.Doer, stream cli
 	req, rsp, err := client.FetchURL(ctx, opts, do)
 	elapsed := time.Since(start)
 	if err != nil {
-		if !opts.Output.HideErrors {
-			fmt.Fprintf(os.Stderr, "Failed: %s\n", err)
-		}
-		return exitFor(err).Int()
+		return failed(opts, err)
 	}
 	defer fasthttp.ReleaseRequest(req)
 	defer fasthttp.ReleaseResponse(rsp)
@@ -298,6 +328,9 @@ func fetch(ctx context.Context, opts *config.Options, do client.Doer, stream cli
 	}
 
 	if err := output.ProcessResponse(w, os.Stderr, opts, req, rsp, elapsed); err != nil {
+		if info := opts.Output.Info; info != nil {
+			info.ErrorMsg = err.Error()
+		}
 		fmt.Fprintln(os.Stderr, err)
 		return exitFor(err).Int()
 	}

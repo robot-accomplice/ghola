@@ -246,6 +246,10 @@ redirectLoop:
 			}
 
 			status := rsp.StatusCode()
+			if info := opts.Output.Info; info != nil {
+				info.EffectiveURL, info.Status, info.Redirects = effectiveURL, status, redirectsFollowed
+				info.ContentType = string(rsp.Header.ContentType())
+			}
 
 			if opts.Resilience.RetryHTTP && attempt < opts.Resilience.Retries && isRetryableHTTPStatus(opts, status) && retryTimeLeft(opts, start) {
 				if d, ok := parseRetryAfter(rsp); ok {
