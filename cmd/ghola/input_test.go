@@ -1,12 +1,16 @@
 package main
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -66,5 +70,43 @@ func TestExecute_Input(t *testing.T) {
 	}
 	if _, ok := seen["/never"]; ok {
 		t.Error("a request went out before the bad line stopped the run")
+	}
+}
+
+// --input-format metalink takes each file of a Metalink v4 or v3: the
+// best URL by priority fetches it, the others are its mirrors, its name
+// goes inside -o DIR/, and its hash checks it, so a wrong file exits 32.
+func TestExecute_InputMetalink(t *testing.T) {
+	body := bytes.Repeat([]byte("metalink"), 1<<17) // 1 MiB
+	sum := sha256.Sum256(body)
+	var good, other atomic.Int32
+	a := mirror(t, body, 0, false, &good)
+	b := mirror(t, body, 0, false, &other)
+	dir := t.TempDir()
+	out := filepath.Join(dir, "out") + "/"
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	v4 := `<?xml version="1.0"?><metalink xmlns="urn:ietf:params:xml:ns:metalink">
+<file name="v4.bin"><hash type="sha-256">` + hex.EncodeToString(sum[:]) + `</hash>
+<url priority="2">` + b + `</url><url priority="1">` + a + `</url></file></metalink>`
+	v3 := `<?xml version="1.0"?><metalink version="3.0" xmlns="http://www.metalinker.org/"><files>
+<file name="v3.bin"><verification><hash type="sha256">` + hex.EncodeToString(make([]byte, 32)) + `</hash></verification>
+<resources><url type="http" preference="100">` + a + `</url></resources></file></files></metalink>`
+	for name, tc := range map[string]struct {
+		doc  string
+		want int
+	}{"v4": {v4, 0}, "v3, wrong hash": {v3, 32}} {
+		f := filepath.Join(dir, name+".meta4")
+		os.WriteFile(f, []byte(tc.doc), 0o600) //nolint:errcheck
+		if code := runGhola(t, "download", "-q", "-o", out, "--input", f, "--input-format", "metalink"); code != tc.want {
+			t.Errorf("%s: exit %d, want %d", name, code, tc.want)
+		}
+	}
+	if got, _ := os.ReadFile(filepath.Join(out, "v4.bin")); !bytes.Equal(got, body) {
+		t.Errorf("v4.bin: %d bytes", len(got))
+	}
+	if good.Load() == 0 {
+		t.Error("the URL with priority 1 was not used")
 	}
 }

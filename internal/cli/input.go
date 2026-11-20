@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"golang.org/x/net/html"
@@ -23,7 +24,7 @@ type inputEntry struct {
 }
 
 // readInput reads the --input file (- is stdin) in the --input-format:
-// lines (the default), html or sitemap.
+// lines (the default), html, sitemap or metalink.
 func readInput(path, format string) ([]inputEntry, error) {
 	r := io.Reader(os.Stdin)
 	if path != "-" {
@@ -41,8 +42,10 @@ func readInput(path, format string) ([]inputEntry, error) {
 		return inputHTML(r)
 	case "sitemap":
 		return inputSitemap(r)
+	case "metalink":
+		return inputMetalink(r)
 	}
-	return nil, fmt.Errorf("--input-format %s is not built yet: use lines, html or sitemap", format)
+	return nil, fmt.Errorf("--input-format %q: use lines, html, sitemap or metalink", format)
 }
 
 // inputLines reads aria2's input format: a URL on each line, then lines
@@ -157,6 +160,93 @@ func inputSitemap(r io.Reader) ([]inputEntry, error) {
 	return entries, nil
 }
 
+// metalinkFile is one file of a Metalink: v4 (RFC 5854) puts the URLs and
+// hashes under <file>, v3 puts them under <resources> and <verification>.
+type metalinkFile struct {
+	Name   string         `xml:"name,attr"`
+	URLs   []metalinkURL  `xml:"url"`
+	Hashes []metalinkHash `xml:"hash"`
+	V3URLs []metalinkURL  `xml:"resources>url"`
+	V3Hash []metalinkHash `xml:"verification>hash"`
+}
+
+type metalinkURL struct {
+	Priority   int    `xml:"priority,attr"`   // v4: 1 is the best
+	Preference int    `xml:"preference,attr"` // v3: 100 is the best
+	URL        string `xml:",chardata"`
+}
+
+type metalinkHash struct {
+	Type string `xml:"type,attr"`
+	Sum  string `xml:",chardata"`
+}
+
+// metalinkAlgos map the hash names of Metalink to --checksum names, the
+// strongest first.
+var metalinkAlgos = []struct{ names, algo string }{
+	{"sha-512 sha512", "sha-512"}, {"sha-384 sha384", "sha-384"}, {"sha-256 sha256", "sha-256"},
+	{"sha-1 sha1", "sha-1"}, {"md5", "md5"},
+}
+
+// inputMetalink reads a Metalink (v4 or v3): each file is one entry. The
+// best URL fetches it, the others are its --source mirrors, the strongest
+// file hash is its --checksum, and its name is its -o, inside the run's
+// -o DIR/. Piece hashes and signatures are not checked yet: the file hash
+// checks the same bytes, piece repair needs a refetch of each piece, and
+// a signature needs an OpenPGP keyring.
+func inputMetalink(r io.Reader) ([]inputEntry, error) {
+	var doc struct {
+		Files []metalinkFile `xml:"file"`
+		V3    []metalinkFile `xml:"files>file"`
+	}
+	if err := xml.NewDecoder(r).Decode(&doc); err != nil {
+		return nil, fmt.Errorf("--input metalink: %w", err)
+	}
+	var entries []inputEntry
+	for _, f := range append(doc.Files, doc.V3...) {
+		urls := append(f.URLs, f.V3URLs...)
+		sort.SliceStable(urls, func(a, b int) bool { return urlRank(urls[a]) < urlRank(urls[b]) })
+		if len(urls) == 0 {
+			continue
+		}
+		var args []string
+		for _, u := range urls[1:] {
+			args = append(args, "--source", strings.TrimSpace(u.URL))
+		}
+		if sum := strongestHash(append(f.Hashes, f.V3Hash...)); sum != "" {
+			args = append(args, "--checksum", sum)
+		}
+		if name := filepath.Base(f.Name); f.Name != "" && name == f.Name {
+			args = append(args, "-o", name) // a name with a folder part is not taken: it could leave the folder
+		}
+		entries = append(entries, inputEntry{url: strings.TrimSpace(urls[0].URL), args: args})
+	}
+	return entries, nil
+}
+
+// urlRank orders the URLs, the best first: v4 priority 1 first, v3 the
+// highest preference first, and a URL without either last.
+func urlRank(u metalinkURL) int {
+	switch {
+	case u.Priority > 0:
+		return u.Priority
+	case u.Preference > 0:
+		return 1000 - u.Preference
+	}
+	return 1 << 20
+}
+
+func strongestHash(hashes []metalinkHash) string {
+	for _, a := range metalinkAlgos {
+		for _, h := range hashes {
+			if strings.Contains(" "+a.names+" ", " "+strings.ToLower(h.Type)+" ") {
+				return a.algo + "=" + strings.ToLower(strings.TrimSpace(h.Sum))
+			}
+		}
+	}
+	return ""
+}
+
 // applyInput adds the URLs of --input after the URLs of the command line,
 // and keeps the options of each, checked now, so a bad line stops the run
 // before any transfer.
@@ -174,6 +264,9 @@ func applyInput(o *config.Options, c *Command) error {
 	}
 	args := make([][]string, len(o.URLs), len(o.URLs)+len(entries))
 	for _, e := range entries {
+		if len(e.args) > 0 && c.Job != "" {
+			e.args = append([]string{c.Job}, e.args...) // so the download options of the entry parse
+		}
 		if len(e.args) > 0 {
 			if _, err := Parse(e.args); err != nil {
 				return fmt.Errorf("--input, the options of %s: %w", e.url, err)
