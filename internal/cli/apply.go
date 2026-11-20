@@ -43,6 +43,8 @@ var setters = map[string]setter{
 	"cond-time":          func(*config.Options, string, *Command) error { return nil }, // read in Apply
 	"url-path-as-is":     func(o *config.Options, v string, _ *Command) error { o.PathAsIs = v == "true"; return nil },
 	"request-target":     func(o *config.Options, v string, _ *Command) error { o.RequestTarget = v; return nil },
+	"config":             func(*config.Options, string, *Command) error { return nil }, // read in WithConfig
+	"no-config":          func(*config.Options, string, *Command) error { return nil }, // read in WithConfig
 	"save-headers":       func(o *config.Options, v string, _ *Command) error { o.Output.SaveHeaders = v; return nil },
 	"show-headers":       func(o *config.Options, v string, _ *Command) error { o.Output.Include = v == "true"; return nil },
 	"quiet":              func(o *config.Options, v string, _ *Command) error { o.Output.Silent = v == "true"; return nil },

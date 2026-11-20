@@ -35,6 +35,9 @@ func execute(ctx context.Context, args []string, do client.Doer, stream client.S
 	if err != nil {
 		return argError(err)
 	}
+	if c, err = cli.WithConfig(args, c); err != nil {
+		return argError(err)
+	}
 	hideErrors := false
 	if from := compatCommands[c.Job]; from != nil {
 		native, err := from(c.Args)
