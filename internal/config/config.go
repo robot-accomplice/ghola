@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -97,6 +98,14 @@ type OutputOptions struct {
 	// Stdout is -o -: write the body to stdout, also binary data to a
 	// terminal, as in curl. File is then "".
 	Stdout bool
+	// Progress forces the progress meter: "on" shows it also when stderr is
+	// not a terminal, "off" hides it, "" shows it only on a terminal.
+	Progress string
+	// Dir is the folder of -o DIR/: the remote file name goes inside it.
+	Dir string
+	// FailFrom400 is the v1 rule for Fail: status 400 and above fails, as
+	// in curl. The v0 rule fails every status that is not 2xx.
+	FailFrom400 bool
 }
 
 // StealthOptions controls browser impersonation and identity features.
@@ -138,6 +147,9 @@ type ResilienceOptions struct {
 	LocationTrusted bool
 	MaxRedirs       int
 	BufferSize      int
+	// RetryStatus is the list of status codes that a retry may cure
+	// (--retry-status). Empty means the v0 list.
+	RetryStatus []int
 }
 
 // ProxyOptions controls proxy routing behavior.
@@ -160,10 +172,13 @@ type Options struct {
 	Form          []string
 	Headers       []string
 	Transfer      string
-	User          string
-	Concurrency   int
-	Chain         string
-	Serve         bool
+	// DataLiteral sends Data as it is: a value that starts with @ is not a
+	// file name (--data-literal).
+	DataLiteral bool
+	User        string
+	Concurrency int
+	Chain       string
+	Serve       bool
 
 	Output     OutputOptions
 	Stealth    StealthOptions
@@ -300,20 +315,40 @@ func ParseFlags(args []string) (opts *Options, done bool, err error) {
 	}
 
 	takeURLs(opts, fs.Args())
-	applyChainShortcuts(opts)
-
-	if opts.URL == "" && !opts.Serve {
-		return nil, false, fmt.Errorf("URL is mandatory")
-	}
 	opts.Stealth.AgentExplicit = fs.Changed("user-agent")
 	if err := limitFlags.apply(fs, &opts.Resilience); err != nil {
 		return nil, false, err
 	}
-	if err := checkInput(opts); err != nil {
+	explicit := map[string]bool{ExplicitMethod: fs.Changed("request"), ExplicitProfileHeaders: fs.Changed("stealth-headers")}
+	if err := Finish(opts, func(name string) bool { return explicit[name] }); err != nil {
 		return nil, false, err
 	}
+	return opts, false, nil
+}
+
+// The names that Finish asks explicit about: whether the command line set
+// the option itself, so that a default does not override it.
+const (
+	ExplicitMethod         = "method"
+	ExplicitProfileHeaders = "profile-headers"
+)
+
+// Finish checks opts and applies the rules that follow from them: the
+// chain shortcut, the input checks, the option conflicts, the default
+// Content-Type, POST for a body, -o -, and the remote file name. The v0
+// flags (ParseFlags) and the v1 parser (internal/cli) both call it, so the
+// rules cannot drift. explicit reports whether the command line set an
+// option (ExplicitMethod, ExplicitProfileHeaders).
+func Finish(opts *Options, explicit func(name string) bool) error {
+	applyChainShortcuts(opts)
+	if opts.URL == "" && !opts.Serve {
+		return fmt.Errorf("URL is mandatory")
+	}
+	if err := checkInput(opts); err != nil {
+		return err
+	}
 	if err := checkOneOutput(opts); err != nil {
-		return nil, false, err
+		return err
 	}
 	// curl --location-trusted is -L plus the credentials on every hop.
 	if opts.Resilience.LocationTrusted {
@@ -322,50 +357,50 @@ func ParseFlags(args []string) (opts *Options, done bool, err error) {
 
 	if opts.Stealth.Impersonate != "" {
 		if _, err := profile.Resolve(opts.Stealth.Impersonate); err != nil {
-			return nil, false, err
+			return err
 		}
-		if !fs.Changed("stealth-headers") {
+		if !explicit(ExplicitProfileHeaders) {
 			opts.Stealth.StealthHeaders = true
 		}
 	}
 
 	if opts.ProxyCfg.Proxy != "" && opts.ProxyCfg.File != "" {
-		return nil, false, fmt.Errorf("--proxy and --proxy-file cannot be used together")
+		return fmt.Errorf("--proxy and --proxy-file cannot be used together")
 	}
 	if opts.Output.ContinueAt != "" && opts.Output.Range != "" {
-		return nil, false, fmt.Errorf("--continue-at and --range cannot be used together")
+		return fmt.Errorf("--continue-at and --range cannot be used together")
 	}
 	if opts.Stealth.Compressed && opts.Output.ContinueAt != "" {
-		return nil, false, fmt.Errorf("--compressed cannot be combined with --continue-at (byte ranges apply to the compressed stream)")
+		return fmt.Errorf("--compressed cannot be combined with --continue-at (byte ranges apply to the compressed stream)")
 	}
 	if opts.Stealth.Compressed && opts.Output.Range != "" {
-		return nil, false, fmt.Errorf("--compressed cannot be combined with --range (byte ranges apply to the compressed stream)")
+		return fmt.Errorf("--compressed cannot be combined with --range (byte ranges apply to the compressed stream)")
 	}
 	if opts.Output.ContinueAt != "" && opts.Output.ContinueAt != "-" {
 		if _, err := strconv.ParseInt(opts.Output.ContinueAt, 10, 64); err != nil {
-			return nil, false, fmt.Errorf("invalid --continue-at value %q (want an integer offset or '-')", opts.Output.ContinueAt)
+			return fmt.Errorf("invalid --continue-at value %q (want an integer offset or '-')", opts.Output.ContinueAt)
 		}
 	}
 	if opts.Output.LimitRate != "" {
 		if _, err := ParseRate(opts.Output.LimitRate); err != nil {
-			return nil, false, fmt.Errorf("invalid --limit-rate %q: %w", opts.Output.LimitRate, err)
+			return fmt.Errorf("invalid --limit-rate %q: %w", opts.Output.LimitRate, err)
 		}
 	}
 	if opts.Stealth.Referer != "none" && opts.Stealth.Referer != "auto" {
 		if _, err := url.ParseRequestURI(opts.Stealth.Referer); err != nil {
-			return nil, false, fmt.Errorf("invalid --referer value %q", opts.Stealth.Referer)
+			return fmt.Errorf("invalid --referer value %q", opts.Stealth.Referer)
 		}
 	}
 
 	if len(opts.Form) > 0 && (opts.Data != "" || opts.DataBinary != "") {
-		return nil, false, fmt.Errorf("--form cannot be combined with -d/--data-binary")
+		return fmt.Errorf("--form cannot be combined with -d/--data-binary")
 	}
 	if len(opts.Form) > 0 && len(opts.DataURLEncode) > 0 {
-		return nil, false, fmt.Errorf("--form cannot be combined with --data-urlencode")
+		return fmt.Errorf("--form cannot be combined with --data-urlencode")
 	}
 
 	addDefaultContentType(opts)
-	if (opts.Data != "" || opts.DataBinary != "" || len(opts.Form) > 0 || len(opts.DataURLEncode) > 0) && !fs.Changed("request") {
+	if (opts.Data != "" || opts.DataBinary != "" || len(opts.Form) > 0 || len(opts.DataURLEncode) > 0) && !explicit(ExplicitMethod) {
 		opts.Method = fasthttp.MethodPost
 	}
 
@@ -379,7 +414,7 @@ func ParseFlags(args []string) (opts *Options, done bool, err error) {
 		inferWgetFilename(opts)
 	}
 
-	return opts, false, nil
+	return nil
 }
 
 func applyChainShortcuts(opts *Options) {
@@ -406,11 +441,19 @@ func inferWgetFilename(opts *Options) {
 	if err != nil {
 		return
 	}
-	opts.Output.File = path.Base(u.Path)
-	if opts.Output.File == "." || opts.Output.File == "/" {
-		opts.Output.File = "index.html"
+	name := path.Base(u.Path)
+	if name == "." || name == "/" {
+		name = "index.html"
 	}
+	opts.Output.File = filepath.Join(opts.Output.Dir, name)
 }
+
+// TakeURLs stores the URLs of the command line, each with http:// when it
+// has no scheme. The v1 parser (internal/cli) calls it.
+func TakeURLs(opts *Options, args []string) { takeURLs(opts, args) }
+
+// DefaultSpeedTime is curl's --speed-time when only --speed-limit is set.
+const DefaultSpeedTime = defaultSpeedTime * time.Second
 
 // ShouldStream reports whether a request should take the streaming download
 // path (bounded memory, written to a file) instead of the buffered pipeline.

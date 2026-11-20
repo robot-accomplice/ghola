@@ -54,7 +54,9 @@ func execute(ctx context.Context, args []string, do client.Doer, stream client.S
 	}
 
 	// Stdin/file substitution: -d - reads stdin, -d @file reads from file.
-	if opts.Data == "-" || opts.Data == "@-" {
+	if opts.DataLiteral {
+		// --data-literal: the value is the body, also when it starts with @.
+	} else if opts.Data == "-" || opts.Data == "@-" {
 		b, err := io.ReadAll(os.Stdin)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "read stdin: %v\n", err)

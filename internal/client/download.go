@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,6 +31,20 @@ var meterOut = func() io.Writer {
 		return os.Stderr
 	}
 	return nil
+}
+
+// meterFor returns where the meter goes for opts: --progress on writes it
+// to stderr in any case, --progress off and -q hide it, and the default
+// shows it only on a terminal.
+func meterFor(opts *config.Options) io.Writer {
+	switch {
+	case opts.Output.Progress == "off" || opts.Output.Silent:
+		return nil
+	case opts.Output.Progress == "on":
+		return os.Stderr
+	default:
+		return meterOut()
+	}
 }
 
 // byteRange is an inclusive [start, end] byte range for a Range request.
@@ -89,7 +104,7 @@ func Download(ctx context.Context, opts *config.Options, stream Streamer) error 
 	// Build shared progress writer (suppressed under --silent, and when
 	// stderr is not a terminal). The total comes from the response.
 	var progress *progressWriter
-	if out := meterOut(); out != nil && !opts.Output.Silent {
+	if out := meterFor(opts); out != nil {
 		progress = newProgressWriter(io.Discard, out, -1)
 	}
 
@@ -224,7 +239,7 @@ func applyRemoteName(opts *config.Options, meta gholatransport.StreamMeta) {
 		return
 	}
 	if name := dispositionFilename(meta.Disposition); name != "" {
-		opts.Output.File = name
+		opts.Output.File = filepath.Join(opts.Output.Dir, name) // -o DIR/ keeps the folder
 	}
 }
 
@@ -468,7 +483,7 @@ func (g singleGet) check(opts *config.Options, f *lazyFile) func(gholatransport.
 		if isRedirect(meta) {
 			return errRedirect
 		}
-		if g.retryStatus && isRetryableHTTPStatus(meta.StatusCode) {
+		if g.retryStatus && isRetryableHTTPStatus(opts, meta.StatusCode) {
 			return fmt.Errorf("%w %d", errRetryStatus, meta.StatusCode)
 		}
 		if opts.Output.FailsOn(meta.StatusCode) {

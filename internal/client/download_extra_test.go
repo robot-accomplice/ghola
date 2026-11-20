@@ -535,3 +535,21 @@ func TestProgressTap_UnknownTotal(t *testing.T) {
 		t.Errorf("tap written = %d, want 50", pw.written)
 	}
 }
+
+// --progress on shows the meter also when stderr is not a terminal;
+// --progress off and -q hide it; the default follows the terminal.
+func TestMeterFor(t *testing.T) {
+	old := meterOut
+	meterOut = func() io.Writer { return nil } // stderr is not a terminal
+	t.Cleanup(func() { meterOut = old })
+	cases := map[string]bool{"on": true, "off": false, "": false}
+	for progress, want := range cases {
+		got := meterFor(&config.Options{Output: config.OutputOptions{Progress: progress}}) != nil
+		if got != want {
+			t.Errorf("progress %q: meter %v, want %v", progress, got, want)
+		}
+	}
+	if meterFor(&config.Options{Output: config.OutputOptions{Progress: "on", Silent: true}}) != nil {
+		t.Error("-q did not hide a forced meter")
+	}
+}

@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -238,7 +239,7 @@ redirectLoop:
 
 			status := rsp.StatusCode()
 
-			if opts.Resilience.RetryHTTP && attempt < opts.Resilience.Retries && isRetryableHTTPStatus(status) {
+			if opts.Resilience.RetryHTTP && attempt < opts.Resilience.Retries && isRetryableHTTPStatus(opts, status) {
 				if d, ok := parseRetryAfter(rsp); ok {
 					nextWait = d
 					haveNextWait = true
@@ -384,7 +385,12 @@ func waitToRetry(ctx context.Context, opts *config.Options, attempt int, wait ti
 	return sleepCtx(ctx, wait)
 }
 
-func isRetryableHTTPStatus(status int) bool {
+// isRetryableHTTPStatus reports a status that a retry may cure: the list of
+// --retry-status, else the v0 list.
+func isRetryableHTTPStatus(opts *config.Options, status int) bool {
+	if list := opts.Resilience.RetryStatus; len(list) > 0 {
+		return slices.Contains(list, status)
+	}
 	switch status {
 	case 429, 500, 502, 503, 504:
 		return true

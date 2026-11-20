@@ -15,6 +15,9 @@ var ErrHTTPStatus = errors.New("non-2xx http status")
 // any status outside 2xx. curl -f refuses only 400 and above; the v1 flag
 // design decides which rule v1 keeps.
 func (o OutputOptions) FailsOn(status int) bool {
+	if o.FailFrom400 {
+		return o.Fail && status >= 400 // the v1 rule (v1 defaults, item 4), as in curl
+	}
 	return o.Fail && (status < 200 || status >= 300)
 }
 
