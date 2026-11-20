@@ -11,6 +11,7 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/pem"
 	"fmt"
 	"io"
@@ -212,6 +213,24 @@ func (s *server) routes() {
 		w.Header().Set("ETag", fmt.Sprintf(`"%x"`, sha256.Sum256(b)))
 		http.ServeContent(w, r, "file.bin", modTime, bytes.NewReader(b))
 	})
+	// A file with a Content-Digest (RFC 9530) that is right, or wrong as
+	// a cache or a proxy could make it.
+	m.HandleFunc("/digest/{kind}/{size}", func(w http.ResponseWriter, r *http.Request) {
+		b := size(r)
+		sum := sha256.Sum256(b)
+		if r.PathValue("kind") == "bad" {
+			sum[0] ^= 0xff
+		}
+		w.Header().Set("Content-Digest", "sha-256=:"+base64.StdEncoding.EncodeToString(sum[:])+":")
+		w.Write(b) //nolint:errcheck
+	})
+	// A file with ranges that comes slowly (about 256 KiB/s), so a run
+	// can be stopped in the middle.
+	m.HandleFunc("/slow/{size}", func(w http.ResponseWriter, r *http.Request) {
+		b := size(r)
+		w.Header().Set("ETag", fmt.Sprintf(`"%x"`, sha256.Sum256(b)))
+		http.ServeContent(w, r, "file.bin", modTime, slowReader{bytes.NewReader(b)})
+	})
 	// A body without Content-Length (chunked).
 	m.HandleFunc("/chunked/{size}", func(w http.ResponseWriter, r *http.Request) {
 		b := size(r)
@@ -341,3 +360,13 @@ func (s *server) routes() {
 
 // changingVersion is the content that /changing serves on its n-th request.
 func changingVersion(s *server, size, n int) []byte { return s.content(size + n)[:size] }
+
+// slowReader reads 16 KiB each 64 ms: about 256 KiB/s.
+type slowReader struct{ r *bytes.Reader }
+
+func (s slowReader) Read(p []byte) (int, error) {
+	time.Sleep(64 * time.Millisecond)
+	return s.r.Read(p[:min(len(p), 16<<10)])
+}
+
+func (s slowReader) Seek(off int64, whence int) (int64, error) { return s.r.Seek(off, whence) }
