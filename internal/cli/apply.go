@@ -47,6 +47,9 @@ var setters = map[string]setter{
 	"no-config":          func(*config.Options, string, *Command) error { return nil }, // read in WithConfig
 	"cond-etag-save":     func(o *config.Options, v string, _ *Command) error { o.Output.ETagSave = v; return nil },
 	"cond-etag-compare":  func(*config.Options, string, *Command) error { return nil }, // read in Apply
+	"interface":          func(o *config.Options, v string, _ *Command) error { o.Net.Interface = v; return nil },
+	"local-port":         func(o *config.Options, v string, _ *Command) error { o.Net.LocalPort = v; return nil },
+	"unix-socket":        func(o *config.Options, v string, _ *Command) error { o.Net.UnixSocket = v; return nil },
 	"save-headers":       func(o *config.Options, v string, _ *Command) error { o.Output.SaveHeaders = v; return nil },
 	"show-headers":       func(o *config.Options, v string, _ *Command) error { o.Output.Include = v == "true"; return nil },
 	"quiet":              func(o *config.Options, v string, _ *Command) error { o.Output.Silent = v == "true"; return nil },

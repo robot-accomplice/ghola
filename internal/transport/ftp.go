@@ -124,7 +124,10 @@ func (t protocolTransport) dialFTP(ctx context.Context, u *url.URL) (*ftp.Server
 // tunnelDialer returns the base dial function of FTP, SFTP and SCP: through the SOCKS proxy that
 // --proxy or the environment names, or direct. An HTTP proxy is refused.
 func (t protocolTransport) tunnelDialer(u *url.URL) (dialFunc, error) {
-	direct := (&net.Dialer{}).DialContext
+	direct, err := localDial(t.opts.Net, false)
+	if err != nil {
+		return nil, err
+	}
 	p, err := t.proxyFor(u)
 	if err != nil {
 		return nil, err

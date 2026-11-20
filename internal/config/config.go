@@ -232,6 +232,12 @@ type NetOptions struct {
 	IPVersion string   // "4", "6", or "" for both
 	Resolve   []string // host:port:address
 	ConnectTo []string // host:port:host2:port2
+	// Interface is the local address or interface name (--interface).
+	Interface string
+	// LocalPort is the local port, or a range N-M (--local-port).
+	LocalPort string
+	// UnixSocket connects HTTP through this socket (--unix-socket).
+	UnixSocket string
 }
 
 // Version is set at build time via -ldflags.

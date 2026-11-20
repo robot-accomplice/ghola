@@ -183,7 +183,10 @@ func (t protocolTransport) wsDialer(u *url.URL) (*websocket.Dialer, error) {
 // wsTunnel returns the dial function of the net/http stack for a WebSocket:
 // direct, through a SOCKS proxy, or through an HTTP proxy with CONNECT.
 func (t protocolTransport) wsTunnel(u *url.URL) (dialFunc, error) {
-	direct := (&net.Dialer{}).DialContext
+	direct, err := localDial(t.opts.Net, true)
+	if err != nil {
+		return nil, err
+	}
 	target := *u
 	target.Scheme = httpSchemeOf(u.Scheme) // ws uses http_proxy, wss https_proxy, as in curl
 	p, err := t.proxyFor(&target)

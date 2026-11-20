@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
@@ -223,7 +222,11 @@ func newNetwork(opts *config.Options, selectedProxy string) (Transport, error) {
 	if err != nil {
 		return nil, err
 	}
-	base := rules.dial((&net.Dialer{}).DialContext) // --connect-to, --resolve, --ip
+	local, err := localDial(opts.Net, true) // --interface, --local-port, --unix-socket
+	if err != nil {
+		return nil, err
+	}
+	base := rules.dial(local) // --connect-to, --resolve, --ip
 	httpTransport := &http.Transport{
 		TLSClientConfig:   tlsCfg,
 		ForceAttemptHTTP2: true,
@@ -309,7 +312,13 @@ func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transpor
 	if err != nil {
 		return nil, err
 	}
-	base := rules.dial((&net.Dialer{}).DialContext) // --connect-to, --resolve, --ip
+	local, err := localDial(opts.Net, true) // --interface, --local-port, --unix-socket
+	if err != nil {
+		return nil, err
+	}
+	base := rules.dial(local) // --connect-to, --resolve, --ip
+	// The rules and the local options need ghola's dial function.
+	custom := rules != nil || hasLocalOptions(opts.Net)
 	if selectedProxy != "" {
 		proxyURL, err := url.Parse(selectedProxy)
 		if err != nil {
@@ -320,12 +329,12 @@ func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transpor
 			// tls-client has no local-DNS socks5 and runs its own SOCKS4; the
 			// shared dialer gives both stacks the same SOCKS behaviour.
 			options = append(options, tlsclient.WithDialContext(socksDialer(proxyURL, base)))
-		case rules != nil:
+		case custom:
 			return nil, ErrRulesNeedDirect
 		default:
 			options = append(options, tlsclient.WithProxyUrl(selectedProxy))
 		}
-	} else if rules != nil {
+	} else if custom {
 		// The rules need ghola's dial function, so this client cannot take
 		// an HTTP proxy from the environment: clientFor refuses one.
 		options = append(options, tlsclient.WithDialContext(envDialer(base, opts.ProxyCfg.Bypass)))
@@ -344,7 +353,7 @@ func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transpor
 		limits:      newLimits(opts.Resilience),
 		envProxy:    selectedProxy == "",
 		bypass:      opts.ProxyCfg.Bypass,
-		rulesDirect: selectedProxy == "" && rules != nil,
+		rulesDirect: selectedProxy == "" && custom,
 	}
 	if t.envProxy && !t.rulesDirect {
 		socksOptions := append(options[:len(options):len(options)], tlsclient.WithDialContext(envDialer(base, opts.ProxyCfg.Bypass)))

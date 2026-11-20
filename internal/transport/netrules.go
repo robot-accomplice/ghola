@@ -13,7 +13,7 @@ import (
 // ErrRulesNeedDirect refuses --resolve, --connect-to and --ip through an
 // HTTP proxy on the tls-client stack: tls-client takes a proxy URL or a
 // dial function, not both, so the rules could not apply.
-var ErrRulesNeedDirect = errors.New("--resolve, --connect-to and --ip with --impersonate work directly or through SOCKS, not through an HTTP proxy")
+var ErrRulesNeedDirect = errors.New("--resolve, --connect-to, --ip, --interface, --local-port and --unix-socket with --impersonate work directly or through SOCKS, not through an HTTP proxy")
 
 // netRules change where a TCP connection goes (plan phase 2, item 2). The
 // host name stays as it is, so TLS and the Host header use the name of

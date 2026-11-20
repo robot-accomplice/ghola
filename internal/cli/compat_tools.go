@@ -81,6 +81,9 @@ const curlTable = `
 --connect-to                   => --connect-to %s
 -4 --ipv4                      => --ip 4
 -6 --ipv6                      => --ip 6
+--interface                    => --interface %s
+--local-port                   => --local-port %s
+--unix-socket                  => --unix-socket %s
 --create-dirs                  => --output-create-dirs
 --max-filesize                 => --max-size %s
 `
@@ -110,6 +113,7 @@ const wgetTable = `
 --load-cookies --save-cookies  => --cookie-jar %s
 -4 --inet4-only                => --ip 4
 -6 --inet6-only                => --ip 6
+--bind-address                 => --interface %s
 `
 
 // aria2c saves under the remote name, follows redirects, and tries 5
@@ -133,6 +137,7 @@ const aria2Table = `
 --retry-wait                   => --retry-delay %s
 --max-download-limit           => --rate-max %s
 --disable-ipv6                 => --ip 4
+--interface                    => --interface %s
 -n --no-netrc                  => --no-auth-netrc
 --netrc-path                   => --auth-netrc-file %s
 --load-cookies --save-cookies  => --cookie-jar %s
