@@ -31,6 +31,12 @@ type toolSpec struct {
 	// does not translate them (special and ignored ones).
 	takesValue map[string]bool
 	equals     bool // the tool writes --name=value
+	// wholeShorts are the options of two letters after one dash (wget 1
+	// -nv, -nH, -np): they are not two short options.
+	wholeShorts map[string]bool
+	// finish adds the native options that depend on several of the tool's
+	// options (wget -r without -np, -H with -D). nil for none.
+	finish func(t *translation)
 	// downloadWithoutFile starts ghola download when no output file is
 	// given (wget saves under the remote name).
 	downloadWithoutFile bool
@@ -102,12 +108,19 @@ type translation struct {
 	// aria2c -d/-o; they join into one -o at the end.
 	dir, file string
 	done      bool
+	// job is the native job that the options start (wget -r: mirror).
+	job string
+	// wget -r state: -np, -N, -H, -D, -l.
+	noParent, timestamping, spanHosts, domains, level bool
 }
 
 func translate(spec *toolSpec, args []string) (*Compat, error) {
 	t := &translation{spec: spec, out: append([]string(nil), spec.defaults...)}
 	if err := t.run(args); err != nil {
 		return nil, err
+	}
+	if spec.finish != nil {
+		spec.finish(t)
 	}
 	if t.user != "" || t.pass != "" {
 		t.out = append(t.out, "-u", t.user+":"+t.pass)
@@ -116,7 +129,10 @@ func translate(spec *toolSpec, args []string) (*Compat, error) {
 		t.out = append(t.out, "-o", out)
 	}
 	out := append(t.out, t.tail...)
-	if spec.downloadWithoutFile && t.file == "" {
+	switch {
+	case t.job != "":
+		out = append([]string{t.job}, out...)
+	case spec.downloadWithoutFile && t.file == "":
 		out = append([]string{JobDownload}, out...)
 	}
 	return &Compat{Args: out, HideErrors: t.silent && !t.showError, ShowNative: t.showNative}, nil
@@ -133,6 +149,8 @@ func (t *translation) run(args []string) error {
 			t.done = true
 		case strings.HasPrefix(a, "--"):
 			i, err = t.long(a, args, i)
+		case t.spec.wholeShorts[a]:
+			err = t.option(a, "", false)
 		default:
 			i, err = t.shorts(a, args, i)
 		}
@@ -227,24 +245,9 @@ func joinOutput(dir, file string) string {
 	}
 }
 
-// jobOptions are options that start another job in the tool they come
-// from, with the native job that does it.
-var jobOptions = map[string]string{
-	"-r": mirrorJob, "--recursive": mirrorJob, "-m": mirrorJob, "--mirror": mirrorJob,
-	"-i": inputJob, "--input-file": inputJob,
-}
-
-const (
-	mirrorJob = "ghola mirror"
-	inputJob  = "ghola download --input"
-)
-
 // notMapped names an option that the command cannot run. When the option
 // table names a native option for it, the message says so.
 func (t *translation) notMapped(name string) error {
-	if job, ok := jobOptions[name]; ok && t.spec.name == "wget" {
-		return usagef("ghola wget: %s starts another job: %s, which is not built yet", name, job)
-	}
 	for _, o := range otherIndex[name] {
 		if o.tool == t.spec.name {
 			return usagef("ghola %s: %s maps to --%s, which ghola %s does not run yet", t.spec.name, name, o.opt.Name, t.spec.name)
