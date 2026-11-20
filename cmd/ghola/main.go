@@ -104,6 +104,16 @@ func runJob(c *cli.Command, w *os.File) (code int, done bool) {
 			fmt.Fprintln(w, name)
 		}
 		return config.NoError.Int(), true
+	case cli.JobCompletion:
+		if len(c.Args) != 1 {
+			return argError(fmt.Errorf("ghola completion takes one shell: bash, zsh, fish or powershell")), true
+		}
+		text, err := cli.Completion(c.Args[0])
+		if err != nil {
+			return argError(err), true
+		}
+		fmt.Fprint(w, text)
+		return config.NoError.Int(), true
 	case cli.JobExplain:
 		if len(c.Args) != 1 {
 			return argError(fmt.Errorf("ghola explain takes one exit code, such as 28")), true
