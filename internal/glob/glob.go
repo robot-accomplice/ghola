@@ -53,44 +53,23 @@ type part struct {
 func Parse(url string) (*Pattern, error) {
 	p := &Pattern{}
 	var text strings.Builder
-	flush := func() {
-		if text.Len() > 0 {
-			p.parts = append(p.parts, part{values: []string{text.String()}})
-			text.Reset()
-		}
-	}
 	for i := 0; i < len(url); i++ {
 		c := url[i]
 		switch {
 		case c == '\\' && i+1 < len(url) && strings.IndexByte("{}[]", url[i+1]) >= 0:
 			i++
 			text.WriteByte(url[i])
-		case c == '{':
-			values, end, err := parseList(url, i)
+		case c == '{' || c == '[':
+			values, end, literal, err := parseGlob(url, i)
 			if err != nil {
 				return nil, err
 			}
-			flush()
-			p.parts = append(p.parts, part{values: values, glob: true})
-			i = end
-		case c == '[':
-			end := strings.IndexByte(url[i:], ']')
-			if end < 0 {
-				return nil, &Error{msgBadRange, len(url) + 1}
-			}
-			end += i
-			inner := url[i+1 : end]
-			if isIPv6(inner) {
+			if literal {
 				text.WriteString(url[i : end+1])
-				i = end
-				continue
+			} else {
+				p.addText(&text)
+				p.parts = append(p.parts, part{values: values, glob: true})
 			}
-			values, ok := parseRange(inner)
-			if !ok {
-				return nil, &Error{msgBadRange, end + 2}
-			}
-			flush()
-			p.parts = append(p.parts, part{values: values, glob: true})
 			i = end
 		case c == '}' || c == ']':
 			return nil, &Error{msgUnmatchedClose, i + 1}
@@ -98,8 +77,40 @@ func Parse(url string) (*Pattern, error) {
 			text.WriteByte(c)
 		}
 	}
-	flush()
+	p.addText(&text)
 	return p, nil
+}
+
+// addText adds the fixed text so far as a part.
+func (p *Pattern) addText(text *strings.Builder) {
+	if text.Len() > 0 {
+		p.parts = append(p.parts, part{values: []string{text.String()}})
+		text.Reset()
+	}
+}
+
+// parseGlob reads the {list} or [range] that starts at url[start]. It
+// returns the values and the index of the closing character. literal is
+// true for an IPv6 address in brackets, which is not a range.
+func parseGlob(url string, start int) (values []string, end int, literal bool, err error) {
+	if url[start] == '{' {
+		values, end, err = parseList(url, start)
+		return values, end, false, err
+	}
+	end = strings.IndexByte(url[start:], ']')
+	if end < 0 {
+		return nil, 0, false, &Error{msgBadRange, len(url) + 1}
+	}
+	end += start
+	inner := url[start+1 : end]
+	if isIPv6(inner) {
+		return nil, end, true, nil
+	}
+	values, ok := parseRange(inner)
+	if !ok {
+		return nil, 0, false, &Error{msgBadRange, end + 2}
+	}
+	return values, end, false, nil
 }
 
 // parseList reads the {a,b,c} list that starts at url[start]. It returns
@@ -143,15 +154,21 @@ func parseRange(s string) ([]string, bool) {
 		step = n
 	}
 	if a, b, ok := letters(from, to); ok {
-		var out []string
-		for c := a; c <= b; c += byte(step) {
-			out = append(out, string(c))
-			if int(c)+step > 255 {
-				break
-			}
-		}
-		return out, true
+		return letterRange(a, b, step), true
 	}
+	return numberRange(from, to, step)
+}
+
+func letterRange(a, b byte, step int) []string {
+	var out []string
+	for c := int(a); c <= int(b); c += step {
+		out = append(out, string(rune(c)))
+	}
+	return out
+}
+
+// numberRange keeps the width of a start with a leading zero.
+func numberRange(from, to string, step int) ([]string, bool) {
 	a, errA := strconv.Atoi(from)
 	b, errB := strconv.Atoi(to)
 	if errA != nil || errB != nil || a < 0 || b < a {
