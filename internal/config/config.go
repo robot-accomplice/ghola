@@ -54,6 +54,9 @@ const (
 	// PeerFailedVerification indicates that the server certificate or its
 	// host name did not verify (curl 60).
 	PeerFailedVerification ExitCode = 60
+	// BadContentEncoding indicates a Content-Encoding that --compressed
+	// cannot decode (curl 61).
+	BadContentEncoding ExitCode = 61
 )
 
 // Int returns the ExitCode as a plain int for use with os.Exit.
