@@ -269,6 +269,8 @@ type NetOptions struct {
 	LocalPort string
 	// UnixSocket connects HTTP through this socket (--unix-socket).
 	UnixSocket string
+	// DoH resolves names with DNS over HTTPS at this URL (--doh).
+	DoH string
 }
 
 // Version is set at build time via -ldflags.

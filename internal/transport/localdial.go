@@ -16,15 +16,29 @@ import (
 // syscall.EADDRINUSE there.
 const wsaeAddrInUse = syscall.Errno(10048)
 
-// hasLocalOptions reports --interface, --local-port or --unix-socket.
+// hasLocalOptions reports --interface, --local-port, --unix-socket or
+// --doh.
 func hasLocalOptions(n config.NetOptions) bool {
-	return n.Interface != "" || n.LocalPort != "" || n.UnixSocket != ""
+	return n.Interface != "" || n.LocalPort != "" || n.UnixSocket != "" || n.DoH != ""
 }
 
 // localDial returns the base dial function: from the --interface address
 // and a --local-port in its range, or to the --unix-socket. The socket
 // serves HTTP only, as in curl, so FTP and SSH pass unixOK false.
 func localDial(n config.NetOptions, unixOK bool) (dialFunc, error) {
+	d, err := sourceDial(n, unixOK)
+	if err != nil || n.DoH == "" || (n.UnixSocket != "" && unixOK) {
+		return d, err
+	}
+	network := ""
+	if n.IPVersion == "4" || n.IPVersion == "6" {
+		network = "tcp" + n.IPVersion
+	}
+	return newDoH(n.DoH, network).dial(d), nil // --doh resolves the name
+}
+
+// sourceDial is localDial without --doh.
+func sourceDial(n config.NetOptions, unixOK bool) (dialFunc, error) {
 	if n.UnixSocket != "" && unixOK {
 		path := n.UnixSocket
 		return func(ctx context.Context, _, _ string) (net.Conn, error) {

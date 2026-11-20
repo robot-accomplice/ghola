@@ -105,6 +105,7 @@ const curlTable = `
 --interface                    => --interface %s
 --local-port                   => --local-port %s
 --unix-socket                  => --unix-socket %s
+--doh-url                      => --doh %s
 --create-dirs                  => --output-create-dirs
 --max-filesize                 => --max-size %s
 `

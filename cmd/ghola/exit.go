@@ -46,7 +46,7 @@ func exitFor(err error) config.ExitCode {
 		return config.TimedOut
 	case errors.Is(err, gholatransport.ErrRecv):
 		return config.RecvFailed
-	case errors.As(err, &dnsErr):
+	case errors.As(err, &dnsErr), errors.Is(err, gholatransport.ErrNoAddress):
 		return config.CouldntResolveHost
 	case errors.Is(err, gholatransport.ErrCertStatus):
 		return config.InvalidCertStatus
