@@ -88,12 +88,10 @@ func bodyReader(opts *config.Options, rsp *fasthttp.Response) (io.Reader, error)
 	if err != nil {
 		return nil, err
 	}
-	if opts.Stealth.Compressed && bytes.EqualFold(rsp.Header.Peek("Content-Encoding"), []byte("gzip")) {
-		decoded, err := transport.DecodeGzip(body)
-		if err != nil {
-			return nil, fmt.Errorf("decode gzip body: %w", err)
+	if opts.Stealth.Compressed {
+		if body, err = transport.DecodeBody(body, string(rsp.Header.Peek("Content-Encoding"))); err != nil {
+			return nil, err
 		}
-		body = decoded
 	}
 	return body, nil
 }

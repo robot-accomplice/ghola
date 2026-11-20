@@ -61,6 +61,7 @@ Attribution: the direction for Ghola's browser-like fetching work was inspired b
 | `--connect-timeout <s>` | **Connect timeout** in seconds: DNS, TCP, proxy CONNECT and TLS only. |
 | `--speed-limit <B/s>` | **Stall check** -- stop when slower than this many bytes per second for `--speed-time` (default 30 s). |
 | `--speed-time <s>` | **Stall window** in seconds for `--speed-limit` (default limit 1 byte per second). |
+| `--compressed` | **Decompression** -- ask for `gzip, deflate, br, zstd` and decode the body, on stdout and with `-o`. The `Content-Encoding` header decides: a `.gz` file sent as it is stays a `.gz` file. |
 | `--cookie-jar <file>` | **Persistent cookies** -- save and reuse cookies across runs. |
 | `--cookie <name=value>` | **Seed cookies** -- add one or more cookies to the request session. |
 | `--proxy <url>` | **Single proxy** -- route traffic through a proxy: `http://`, `https://`, `socks4://`, `socks4a://`, `socks5://` or `socks5h://`, as in curl. `socks4` and `socks5` resolve the host name in ghola; `socks4a` and `socks5h` let the proxy resolve it. `socks5://user:pass@host` sends credentials. |
@@ -195,6 +196,7 @@ ghola uses curl's exit codes for the same causes, so a script written for curl r
 | 55 | The request failed for another cause |
 | 56 | The connection failed after it was ready (for example, a reset, or a TLS alert after the handshake) |
 | 60 | The server certificate did not verify |
+| 61 | `--compressed` got a `Content-Encoding` that it cannot decode |
 
 ## Architecture
 

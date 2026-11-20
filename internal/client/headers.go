@@ -7,6 +7,7 @@ import (
 
 	"github.com/robot-accomplice/ghola/internal/config"
 	"github.com/robot-accomplice/ghola/internal/profile"
+	gholatransport "github.com/robot-accomplice/ghola/internal/transport"
 	"github.com/valyala/fasthttp"
 )
 
@@ -53,7 +54,7 @@ func setHeaders(req *fasthttp.Request, opts *config.Options, active profile.Brow
 	}
 
 	if opts.Stealth.Compressed {
-		req.Header.Set("Accept-Encoding", "gzip")
+		req.Header.Set("Accept-Encoding", gholatransport.AcceptEncoding)
 	}
 
 	if opts.User != "" && trusted {

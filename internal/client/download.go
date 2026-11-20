@@ -413,8 +413,8 @@ func (g singleGet) get(ctx context.Context, opts *config.Options, stream Streame
 
 	// Sink nesting (innermost first): file -> rate limit -> progress.
 	// progress is outermost so it counts bytes after throttling (bytes on disk).
-	// When --compressed, gzipSink wraps the whole chain so that compressed bytes
-	// received from the network are decoded before reaching the file (and rate
+	// When --compressed, decodeSink wraps the whole chain so that the bytes
+	// from the network are decoded before they reach the file (and rate
 	// limiting / progress count plain bytes on disk).
 	var sink io.Writer = f
 	if g.limiter != nil {
@@ -425,16 +425,16 @@ func (g singleGet) get(ctx context.Context, opts *config.Options, stream Streame
 		sink = g.progress
 	}
 
-	var flush func() error
+	check := g.check(opts, f)
+	var dec *decodeSink
 	if opts.Stealth.Compressed {
-		var gw io.Writer
-		gw, flush = gzipSink(sink)
-		sink = gw
+		dec = &decodeSink{dst: sink}
+		sink, check = dec, dec.checkThen(check)
 	}
 
-	meta, err = stream(ctx, opts, req, newCheckedSink(sink, g.check(opts, f)))
-	if flush != nil {
-		if ferr := flush(); ferr != nil && err == nil {
+	meta, err = stream(ctx, opts, req, newCheckedSink(sink, check))
+	if dec != nil {
+		if ferr := dec.flush(); ferr != nil && err == nil {
 			err = ferr
 		}
 	}
@@ -583,28 +583,54 @@ func dispositionFilename(disposition string) string {
 	return name
 }
 
-// gzipSink returns a writer that transparently gunzips data written to it
-// before passing it to dst, plus a flush func to call after streaming
-// completes. It sniffs the gzip magic bytes (0x1f 0x8b): if the stream is NOT
-// gzip (e.g. the server ignored Accept-Encoding), bytes pass through
-// undecoded, so a non-compressing server never corrupts the output.
-func gzipSink(dst io.Writer) (io.Writer, func() error) {
-	pr, pw := io.Pipe()
-	done := make(chan error, 1)
-	go func() {
-		decoded, err := gholatransport.DecodeGzip(pr)
-		if err != nil {
-			pr.CloseWithError(err)
-			done <- err
-			return
+// decodeSink removes the content codings of the response before the bytes
+// reach dst. The Content-Encoding header decides, not the body bytes: a
+// .gz file sent with no Content-Encoding is the file itself. Before, the
+// download path decoded any body that started with the gzip magic bytes,
+// so --compressed -o file.tar.gz wrote the unpacked tar.
+type decodeSink struct {
+	dst      io.Writer
+	encoding string
+	pw       *io.PipeWriter
+	done     chan error
+}
+
+// checkThen returns a header check that records the response's
+// Content-Encoding, refuses one that cannot be decoded before the file
+// opens (exit 61), and then runs next.
+func (d *decodeSink) checkThen(next func(gholatransport.StreamMeta) error) func(gholatransport.StreamMeta) error {
+	return func(meta gholatransport.StreamMeta) error {
+		if err := gholatransport.CheckEncoding(meta.ContentEncoding); err != nil {
+			return err
 		}
-		_, cerr := io.Copy(dst, decoded)
-		done <- cerr
-	}()
-	return pw, func() error {
-		pw.Close()
-		return <-done
+		d.encoding = meta.ContentEncoding
+		return next(meta)
 	}
+}
+
+func (d *decodeSink) Write(p []byte) (int, error) {
+	if d.pw == nil {
+		pr, pw := io.Pipe()
+		d.pw, d.done = pw, make(chan error, 1)
+		go func() {
+			decoded, err := gholatransport.DecodeBody(pr, d.encoding)
+			if err == nil {
+				_, err = io.Copy(d.dst, decoded)
+			}
+			pr.CloseWithError(err) // a failed decode or write stops the stream
+			d.done <- err
+		}()
+	}
+	return d.pw.Write(p)
+}
+
+// flush ends the stream and returns the decoder's error.
+func (d *decodeSink) flush() error {
+	if d.pw == nil {
+		return nil
+	}
+	d.pw.Close()
+	return <-d.done
 }
 
 // buildDownloadRequest sets URI, method, body and headers for the streaming

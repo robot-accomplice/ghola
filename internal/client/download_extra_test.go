@@ -253,9 +253,9 @@ func TestBuildDownloadRequest_GhostAndImpersonate(t *testing.T) {
 	if string(req.Header.Method()) != fasthttp.MethodGet {
 		t.Errorf("method = %q, want GET", req.Header.Method())
 	}
-	// Accept-Encoding should be gzip when Compressed=true.
-	if ae := string(req.Header.Peek("Accept-Encoding")); ae != "gzip" {
-		t.Errorf("Accept-Encoding = %q, want gzip", ae)
+	// --compressed asks for every coding that ghola decodes.
+	if ae := string(req.Header.Peek("Accept-Encoding")); ae != gholatransport.AcceptEncoding {
+		t.Errorf("Accept-Encoding = %q, want %q", ae, gholatransport.AcceptEncoding)
 	}
 }
 

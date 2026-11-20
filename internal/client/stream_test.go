@@ -60,15 +60,7 @@ func TestStreamer_BasicGET(t *testing.T) {
 // the body to sink through gholatransport.CopyBody, as the real transports
 // do. Fakes must use it so that download sinks see the headers first.
 func deliverFasthttp(rsp *fasthttp.Response, sink io.Writer) (gholatransport.StreamMeta, error) {
-	meta := gholatransport.StreamMeta{
-		StatusCode:    rsp.Header.StatusCode(),
-		ContentLength: int64(rsp.Header.ContentLength()),
-		AcceptRanges:  bytes.EqualFold(rsp.Header.Peek("Accept-Ranges"), []byte("bytes")),
-		LastModified:  string(rsp.Header.Peek("Last-Modified")),
-		Disposition:   string(rsp.Header.Peek("Content-Disposition")),
-		ContentRange:  string(rsp.Header.Peek("Content-Range")),
-		Location:      string(rsp.Header.Peek("Location")),
-		RetryAfter:    string(rsp.Header.Peek("Retry-After")),
-	}
+	meta := gholatransport.NewStreamMeta(rsp.Header.StatusCode(), int64(rsp.Header.ContentLength()),
+		func(k string) string { return string(rsp.Header.Peek(k)) })
 	return meta, gholatransport.CopyBody(sink, meta, bytes.NewReader(rsp.Body()))
 }
