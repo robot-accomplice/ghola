@@ -84,22 +84,22 @@ func TestParity(t *testing.T) {
 			continue
 		}
 		t.Run(sc.ID, func(t *testing.T) {
-			var curl *Result
+			ref := map[string]*Result{}
 			for _, name := range toolOrder {
 				mk, tl := sc.Runs[name], tools[name]
 				if mk == nil || tl == nil {
 					continue
 				}
-				r := runOne(t, srv, out, sc, tl, mk)
-				if name == "curl" {
-					curl = r
-				}
-				results = append(results, r)
+				ref[name] = runOne(t, srv, out, sc, tl, mk)
+				results = append(results, ref[name])
 			}
-			if mk, tl := sc.Runs["curl"], tools[gholaCurl]; mk != nil && tl != nil && curl != nil {
-				r := runOne(t, srv, out, sc, tl, mk)
-				judgeCurl(t, sc, r, curl)
-				results = append(results, r)
+			for _, name := range compatOrder {
+				c := compatTools[name]
+				if mk, tl, r := sc.Runs[c.of], tools[name], ref[c.of]; mk != nil && tl != nil && r != nil {
+					got := runOne(t, srv, out, sc, tl, mk)
+					judgeCompat(t, sc, got, r)
+					results = append(results, got)
+				}
 			}
 		})
 	}
@@ -125,25 +125,35 @@ func runOne(t *testing.T, srv *server, out string, sc scenario, tl *tool, mk fun
 	switch {
 	case tl.Name == "ghola":
 		judge(t, sc, r)
-	case tl.Name == gholaCurl:
-		// judged against curl by judgeCurl
+	case compatTools[tl.Name].of != "":
+		// judged against its tool by judgeCompat
 	case !r.Pass:
 		t.Logf("%s fails: %s", tl.Name, r.Reason)
 	}
 	return r
 }
 
-// gholaCurl is the pseudo-tool "ghola curl": the ghola binary on the
-// curl arguments of each scenario.
-const gholaCurl = "ghola-curl"
+// compatTools are the pseudo-tools of the compatibility commands: the
+// ghola binary on the arguments of the tool they copy (of), with that
+// tool's config switch first, as the tool itself gets it.
+var compatTools = map[string]struct {
+	of   string
+	base []string
+}{
+	"ghola-curl":  {of: "curl", base: []string{"curl", "-q"}},
+	"ghola-wget":  {of: "wget", base: []string{"wget", "--no-config"}},
+	"ghola-aria2": {of: "aria2", base: []string{"aria2c", "--no-conf"}},
+}
 
-// judgeCurl requires "ghola curl" to pass each scenario that curl passes.
-// Where curl fails, ghola curl may pass: it keeps ghola's fixes, such as
-// If-Range on resume.
-func judgeCurl(t *testing.T, sc scenario, r, curl *Result) {
+var compatOrder = []string{"ghola-curl", "ghola-wget", "ghola-aria2"}
+
+// judgeCompat requires a compatibility command to pass each scenario that
+// its tool passes. Where the tool fails, the command may pass: it keeps
+// ghola's fixes, such as If-Range on resume.
+func judgeCompat(t *testing.T, sc scenario, r, ref *Result) {
 	t.Helper()
-	if curl.Pass && !r.Pass {
-		t.Errorf("ghola curl fails %s, which curl passes: %s (args %q, exit %d, stderr %q)", sc.ID, r.Reason, r.Args, r.Exit, firstLine(r.Stderr))
+	if ref.Pass && !r.Pass {
+		t.Errorf("%s fails %s, which %s passes: %s (args %q, exit %d, stderr %q)", r.Tool, sc.ID, ref.Tool, r.Reason, r.Args, r.Exit, firstLine(r.Stderr))
 	}
 }
 

@@ -21,7 +21,7 @@ func fromCurl(t *testing.T, args ...string) *Curl {
 // groups and values attached to a letter translate as curl reads them.
 func TestFromCurl_Translates(t *testing.T) {
 	c := fromCurl(t, "-sSL", "-H", "X-A: 1", "-ofile.zip", "-C", "-", "https://h/f")
-	want := append(append([]string(nil), curlDefaults...), "-q", "--follow", "-H", "X-A: 1", "-o", "file.zip", "-c", "https://h/f")
+	want := append(append([]string(nil), curlSpec.defaults...), "-q", "--follow", "-H", "X-A: 1", "-o", "file.zip", "-c", "https://h/f")
 	if !reflect.DeepEqual(c.Args, want) {
 		t.Errorf("args =\n%q\nwant\n%q", c.Args, want)
 	}
@@ -60,7 +60,7 @@ func TestFromCurl_Config(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "k.txt")
 	os.WriteFile(path, []byte("url = \"https://h/f\"\nlocation\n"), 0o644) //nolint:errcheck
 	c := fromCurl(t, "-K", path)
-	if got := strings.Join(c.Args[len(curlDefaults):], " "); got != "https://h/f --follow" {
+	if got := strings.Join(c.Args[len(curlSpec.defaults):], " "); got != "--follow https://h/f" {
 		t.Errorf("args = %q", got)
 	}
 }
@@ -84,5 +84,48 @@ func TestFromCurl_ShowNative(t *testing.T) {
 	c := fromCurl(t, "--show-native", "-H", "X-A: 1", "u")
 	if !c.ShowNative || !strings.HasSuffix(ShellQuote(c.Args), "-H 'X-A: 1' u") {
 		t.Errorf("%v %q", c.ShowNative, ShellQuote(c.Args))
+	}
+}
+
+func native(t *testing.T, from func([]string) (*Compat, error), args ...string) string {
+	t.Helper()
+	c, err := from(args)
+	if err != nil {
+		t.Fatalf("%q: %v", args, err)
+	}
+	return ShellQuote(c.Args)
+}
+
+// wget: without -O, ghola download saves under the remote name; with -O
+// it is a fetch, which takes a body. -P and -O join into one -o, --tries
+// counts tries, and -T is wget's DNS, connect and read timeout.
+func TestFromWget(t *testing.T) {
+	cases := map[string][]string{
+		"download -r 0 --no-compressed -o dl/ https://h/f":                          {"-P", "dl", "https://h/f"},
+		"-r 0 --no-compressed -q -d a=1 -o - https://h/e":                           {"-qO-", "--post-data=a=1", "https://h/e"},
+		"-r 0 --no-compressed -r 2 -o dl/f.txt https://h/f":                         {"--tries=3", "-P", "dl", "-O", "f.txt", "https://h/f"},
+		"download -r 0 --no-compressed --timeout-connect 5 --stall-time 5 -u a:b u": {"-T", "5", "--user=a", "--password=b", "u"},
+	}
+	for want, args := range cases {
+		if got := native(t, FromWget, args...); got != want {
+			t.Errorf("%q:\n got %s\nwant %s", args, got, want)
+		}
+	}
+	if _, err := FromWget([]string{"-r", "https://h/"}); err == nil || !strings.Contains(err.Error(), "ghola mirror") {
+		t.Errorf("-r: err = %v", err)
+	}
+}
+
+// aria2c: -x and -s are connections, -d and -o join, --max-tries counts
+// tries, --timeout is a read timeout, and tuning options such as -k are
+// accepted and dropped.
+func TestFromAria2c(t *testing.T) {
+	got := native(t, FromAria2c, "-x16", "-s16", "-k1M", "-d", "dl", "-o", "f.iso", "--max-tries=2", "--timeout=3", "https://h/f.iso")
+	want := "download -r 4 --retry-delay 0 --no-compressed -n 16 -n 16 -r 1 --stall-time 3 -o dl/f.iso https://h/f.iso"
+	if got != want {
+		t.Errorf("\n got %s\nwant %s", got, want)
+	}
+	if _, err := FromAria2c([]string{"--allow-overwrite=false", "u"}); err == nil {
+		t.Error("--allow-overwrite=false was accepted")
 	}
 }

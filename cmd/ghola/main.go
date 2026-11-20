@@ -34,19 +34,19 @@ func execute(ctx context.Context, args []string, do client.Doer, stream client.S
 		return argError(err)
 	}
 	hideErrors := false
-	if c.Job == cli.JobCurl {
-		curl, err := cli.FromCurl(c.Args)
+	if from := compatCommands[c.Job]; from != nil {
+		native, err := from(c.Args)
 		if err != nil {
 			return argError(err)
 		}
-		if curl.ShowNative {
-			fmt.Fprintln(w, "ghola "+cli.ShellQuote(curl.Args))
+		if native.ShowNative {
+			fmt.Fprintln(w, "ghola "+cli.ShellQuote(native.Args))
 			return config.NoError.Int()
 		}
-		if c, err = cli.Parse(curl.Args); err != nil {
+		if c, err = cli.Parse(native.Args); err != nil {
 			return argError(err)
 		}
-		hideErrors = curl.HideErrors
+		hideErrors = native.HideErrors
 	}
 	if code, done := runJob(c, w); done {
 		return code
@@ -60,6 +60,12 @@ func execute(ctx context.Context, args []string, do client.Doer, stream client.S
 		opts.Output.Snoop = true
 	}
 	return transfer(ctx, opts, do, stream, w)
+}
+
+// compatCommands translate the syntax of curl, wget and aria2c into native
+// arguments (v1 spec, section 6).
+var compatCommands = map[string]func([]string) (*cli.Compat, error){
+	cli.JobCurl: cli.FromCurl, cli.JobWget: cli.FromWget, cli.JobAria2c: cli.FromAria2c,
 }
 
 // argError reports an argument error with the short usage around it, as
