@@ -62,7 +62,7 @@ func (t fileTransport) Stream(ctx context.Context, req *fasthttp.Request, sink i
 		return StreamMeta{}, err
 	}
 	defer a.body.Close()
-	meta := NewStreamMeta(a.status, a.length, a.header.Get)
+	meta := NewStreamMeta(a.status, a.length, a.header.Get, nil)
 	return meta, CopyBody(sink, meta, a.body)
 }
 
