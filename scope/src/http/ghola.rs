@@ -54,7 +54,7 @@ impl GholaHttpClient {
     }
 
     /// Check whether the sidecar answers its health check. If not, spawn
-    /// `ghola --serve` and wait for it to become ready. Then read the bridge
+    /// `ghola serve` and wait for it to become ready. Then read the bridge
     /// token. The bridge writes the token before it serves its first request,
     /// so a health answer means the token file is current.
     pub fn ensure_ready(stealth: bool) -> anyhow::Result<Self> {
@@ -142,13 +142,13 @@ fn is_bridge_running() -> bool {
 
 fn spawn_sidecar() -> anyhow::Result<()> {
     Command::new("ghola")
-        .arg("--serve")
+        .arg("serve")
         .stdout(std::process::Stdio::null())
         // Nobody reads the pipe, and it closes when the Child handle drops.
         // A bridge log line to a closed pipe would then kill ghola (SIGPIPE).
         .stderr(std::process::Stdio::null())
         .spawn()
-        .context("failed to spawn ghola --serve (is ghola installed?)")?;
+        .context("failed to spawn ghola serve (is ghola installed?)")?;
     Ok(())
 }
 

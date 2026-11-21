@@ -4,88 +4,171 @@ package output
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/robot-accomplice/ghola/internal/client"
 	"github.com/robot-accomplice/ghola/internal/config"
+	"github.com/robot-accomplice/ghola/internal/transport"
 	"github.com/tidwall/gjson"
 	"github.com/valyala/fasthttp"
 )
 
-// ErrNon2xx is returned when --fail is set and the server responds with a non-2xx status.
-var ErrNon2xx = errors.New("non-2xx http status")
-
 // ProcessResponse writes the HTTP response to the appropriate destination
-// (file or stdout) based on opts. It returns a non-nil error if file I/O fails.
-func ProcessResponse(w io.Writer, opts *config.Options, req *fasthttp.Request, rsp *fasthttp.Response, elapsed time.Duration) error {
-	httpOk := rsp.StatusCode() >= 200 && rsp.StatusCode() < 300
-
-	if opts.Output.Fail && !httpOk {
-		return fmt.Errorf("%w: %d %s", ErrNon2xx, rsp.StatusCode(), fasthttp.StatusMessage(rsp.StatusCode()))
+// (file or stdout) based on opts. The body goes to w exactly as the server
+// sent it, without a buffer (audit findings H2 and M2). -i puts the header
+// block on w in front of the body, as curl -i does. Metadata (-v lines and
+// the timing line) goes to ew. It returns a non-nil error if the body cannot
+// be read or written.
+func ProcessResponse(w, ew io.Writer, opts *config.Options, req *fasthttp.Request, rsp *fasthttp.Response, elapsed time.Duration) error {
+	if opts.Output.TraceTime {
+		ew = timedLines{ew} // --trace-time also times the -v lines
+	}
+	if opts.Output.FailsOn(rsp.StatusCode()) {
+		return fmt.Errorf("%w: %d %s", config.ErrHTTPStatus, rsp.StatusCode(), fasthttp.StatusMessage(rsp.StatusCode()))
 	}
 
-	body := rsp.Body()
-
-	// Decode gzip when --compressed was requested and the server honoured it.
-	if opts.Stealth.Compressed && bytes.EqualFold(rsp.Header.Peek("Content-Encoding"), []byte("gzip")) {
-		if decoded, err := rsp.BodyGunzip(); err == nil {
-			body = decoded
-		}
+	if err := opts.Output.SaveETag(rsp.StatusCode(), string(rsp.Header.Peek("ETag"))); err != nil {
+		return err
+	}
+	body, err := bodyReader(opts, rsp)
+	if err != nil {
+		return err
 	}
 
-	// Apply JSON extraction if --jq is set.
+	// Apply JSON extraction if --jq is set. It needs the whole body.
 	if opts.Output.JQ != "" {
-		result := gjson.GetBytes(body, opts.Output.JQ)
+		b, err := io.ReadAll(body)
+		if err != nil {
+			return fmt.Errorf("read response body: %w", err)
+		}
+		result := gjson.GetBytes(b, opts.Output.JQ)
 		if !result.Exists() {
 			return fmt.Errorf("jq path %q: no match in response", opts.Output.JQ)
 		}
-		body = []byte(result.String())
+		body = strings.NewReader(result.String())
 	}
 
 	if opts.Output.File != "" {
-		if err := os.WriteFile(opts.Output.File, body, 0644); err != nil {
-			return fmt.Errorf("write output file: %w", err)
+		if opts.Output.CondTime && rsp.StatusCode() == fasthttp.StatusNotModified {
+			printTiming(ew, opts, elapsed)
+			return nil // the condition is not met: no file, as curl -z
 		}
-		if opts.Output.Timing {
-			fmt.Fprintf(w, "Total: %s\n", elapsed.Truncate(time.Millisecond))
+		if err := writeFile(opts.Output, opts.Output.File, body); err != nil {
+			return err
 		}
+		printTiming(ew, opts, elapsed)
 		return nil
 	}
 
-	if opts.Output.Silent {
-		return nil
-	}
-
-	if opts.Output.Include {
-		fmt.Fprintf(w, "%s\n\n", bytes.Trim(rsp.Header.Header(), "\n"))
-	}
 	if opts.Output.Verbose {
-		fmt.Fprintf(w, "Ghost Signature: %s\n", req.Header.Peek("X-Ghola-Identity"))
-		if opts.Stealth.Impersonate != "" {
-			fmt.Fprintf(w, "Profile: %s\n", opts.Stealth.Impersonate)
-			fmt.Fprintln(w, "Transport: tls-client (pure Go)")
-		}
-		if opts.Stealth.StealthHeaders {
-			fmt.Fprintln(w, "Stealth Headers: enabled")
-		}
-		if opts.ProxyCfg.Proxy != "" {
-			fmt.Fprintf(w, "Proxy: %s\n", opts.ProxyCfg.Proxy)
-		}
-		if opts.Stealth.CookieJar != "" {
-			fmt.Fprintf(w, "Cookie Jar: %s\n", opts.Stealth.CookieJar)
+		printVerbose(ew, opts, req)
+	}
+	if opts.Output.Include {
+		if _, err := w.Write(rsp.Header.Header()); err != nil {
+			return fmt.Errorf("write output: %w", config.WriteError(err))
 		}
 	}
-	fmt.Fprintf(w, "%s\n", bytes.Trim(body, "\n"))
-
-	if opts.Output.Timing {
-		fmt.Fprintf(w, "Total: %s\n", elapsed.Truncate(time.Millisecond))
+	digest := opts.Output.DigestFor(rsp.StatusCode(), string(rsp.Header.Peek("Content-Digest")), string(rsp.Header.Peek("Content-Encoding")))
+	var sum hash.Hash
+	if digest != nil {
+		sum = digest.NewHash()
+		body = io.TeeReader(body, sum)
+	}
+	n, err := io.Copy(config.MarkWrites(bodyOut(w, opts)), body)
+	opts.Output.Info.AddSize(n)
+	if err != nil {
+		return fmt.Errorf("copy response body: %w", err)
+	}
+	if digest != nil {
+		if err := digest.Check(sum.Sum(nil), "the body"); err != nil {
+			return err
+		}
 	}
 
+	printTiming(ew, opts, elapsed)
 	return nil
+}
+
+// bodyReader returns the response body as a reader: the stream when the
+// transport left one, else the buffer. With --compressed and a gzip
+// Content-Encoding, it decodes the body. With --limit-rate, it throttles it.
+func bodyReader(opts *config.Options, rsp *fasthttp.Response) (io.Reader, error) {
+	body := rsp.BodyStream()
+	if body == nil {
+		body = bytes.NewReader(rsp.Body())
+	}
+	// The limit counts the bytes on the wire, as in curl, so it comes
+	// before the gzip decoder.
+	body, err := client.LimitReader(body, opts)
+	if err != nil {
+		return nil, err
+	}
+	if opts.Output.TooLarge(int64(rsp.Header.ContentLength())) {
+		return nil, config.ErrTooLarge
+	}
+	body = opts.Output.LimitReader(body)
+	if opts.Stealth.Compressed {
+		if body, err = transport.DecodeBody(body, string(rsp.Header.Peek("Content-Encoding"))); err != nil {
+			return nil, err
+		}
+	}
+	return body, nil
+}
+
+// writeFile copies body to the file at name.
+func writeFile(out config.OutputOptions, name string, body io.Reader) error {
+	f, err := config.OpenOutput(out, name, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, false)
+	if err != nil {
+		return fmt.Errorf("write output file: %w", err)
+	}
+	n, err := io.Copy(config.MarkWrites(f), body)
+	out.Info.AddSize(n)
+	if cerr := f.Close(); err == nil {
+		err = config.WriteError(cerr)
+	}
+	if err != nil {
+		return fmt.Errorf("write output file: %w", err)
+	}
+	return nil
+}
+
+// printVerbose writes the -v lines to ew.
+func printVerbose(ew io.Writer, opts *config.Options, req *fasthttp.Request) {
+	if opts.Stealth.Impersonate != "" {
+		fmt.Fprintf(ew, "Profile: %s\n", opts.Stealth.Impersonate)
+		fmt.Fprintln(ew, "Transport: tls-client (pure Go)")
+	}
+	if opts.Stealth.StealthHeaders {
+		fmt.Fprintln(ew, "Stealth Headers: enabled")
+	}
+	if opts.ProxyCfg.Proxy != "" {
+		fmt.Fprintf(ew, "Proxy: %s\n", opts.ProxyCfg.Proxy)
+	}
+	if opts.Stealth.CookieJar != "" {
+		fmt.Fprintf(ew, "Cookie Jar: %s\n", opts.Stealth.CookieJar)
+	}
+}
+
+// timedLines puts the time in front of each -v line. Each line is one
+// write.
+type timedLines struct{ w io.Writer }
+
+func (t timedLines) Write(p []byte) (int, error) {
+	if _, err := io.WriteString(t.w, time.Now().Format("15:04:05.000000 ")); err != nil {
+		return 0, err
+	}
+	return t.w.Write(p)
+}
+
+func printTiming(ew io.Writer, opts *config.Options, elapsed time.Duration) {
+	if opts.Output.Verbose { // -v writes the total time (v0 --timing)
+		fmt.Fprintf(ew, "Total: %s\n", elapsed.Truncate(time.Millisecond))
+	}
 }
 
 // RunSnoop prints a security posture report for the target URL.

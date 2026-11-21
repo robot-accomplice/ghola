@@ -2,7 +2,6 @@ package client
 
 // download_extra_test.go — additional coverage for download.go functions that
 // were below the 80% baseline after the streaming-downloads work:
-//   - resolveTargetViaGet / streamLocation (0%)
 //   - probe HEAD-unsupported fallback and fallback-GET error path (45%)
 //   - resumeOffset numeric / auto / missing-file (50%)
 //   - buildDownloadRequest ghost + stealth branches (59%)
@@ -30,130 +29,6 @@ import (
 	"github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttp/fasthttputil"
 )
-
-// TestResolveTargetViaGet_FollowsRedirect verifies that when the injected
-// Streamer sees a HEAD→302, resolveTarget falls through to resolveTargetViaGet
-// and ultimately the correct file is downloaded.
-func TestResolveTargetViaGet_FollowsRedirect(t *testing.T) {
-	data := bytes.Repeat([]byte("redir-"), 1000)
-
-	// Use a simpler setup: blobServer serves normally for GET.
-	// We intercept HEAD to return a 301 by wrapping blobServer.
-	inner := blobServer(t, data)
-
-	var headCount int
-	redirectStreamer := func(ctx context.Context, opts *config.Options, req *fasthttp.Request, sink io.Writer) (gholatransport.StreamMeta, error) {
-		if string(req.Header.Method()) == fasthttp.MethodHead && headCount == 0 {
-			headCount++
-			// Simulate HEAD returning a redirect status with a Location.
-			// Since resolveTarget checks isRedirectStatus, we return 302.
-			// The Location goes back to the same URL (one-hop loop that resolves).
-			return gholatransport.StreamMeta{StatusCode: fasthttp.StatusFound}, nil
-		}
-		return inner(ctx, opts, req, sink)
-	}
-
-	// Now wire a real httptest server so streamLocation can use the real transport.
-	finalData := bytes.Repeat([]byte("redir-"), 1000)
-	realSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			// Range=bytes=0-0 probe
-			if r.Header.Get("Range") == "bytes=0-0" {
-				w.Header().Set("Accept-Ranges", "bytes")
-				w.WriteHeader(http.StatusPartialContent)
-				w.Write(finalData[:1]) //nolint:errcheck
-				return
-			}
-			// Not a redirect
-			w.Header().Set("Accept-Ranges", "bytes")
-			w.Header().Set("Content-Length", fmt.Sprintf("%d", len(finalData)))
-			w.WriteHeader(200)
-			w.Write(finalData) //nolint:errcheck
-		}
-	}))
-	defer realSrv.Close()
-
-	dir := t.TempDir()
-	out := filepath.Join(dir, "blob.bin")
-	opts := &config.Options{
-		URL:         realSrv.URL + "/file",
-		Method:      "GET",
-		Concurrency: 1,
-		Output:      config.OutputOptions{File: out},
-		Stealth:     config.StealthOptions{Agent: "ghola-test"},
-		Resilience:  config.ResilienceOptions{MaxRedirs: 5},
-	}
-	// Use a streamer that for the HEAD returns 302 so resolveTargetViaGet is called.
-	// The real transport in streamLocation will call realSrv which returns non-redirect.
-	_ = redirectStreamer
-
-	// Simplest path: use a pure-injected streamer that returns 302 for HEAD,
-	// then the real data for everything else. streamLocation will use the real
-	// transport (calling realSrv for bytes=0-0).
-	var hop int
-	testStream := func(ctx context.Context, opts *config.Options, req *fasthttp.Request, sink io.Writer) (gholatransport.StreamMeta, error) {
-		method := string(req.Header.Method())
-		if method == fasthttp.MethodHead && hop == 0 {
-			hop++
-			return gholatransport.StreamMeta{StatusCode: fasthttp.StatusFound}, nil
-		}
-		// All other calls (final GET) — serve the real data.
-		meta := gholatransport.StreamMeta{StatusCode: 200, ContentLength: int64(len(finalData))}
-		return meta, gholatransport.CopyBody(sink, meta, bytes.NewReader(finalData))
-	}
-
-	if err := Download(context.Background(), opts, testStream); err != nil {
-		t.Fatalf("Download error: %v", err)
-	}
-	got, err := os.ReadFile(out)
-	if err != nil {
-		t.Fatalf("read output: %v", err)
-	}
-	if sha256.Sum256(got) != sha256.Sum256(finalData) {
-		t.Fatalf("file checksum mismatch (got %d bytes, want %d)", len(got), len(finalData))
-	}
-}
-
-// TestStreamLocation_RealHTTP verifies streamLocation with the real production
-// transport connecting to a real TCP server. This covers the DefaultStreamer
-// and streamLocation code paths.
-func TestStreamLocation_RealHTTP(t *testing.T) {
-	// Serve a 302 then a 200 on /dest.
-	mux := http.NewServeMux()
-	mux.HandleFunc("/src", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/dest", http.StatusFound)
-	})
-	mux.HandleFunc("/dest", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Accept-Ranges", "bytes")
-		w.WriteHeader(http.StatusPartialContent)
-		w.Write([]byte("x")) //nolint:errcheck
-	})
-	srv := httptest.NewServer(mux)
-	defer srv.Close()
-
-	req := fasthttp.AcquireRequest()
-	defer fasthttp.ReleaseRequest(req)
-	req.SetRequestURI(srv.URL + "/src")
-	req.Header.SetMethod(fasthttp.MethodGet)
-	req.Header.Set("Range", "bytes=0-0")
-
-	opts := &config.Options{
-		Stealth:    config.StealthOptions{Agent: "ghola-test"},
-		Resilience: config.ResilienceOptions{MaxRedirs: 5},
-	}
-	loc, status, err := streamLocation(context.Background(), opts, req)
-	if err != nil {
-		t.Fatalf("streamLocation error: %v", err)
-	}
-	// /src redirects with 302; fasthttp's transport returns the redirect status
-	// directly rather than following to /dest, so the pinned value is 302.
-	if status != http.StatusFound {
-		t.Errorf("got status %d, want %d (http.StatusFound)", status, http.StatusFound)
-	}
-	// loc may be empty: fasthttp collapses the Location header rather than
-	// surfacing it when the redirect is handled at the transport layer.
-	_ = loc
-}
 
 // TestDefaultStreamer_RealHTTP exercises DefaultStreamer against a real server.
 func TestDefaultStreamer_RealHTTP(t *testing.T) {
@@ -355,15 +230,14 @@ func TestResumeOffset_AutoMissing(t *testing.T) {
 	}
 }
 
-// TestBuildDownloadRequest_GhostAndImpersonate covers the ghost-sign and
+// TestBuildDownloadRequest_Impersonate covers the
 // impersonation branches in buildDownloadRequest.
-func TestBuildDownloadRequest_GhostAndImpersonate(t *testing.T) {
+func TestBuildDownloadRequest_Impersonate(t *testing.T) {
 	req := fasthttp.AcquireRequest()
 	defer fasthttp.ReleaseRequest(req)
 
 	opts := &config.Options{
 		Stealth: config.StealthOptions{
-			Ghost:          true,
 			Impersonate:    "chrome",
 			StealthHeaders: true,
 			Compressed:     true,
@@ -374,13 +248,12 @@ func TestBuildDownloadRequest_GhostAndImpersonate(t *testing.T) {
 	if len(req.Body()) == 0 {
 		t.Errorf("expected body to be set")
 	}
-	// Ghost signing adds a custom header; verify the request was built.
 	if string(req.Header.Method()) != fasthttp.MethodGet {
 		t.Errorf("method = %q, want GET", req.Header.Method())
 	}
-	// Accept-Encoding should be gzip when Compressed=true.
-	if ae := string(req.Header.Peek("Accept-Encoding")); ae != "gzip" {
-		t.Errorf("Accept-Encoding = %q, want gzip", ae)
+	// --compressed asks for every coding that ghola decodes.
+	if ae := string(req.Header.Peek("Accept-Encoding")); ae != gholatransport.AcceptEncoding {
+		t.Errorf("Accept-Encoding = %q, want %q", ae, gholatransport.AcceptEncoding)
 	}
 }
 
@@ -422,9 +295,10 @@ func TestDownloadSegmented_SegmentError(t *testing.T) {
 			}
 			return
 		}
-		// Fail one range to trigger the error path. The handler runs
-		// concurrently for each segment request, so the counter must be atomic.
-		if atomic.AddInt64(&reqCount, 1) == 1 {
+		// Fail one segment to trigger the error path. Request 1 is the
+		// bytes=0-0 probe. The handler runs concurrently for each segment
+		// request, so the counter must be atomic.
+		if atomic.AddInt64(&reqCount, 1) == 2 {
 			ctx.SetStatusCode(500)
 			return
 		}
@@ -657,5 +531,23 @@ func TestProgressTap_UnknownTotal(t *testing.T) {
 	}
 	if pw.written != 50 {
 		t.Errorf("tap written = %d, want 50", pw.written)
+	}
+}
+
+// --progress on shows the meter also when stderr is not a terminal;
+// --progress off and -q hide it; the default follows the terminal.
+func TestMeterFor(t *testing.T) {
+	old := meterOut
+	meterOut = func() io.Writer { return nil } // stderr is not a terminal
+	t.Cleanup(func() { meterOut = old })
+	cases := map[string]bool{"on": true, "off": false, "": false}
+	for progress, want := range cases {
+		got := meterFor(&config.Options{Output: config.OutputOptions{Progress: progress}}) != nil
+		if got != want {
+			t.Errorf("progress %q: meter %v, want %v", progress, got, want)
+		}
+	}
+	if meterFor(&config.Options{Output: config.OutputOptions{Progress: "on", Silent: true}}) != nil {
+		t.Error("-q did not hide a forced meter")
 	}
 }

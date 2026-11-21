@@ -4,14 +4,13 @@
 package client
 
 import (
-	"bufio"
-	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,7 +20,34 @@ import (
 	"github.com/robot-accomplice/ghola/internal/profile"
 	gholatransport "github.com/robot-accomplice/ghola/internal/transport"
 	"github.com/valyala/fasthttp"
+	"golang.org/x/term"
 )
+
+// meterOut returns where the progress meter goes: stderr when it is a
+// terminal, else nil. A log file or a pipe gets no meter lines (audit
+// finding M4). Tests replace it.
+var meterOut = func() io.Writer {
+	if term.IsTerminal(int(os.Stderr.Fd())) {
+		return os.Stderr
+	}
+	return nil
+}
+
+// meterFor returns where the meter goes for opts: --progress on writes it
+// to stderr in any case, --progress off and -q hide it, and the default
+// shows it only on a terminal.
+func meterFor(opts *config.Options) io.Writer {
+	switch {
+	case opts.Output.Progress == "off" || opts.Output.Silent:
+		return nil
+	case opts.Output.MeterOut != nil:
+		return opts.Output.MeterOut // a line of the --jobs board
+	case opts.Output.Progress == "on":
+		return os.Stderr
+	default:
+		return meterOut()
+	}
+}
 
 // byteRange is an inclusive [start, end] byte range for a Range request.
 type byteRange struct {
@@ -66,48 +92,45 @@ func Download(ctx context.Context, opts *config.Options, stream Streamer) error 
 	if stream == nil {
 		stream = DefaultStreamer
 	}
-	finalURL, meta, err := probe(ctx, opts, stream)
+
+	// Build shared limiter (aggregate cap across all segments).
+	bps, err := limitRate(opts)
 	if err != nil {
 		return err
 	}
-	if opts.Output.RemoteHeader {
-		if name := dispositionFilename(meta.Disposition); name != "" {
-			opts.Output.File = name
-		}
-	}
+	limiter := limiterFor(bps, opts.Output.RateTotal) // --limit-rate and --rate-max-total
 
-	// Build shared limiter (aggregate cap across all segments).
-	var limiter *rateLimiter
-	if opts.Output.LimitRate != "" {
-		bps, perr := config.ParseRate(opts.Output.LimitRate)
-		if perr != nil {
-			return fmt.Errorf("parse --limit-rate: %w", perr)
-		}
-		limiter = newRateLimiter(bps)
-	}
-
-	// Build shared progress writer (suppressed under --silent).
+	// Build shared progress writer (suppressed under --silent, and when
+	// stderr is not a terminal). The total comes from the response.
 	var progress *progressWriter
-	if !opts.Output.Silent {
-		progress = newProgressWriter(io.Discard, os.Stderr, meta.ContentLength)
+	if out := meterFor(opts); out != nil {
+		progress = newProgressWriter(io.Discard, out, -1)
 	}
 
-	segmented := canSegment(opts, meta)
-	if segmented {
-		err := downloadSegmented(ctx, opts, stream, finalURL, meta.ContentLength, limiter, progress)
-		switch {
-		case errors.Is(err, errRangeIgnored):
-			// The server advertised ranges but sent the full body. No byte
-			// was written; fetch the file as one stream instead.
-			segmented = false
-		case err != nil:
+	stream, err = withCookieJar(withHeaderSave(withInfo(stream, opts), opts), opts)
+	if err != nil {
+		return err
+	}
+	stream = withAuthStream(stream) // outside, so the jar and --save-headers see the 401 too
+	meta, err := fetchToFile(ctx, opts, stream, limiter, progress)
+	if errors.Is(err, errNotModified) {
+		return nil // the condition is not met: the file stays as it is
+	}
+	if err != nil {
+		return err // the state file stays, so a resume can check the version
+	}
+	if d := opts.Output.DigestFor(meta.StatusCode, meta.Header.Get("Content-Digest"), meta.ContentEncoding); d != nil && opts.Output.Range == "" {
+		// The file stays: the digest may be the wrong one, and the bytes
+		// are what the server sent.
+		if err := d.CheckFile(opts.Output.File); err != nil {
 			return err
 		}
 	}
-	if !segmented {
-		if err := downloadSingle(ctx, opts, stream, finalURL, limiter, progress); err != nil {
-			return err
-		}
+	if err := opts.Output.SaveETag(meta.StatusCode, meta.ETag); err != nil {
+		return err
+	}
+	if err := removeState(opts.Output.File); err != nil {
+		return err
 	}
 
 	if progress != nil {
@@ -121,44 +144,137 @@ func Download(ctx context.Context, opts *config.Options, stream Streamer) error 
 	return nil
 }
 
-// probe resolves redirects and returns the final URL and its StreamMeta
-// (Content-Length, Accept-Ranges) via a HEAD request, falling back to a
-// ranged GET when HEAD is unsupported.
-func probe(ctx context.Context, opts *config.Options, stream Streamer) (string, gholatransport.StreamMeta, error) {
-	finalURL, err := resolveTarget(ctx, opts, stream)
+// fetchToFile downloads opts.URL to the file: as parallel ranges when it can,
+// else as one GET. No path sends HEAD (audit finding M5). Only a download
+// that can be split probes the URL first, with a 1-byte ranged GET.
+func fetchToFile(ctx context.Context, opts *config.Options, stream Streamer, limiter *rateLimiter, progress *progressWriter) (gholatransport.StreamMeta, error) {
+	if !mightSegment(opts) {
+		return downloadSingle(ctx, opts, stream, opts.URL, limiter, progress)
+	}
+	url, meta, err := probeRanges(ctx, opts, stream)
 	if err != nil {
-		return "", gholatransport.StreamMeta{}, err
+		return meta, err
 	}
-	req := fasthttp.AcquireRequest()
-	buildDownloadRequest(req, opts, finalURL, fasthttp.MethodHead, "")
-	meta, err := stream(ctx, opts, req, io.Discard)
-	fasthttp.ReleaseRequest(req)
-	if err != nil {
-		return "", gholatransport.StreamMeta{}, err
-	}
-	if meta.ContentLength < 0 || (meta.StatusCode != 200 && meta.StatusCode != 0) {
-		// HEAD unsupported or no length: probe with a 1-byte ranged GET.
-		req2 := fasthttp.AcquireRequest()
-		buildDownloadRequest(req2, opts, finalURL, fasthttp.MethodGet, "")
-		req2.Header.Set("Range", "bytes=0-0")
-		m2, err := stream(ctx, opts, req2, io.Discard)
-		fasthttp.ReleaseRequest(req2)
-		if err != nil {
-			return "", gholatransport.StreamMeta{}, fmt.Errorf("probe: %w", err)
+	if canSegment(opts, meta) {
+		applyRemoteName(opts, meta)
+		if progress != nil {
+			progress.setTotal(meta.ContentLength)
 		}
-		if m2.AcceptRanges {
-			meta = m2
+		err := downloadSegmented(ctx, opts, stream, url, meta.ContentLength, limiter, progress)
+		if !errors.Is(err, errRangeIgnored) {
+			return meta, err
 		}
+		// The server advertised ranges but sent the full body. No byte
+		// was written; fetch the file as one stream instead.
 	}
-	return finalURL, meta, nil
+	return downloadSingle(ctx, opts, stream, url, limiter, progress)
+}
+
+// errNotModified stops a download at a 304 to a --cond-time request,
+// before the file opens.
+var errNotModified = errors.New("not modified")
+
+// errRedirect stops a request at a redirect answer, before a body byte is
+// written. followRedirects then sends the next request.
+var errRedirect = errors.New("redirect")
+
+// errProbed stops a probe after the headers. The probe needs no body.
+var errProbed = errors.New("probe done")
+
+// followRedirects calls get for url, and again for each redirect that get
+// reports with errRedirect, up to --max-redirs hops. It returns the last URL
+// and its meta. A download follows redirects without -L, as it did before
+// the HEAD request was removed.
+func followRedirects(opts *config.Options, url string, get func(string) (gholatransport.StreamMeta, error)) (string, gholatransport.StreamMeta, error) {
+	for hops := 0; ; hops++ {
+		meta, err := get(url)
+		if !errors.Is(err, errRedirect) {
+			return url, meta, err
+		}
+		if hops >= opts.Resilience.MaxRedirs {
+			return url, meta, fmt.Errorf("download: %w", tooManyRedirects(opts))
+		}
+		if err := checkRedirectScheme(url, meta.Location); err != nil {
+			return url, meta, fmt.Errorf("download: %w", err)
+		}
+		next, ok := resolveLocation(url, meta.Location)
+		if !ok {
+			return url, meta, fmt.Errorf("download: bad redirect Location %q", meta.Location)
+		}
+		url = next
+	}
+}
+
+// isRedirect reports a redirect answer with a Location to follow.
+func isRedirect(meta gholatransport.StreamMeta) bool {
+	return isRedirectStatus(meta.StatusCode) && meta.Location != ""
+}
+
+// probeRanges follows redirects with 1-byte ranged GETs and returns the final
+// URL and its meta. A 206 answer proves Range support, and its Content-Range
+// gives the size. The probe stops after the headers, so a server that
+// ignores Range does not send it the whole file.
+func probeRanges(ctx context.Context, opts *config.Options, stream Streamer) (string, gholatransport.StreamMeta, error) {
+	return followRedirects(opts, opts.URL, func(url string) (gholatransport.StreamMeta, error) {
+		req := fasthttp.AcquireRequest()
+		defer fasthttp.ReleaseRequest(req)
+		buildDownloadRequest(req, opts, url, fasthttp.MethodGet, "")
+		req.Header.Set("Range", "bytes=0-0")
+		meta, err := stream(ctx, opts, req, newCheckedSink(io.Discard, func(m gholatransport.StreamMeta) error {
+			if isRedirect(m) {
+				return errRedirect
+			}
+			return errProbed
+		}))
+		if errors.Is(err, errRedirect) {
+			return meta, err
+		}
+		if err != nil && !errors.Is(err, errProbed) {
+			return meta, fmt.Errorf("probe: %w", err)
+		}
+		return rangeMeta(meta), nil
+	})
+}
+
+// rangeMeta returns the probe's meta with the full size and the Range
+// support that a 206 answer shows.
+func rangeMeta(meta gholatransport.StreamMeta) gholatransport.StreamMeta {
+	meta.AcceptRanges = false
+	if meta.StatusCode != fasthttp.StatusPartialContent {
+		return meta
+	}
+	if total := contentRangeTotal(meta.ContentRange); total >= 0 {
+		meta.ContentLength = total
+		meta.AcceptRanges = true
+	}
+	return meta
+}
+
+// applyRemoteName sets the output file from Content-Disposition under -J.
+func applyRemoteName(opts *config.Options, meta gholatransport.StreamMeta) {
+	if !opts.Output.RemoteHeader {
+		return
+	}
+	if name := dispositionFilename(meta.Disposition); name != "" {
+		opts.Output.File = filepath.Join(opts.Output.Dir, name) // -o DIR/ keeps the folder
+	}
 }
 
 // canSegment reports whether a segmented (parallel Range) download applies.
+// Segments are range GETs without a body (config.ShouldStream sends only
+// GET here), so a GET with a body (-X GET -d) goes as one request.
 func canSegment(opts *config.Options, meta gholatransport.StreamMeta) bool {
-	return opts.Concurrency > 1 &&
-		opts.Output.File != "" &&
+	return mightSegment(opts) &&
 		meta.AcceptRanges &&
-		meta.ContentLength >= config.DefaultSegmentMinBytes &&
+		meta.ContentLength >= config.DefaultSegmentMinBytes
+}
+
+// mightSegment reports whether the options allow a segmented download. Only
+// then is the URL probed first.
+func mightSegment(opts *config.Options) bool {
+	return (opts.Concurrency > 1 || len(opts.Sources) > 0) &&
+		opts.Data == "" &&
+		opts.Output.File != "" &&
 		!opts.Stealth.Compressed && // wired in Task 9; field exists by then
 		opts.Output.ContinueAt == "" // wired in Task 5; resume forces single-stream
 }
@@ -167,7 +283,10 @@ func canSegment(opts *config.Options, meta gholatransport.StreamMeta) bool {
 // removes the output file, so that a preallocated file of the full size
 // never looks like a finished download.
 func downloadSegmented(ctx context.Context, opts *config.Options, stream Streamer, url string, size int64, limiter *rateLimiter, progress *progressWriter) (err error) {
-	f, err := os.OpenFile(opts.Output.File, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if opts.Output.TooLarge(size) {
+		return config.ErrTooLarge
+	}
+	f, err := config.OpenOutput(opts.Output, opts.Output.File, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, false)
 	if err != nil {
 		return fmt.Errorf("create output file: %w", err)
 	}
@@ -177,27 +296,42 @@ func downloadSegmented(ctx context.Context, opts *config.Options, stream Streame
 			os.Remove(opts.Output.File)
 		}
 	}()
-	if err := f.Truncate(size); err != nil {
-		return fmt.Errorf("preallocate output file: %w", err)
+	if err := reserve(f, size, opts.Output.FileAllocation); err != nil {
+		return err
 	}
 
-	ranges := splitRanges(size, opts.Concurrency)
+	// With --source, each worker reads from one mirror and takes the next
+	// piece from one queue, so a faster mirror takes more pieces.
+	mirrors := append([]string{url}, opts.Sources...)
+	workers := max(opts.Concurrency, len(mirrors))
+	parts := workers
+	if len(mirrors) > 1 {
+		parts *= piecesPerWorker
+	}
+	ranges := splitRanges(size, parts)
+	queue := make(chan byteRange, len(ranges))
+	for _, r := range ranges {
+		queue <- r
+	}
+	close(queue)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	errs := make(chan error, len(ranges))
+	errs := make(chan error, workers)
 	var wg sync.WaitGroup
-	for _, r := range ranges {
+	for w := range workers {
 		wg.Add(1)
-		go func(r byteRange) {
+		go func(home int) {
 			defer wg.Done()
-			if err := fetchSegment(ctx, opts, stream, url, f, r, limiter, progress); err != nil {
-				cancel()
-				errs <- err
-				return
+			for r := range queue {
+				if err := fetchFromMirrors(ctx, opts, stream, mirrors, home, r, segmentOut{f, limiter, progress}); err != nil {
+					cancel()
+					errs <- err
+					return
+				}
 			}
 			errs <- nil
-		}(r)
+		}(w % len(mirrors))
 	}
 	wg.Wait()
 	close(errs)
@@ -219,8 +353,33 @@ func downloadSegmented(ctx context.Context, opts *config.Options, stream Streame
 	return nil
 }
 
+// piecesPerWorker splits a download with mirrors into more pieces than
+// workers, so a fast mirror can take more of them.
+const piecesPerWorker = 4
+
+// segmentOut is where the pieces of a segmented download go: the file,
+// and the rate limiter and the meter that the pieces share (nil when off).
+type segmentOut struct {
+	f        *os.File
+	limiter  *rateLimiter
+	progress *progressWriter
+}
+
+// fetchFromMirrors fetches one piece from the worker's own mirror, and
+// once from the next mirror when that fails.
+func fetchFromMirrors(ctx context.Context, opts *config.Options, stream Streamer, mirrors []string, home int, r byteRange, out segmentOut) error {
+	err := fetchSegment(ctx, opts, stream, mirrors[home], r, out)
+	if err == nil || len(mirrors) == 1 || ctx.Err() != nil {
+		return err
+	}
+	if err2 := fetchSegment(ctx, opts, stream, mirrors[(home+1)%len(mirrors)], r, out); err2 != nil {
+		return errors.Join(err, err2)
+	}
+	return nil
+}
+
 // fetchSegment fetches one byte range and writes it at its offset in f.
-func fetchSegment(ctx context.Context, opts *config.Options, stream Streamer, url string, f *os.File, r byteRange, limiter *rateLimiter, progress *progressWriter) error {
+func fetchSegment(ctx context.Context, opts *config.Options, stream Streamer, url string, r byteRange, out segmentOut) error {
 	req := fasthttp.AcquireRequest()
 	defer fasthttp.ReleaseRequest(req)
 	buildDownloadRequest(req, opts, url, fasthttp.MethodGet, "")
@@ -230,162 +389,272 @@ func fetchSegment(ctx context.Context, opts *config.Options, stream Streamer, ur
 	// Each segment uses its own offset writer; limiter and progress are shared
 	// across goroutines (both are mutex-guarded). The segment progress tap
 	// forwards bytes to its local sink while counting into the shared progress.
-	var w io.Writer = io.NewOffsetWriter(f, r.start)
-	if limiter != nil {
-		w = newRateLimitedWriter(w, limiter)
+	w := config.MarkWrites(io.NewOffsetWriter(out.f, r.start))
+	if out.limiter != nil {
+		w = newRateLimitedWriter(w, out.limiter)
 	}
-	if progress != nil {
+	if out.progress != nil {
 		// Wrap with a per-segment tap that forwards to this segment's sink and
 		// also counts into the aggregate progress (mutex-guarded in Write).
-		w = newProgressTap(w, progress)
+		w = newProgressTap(w, out.progress)
 	}
 	// Outermost: no byte reaches the file unless the server sent exactly r.
 	_, err := stream(ctx, opts, req, newCheckedSink(w, expectRange(r.start, r.end)))
 	return err
 }
 
-// resolveTarget follows redirects with a HEAD request and returns the final
-// URL. It does not require the server to support HEAD beyond returning a
-// status; the body (if any) is discarded.
-func resolveTarget(ctx context.Context, opts *config.Options, stream Streamer) (string, error) {
-	target := opts.URL
-	req := fasthttp.AcquireRequest()
-	buildDownloadRequest(req, opts, target, fasthttp.MethodHead, "")
-	meta, err := stream(ctx, opts, req, io.Discard)
-	fasthttp.ReleaseRequest(req)
-	if err != nil {
-		return "", err
-	}
-	if !isRedirectStatus(meta.StatusCode) {
-		return target, nil
-	}
-	// HEAD redirect: re-fetch with GET semantics handled in downloadSingle.
-	// Location is not in StreamMeta; fall through to a GET-based resolve.
-	return resolveTargetViaGet(ctx, opts, stream, target)
-}
-
-// resolveTargetViaGet resolves redirects when HEAD returns 3xx by issuing a
-// ranged GET (bytes=0-0) and reading Location from the response.
-func resolveTargetViaGet(ctx context.Context, opts *config.Options, stream Streamer, start string) (string, error) {
-	target := start
-	for hops := 0; hops <= opts.Resilience.MaxRedirs; hops++ {
-		req := fasthttp.AcquireRequest()
-		buildDownloadRequest(req, opts, target, fasthttp.MethodGet, "")
-		req.Header.Set("Range", "bytes=0-0")
-		loc, status, err := streamLocation(ctx, opts, req)
-		fasthttp.ReleaseRequest(req)
-		if err != nil {
-			return "", err
-		}
-		if !isRedirectStatus(status) {
-			return target, nil
-		}
-		resolved, ok := resolveLocation(target, loc)
-		if !ok {
-			return "", fmt.Errorf("download: bad redirect Location %q", loc)
-		}
-		target = resolved
-	}
-	return "", fmt.Errorf("download: too many redirects (>%d)", opts.Resilience.MaxRedirs)
-}
-
-// streamLocation runs a request, discards the body, and returns the Location
-// header + status. It needs the raw header, so it uses a buffered transport
-// call via DefaultDoer-style access is avoided; instead it relies on the
-// Streamer plus a header sink. Since StreamMeta omits Location, we capture it
-// through a one-shot buffered fetch.
-func streamLocation(ctx context.Context, opts *config.Options, req *fasthttp.Request) (string, int, error) {
-	// Use FetchURL's transport directly for redirect resolution: a HEAD/probe
-	// body is tiny, so a buffered fetch is acceptable here.
-	rsp := fasthttp.AcquireResponse()
-	defer fasthttp.ReleaseResponse(rsp)
-	tr, err := gholatransport.New(opts, "")
-	if err != nil {
-		return "", 0, err
-	}
-	if err := tr.Do(ctx, req, rsp); err != nil {
-		return "", 0, err
-	}
-	return string(rsp.Header.Peek("Location")), rsp.Header.StatusCode(), nil
-}
-
-func downloadSingle(ctx context.Context, opts *config.Options, stream Streamer, url string, limiter *rateLimiter, progress *progressWriter) error {
-	flags := os.O_CREATE | os.O_WRONLY
-	var offset int64
-	rangeHeader := ""
-
+// singlePlan returns the open flags, the resume offset and the Range header
+// of a single-stream download.
+func singlePlan(opts *config.Options) (flags int, offset int64, rangeHeader string, err error) {
+	flags = os.O_CREATE | os.O_WRONLY
 	switch {
 	case opts.Output.ContinueAt != "":
-		off, err := resumeOffset(opts)
-		if err != nil {
-			return err
+		if offset, err = resumeOffset(opts); err != nil {
+			return 0, 0, "", err
 		}
-		offset = off
-		flags |= os.O_APPEND
-		rangeHeader = fmt.Sprintf("bytes=%d-", offset)
+		return flags | os.O_APPEND, offset, fmt.Sprintf("bytes=%d-", offset), nil
 	case opts.Output.Range != "":
-		rangeHeader = "bytes=" + strings.TrimPrefix(opts.Output.Range, "bytes=")
-		flags |= os.O_TRUNC
+		return flags | os.O_TRUNC, 0, "bytes=" + strings.TrimPrefix(opts.Output.Range, "bytes="), nil
 	default:
-		flags |= os.O_TRUNC
+		return flags | os.O_TRUNC, 0, "", nil
+	}
+}
+
+func downloadSingle(ctx context.Context, opts *config.Options, stream Streamer, url string, limiter *rateLimiter, progress *progressWriter) (gholatransport.StreamMeta, error) {
+	if opts.Output.FileAllocation != "" && opts.Output.FileAllocation != "none" && !opts.Output.Silent {
+		// A reserved file has its full size before the end, so a resume
+		// after a failure would take it as done.
+		fmt.Fprintln(os.Stderr, "Note: --file-allocation applies to a segmented download (-n or --source); a single stream writes in order")
+	}
+	flags, offset, rangeHeader, err := singlePlan(opts)
+	if err != nil {
+		return gholatransport.StreamMeta{}, err
+	}
+	plan := singleGet{flags: flags, offset: offset, rangeHeader: rangeHeader, limiter: limiter, progress: progress}
+	if offset > 0 {
+		if plan.ifRange, err = loadIfRange(opts.Output.File); err != nil {
+			return gholatransport.StreamMeta{}, err
+		}
 	}
 
-	f, err := os.OpenFile(opts.Output.File, flags, 0644)
-	if err != nil {
-		return fmt.Errorf("open output file: %w", err)
+	_, meta, err := followRedirects(opts, url, func(url string) (gholatransport.StreamMeta, error) {
+		return plan.getWithRetry(ctx, opts, stream, url)
+	})
+	return meta, err
+}
+
+// errRetryStatus refuses a response with a retryable status under
+// --retry-http while retries remain, so its body is not written.
+var errRetryStatus = errors.New("retryable HTTP status")
+
+// getWithRetry sends the GET for url up to 1 + --retry times, as FetchURL
+// does. It retries a request that failed before it had a response, and,
+// with --retry-http, a retryable status. It does not retry after the file
+// opened: a body that broke off is not written twice.
+func (g singleGet) getWithRetry(ctx context.Context, opts *config.Options, stream Streamer, url string) (gholatransport.StreamMeta, error) {
+	start := time.Now() // --retry-max-time counts from the first attempt
+	for attempt := 0; ; attempt++ {
+		allow := attempt < opts.Resilience.Retries && retryTimeLeft(opts, start)
+		// A refused status is retried whatever the time: its body is gone.
+		g.retryStatus = opts.Resilience.RetryHTTP && allow
+		meta, opened, err := g.get(ctx, opts, stream, url)
+		retry := errors.Is(err, errRetryStatus) ||
+			(allow && err != nil && meta.StatusCode == 0 && !opened && retryTimeLeft(opts, start))
+		if !retry {
+			return meta, err
+		}
+		wait := backoffWait(opts, attempt+1)
+		if d, ok := retryAfter(meta.RetryAfter); ok {
+			wait = d
+		}
+		if werr := waitToRetry(ctx, opts, attempt+1, wait); werr != nil {
+			return meta, werr
+		}
 	}
+}
+
+// singleGet is one single-stream download: how to open the file, the Range
+// to ask for, and the shared limiter and meter.
+type singleGet struct {
+	flags       int
+	offset      int64
+	rangeHeader string
+	limiter     *rateLimiter
+	progress    *progressWriter
+	retryStatus bool   // refuse a retryable status: a retry follows
+	ifRange     string // the validator of the partial file's version, from its state file
+}
+
+// get sends one GET for url and writes an accepted body to the file. A
+// redirect answer gives errRedirect and writes nothing. opened reports that
+// the file opened.
+func (g singleGet) get(ctx context.Context, opts *config.Options, stream Streamer, url string) (meta gholatransport.StreamMeta, opened bool, err error) {
+	f := &lazyFile{name: opts.Output.File, flags: g.flags, out: opts.Output, own: g.offset > 0}
 	defer f.Close()
 
 	req := fasthttp.AcquireRequest()
 	defer fasthttp.ReleaseRequest(req)
 	buildDownloadRequest(req, opts, url, fasthttp.MethodGet, opts.Data)
-	if rangeHeader != "" {
-		req.Header.Set("Range", rangeHeader)
+	if g.rangeHeader != "" {
+		req.Header.Set("Range", g.rangeHeader)
+	}
+	if g.ifRange != "" {
+		req.Header.Set("If-Range", g.ifRange)
 	}
 
-	// Sink nesting (innermost first): file → rate limit → progress.
+	// Sink nesting (innermost first): file -> rate limit -> progress.
 	// progress is outermost so it counts bytes after throttling (bytes on disk).
-	// When --compressed, gzipSink wraps the whole chain so that compressed bytes
-	// received from the network are decoded before reaching the file (and rate
+	// When --compressed, decodeSink wraps the whole chain so that the bytes
+	// from the network are decoded before they reach the file (and rate
 	// limiting / progress count plain bytes on disk).
-	var sink io.Writer = f
-	if limiter != nil {
-		sink = newRateLimitedWriter(sink, limiter)
+	sink := opts.Output.LimitSize(f, g.offset)
+	if g.limiter != nil {
+		sink = newRateLimitedWriter(sink, g.limiter)
 	}
-	if progress != nil {
-		progress.dst = sink
-		sink = progress
+	if g.progress != nil {
+		g.progress.dst = sink
+		sink = g.progress
 	}
 
-	var flush func() error
+	check := g.check(opts, f)
+	var dec *decodeSink
 	if opts.Stealth.Compressed {
-		var gw io.Writer
-		gw, flush = gzipSink(sink)
-		sink = gw
+		dec = &decodeSink{dst: sink}
+		sink, check = dec, dec.checkThen(check)
 	}
 
-	// Outermost: a resume appends only a 206 that starts at the offset.
-	// Any other answer leaves the partial file unchanged.
-	check := func(gholatransport.StreamMeta) error { return nil }
-	if offset > 0 {
-		check = expectRange(offset, -1)
-	}
-	meta, err := stream(ctx, opts, req, newCheckedSink(sink, check))
-	if flush != nil {
-		if ferr := flush(); ferr != nil && err == nil {
+	meta, err = stream(ctx, opts, req, newCheckedSink(sink, check))
+	if dec != nil {
+		if ferr := dec.flush(); ferr != nil && err == nil {
 			err = ferr
 		}
 	}
-	if errors.Is(err, errRangeIgnored) {
-		return fmt.Errorf("download: server ignored resume Range (status 200); cannot continue at %d", offset)
+	opened = f.f != nil
+	switch {
+	case errors.Is(err, errRangeIgnored):
+		return meta, opened, fmt.Errorf("download: server ignored resume Range (status 200); cannot continue at %d", g.offset)
+	case errors.Is(err, errRedirect):
+		return meta, opened, err
+	case err != nil:
+		return meta, opened, fmt.Errorf("download: %w", err)
+	case meta.StatusCode < 200 || meta.StatusCode >= 300:
+		return meta, opened, fmt.Errorf("download: %w: %d", config.ErrHTTPStatus, meta.StatusCode)
 	}
-	if err != nil {
-		return fmt.Errorf("download: %w", err)
+	return meta, opened, nil
+}
+
+// check returns the header check of one GET. The file opens only for an
+// accepted response. -f refuses an HTTP error (audit finding H7), and a
+// resume appends only a 206 that starts at the offset. A refused response
+// writes no file and leaves an existing file unchanged.
+func (g singleGet) check(opts *config.Options, f *lazyFile) func(gholatransport.StreamMeta) error {
+	return func(meta gholatransport.StreamMeta) error {
+		if err := g.checkStatus(opts, meta); err != nil {
+			return err
+		}
+		if err := g.checkResume(opts, f, meta); err != nil {
+			return err
+		}
+		if meta.ContentLength >= 0 && opts.Output.TooLarge(g.offset+meta.ContentLength) {
+			return config.ErrTooLarge // before the file opens, as curl checks it
+		}
+		applyRemoteName(opts, meta)
+		f.name = opts.Output.File
+		if g.progress != nil {
+			g.progress.setTotal(meterTotal(opts, meta))
+		}
+		if err := f.open(); err != nil {
+			return err
+		}
+		if g.rangeHeader != "" && g.offset == 0 {
+			return nil // a --range part is not a whole file: there is nothing to resume
+		}
+		if opts.Output.NoSession {
+			return nil // --no-session keeps no state file
+		}
+		return saveState(f.name, opts.URL, meta)
 	}
-	if meta.StatusCode < 200 || meta.StatusCode >= 300 {
-		return fmt.Errorf("download: non-2xx status %d", meta.StatusCode)
+}
+
+// checkStatus stops a response that writes no file: a redirect, a status
+// that a retry follows, a 304 to a condition, and a status that --fail
+// refuses.
+func (g singleGet) checkStatus(opts *config.Options, meta gholatransport.StreamMeta) error {
+	switch {
+	case isRedirect(meta):
+		return errRedirect
+	case g.retryStatus && isRetryableHTTPStatus(opts, meta.StatusCode):
+		return fmt.Errorf("%w %d", errRetryStatus, meta.StatusCode)
+	case opts.Output.CondTime && meta.StatusCode == fasthttp.StatusNotModified:
+		return errNotModified
+	case answersChallenge(opts, meta.StatusCode):
+		return errAuthChallenge
+	case opts.Output.FailsOn(meta.StatusCode):
+		return fmt.Errorf("%w: %d", config.ErrHTTPStatus, meta.StatusCode)
 	}
 	return nil
+}
+
+// checkResume accepts a resume answer. A 206 must start at the offset. A 200
+// to a request with If-Range means that the remote file changed: the server
+// sends the whole new version, and the file starts again from byte 0.
+func (g singleGet) checkResume(opts *config.Options, f *lazyFile, meta gholatransport.StreamMeta) error {
+	if g.offset == 0 {
+		return nil
+	}
+	if g.ifRange != "" && meta.StatusCode == fasthttp.StatusOK {
+		f.flags = f.flags&^os.O_APPEND | os.O_TRUNC
+		if !opts.Output.Silent {
+			fmt.Fprintf(os.Stderr, "Note: %s changed on the server since the partial download; starting again from byte 0\n", opts.Output.File)
+		}
+		return nil
+	}
+	return expectRange(g.offset, -1)(meta)
+}
+
+// meterTotal returns the meter's total for the accepted response, or -1 when
+// it is not known. The meter counts the bytes written to the file. With
+// --compressed they are decoded bytes, and Content-Length counts the
+// compressed bytes, so the decoded total is not known.
+func meterTotal(opts *config.Options, meta gholatransport.StreamMeta) int64 {
+	if opts.Stealth.Compressed {
+		return -1
+	}
+	return meta.ContentLength
+}
+
+// lazyFile is the output file of a single-stream download. It opens only
+// when the response is accepted, so a refused response creates no file and
+// does not truncate an existing one.
+type lazyFile struct {
+	name  string
+	flags int
+	out   config.OutputOptions
+	own   bool // a resume: the file is ghola's own partial file
+	f     *os.File
+}
+
+func (l *lazyFile) open() error {
+	f, err := config.OpenOutput(l.out, l.name, l.flags, l.own)
+	if err != nil {
+		return fmt.Errorf("open output file: %w", err)
+	}
+	l.f = f
+	return nil
+}
+
+// Write is called only after open: checkedSink refuses a write before the
+// check passes.
+func (l *lazyFile) Write(p []byte) (int, error) {
+	n, err := l.f.Write(p)
+	return n, config.WriteError(err)
+}
+
+func (l *lazyFile) Close() error {
+	if l.f == nil {
+		return nil
+	}
+	return l.f.Close()
 }
 
 // resumeOffset computes the resume byte offset: an explicit value, or the
@@ -426,42 +695,58 @@ func dispositionFilename(disposition string) string {
 	return name
 }
 
-// gzipSink returns a writer that transparently gunzips data written to it
-// before passing it to dst, plus a flush func to call after streaming
-// completes. It sniffs the gzip magic bytes (0x1f 0x8b): if the stream is NOT
-// gzip (e.g. the server ignored Accept-Encoding), bytes pass through
-// undecoded, so a non-compressing server never corrupts the output.
-func gzipSink(dst io.Writer) (io.Writer, func() error) {
-	pr, pw := io.Pipe()
-	done := make(chan error, 1)
-	go func() {
-		br := bufio.NewReader(pr)
-		magic, _ := br.Peek(2)
-		if len(magic) == 2 && magic[0] == 0x1f && magic[1] == 0x8b {
-			zr, err := gzip.NewReader(br)
-			if err != nil {
-				pw.CloseWithError(err)
-				done <- err
-				return
-			}
-			_, cerr := io.Copy(dst, zr)
-			zr.Close()
-			done <- cerr
-			return
+// decodeSink removes the content codings of the response before the bytes
+// reach dst. The Content-Encoding header decides, not the body bytes: a
+// .gz file sent with no Content-Encoding is the file itself. Before, the
+// download path decoded any body that started with the gzip magic bytes,
+// so --compressed -o file.tar.gz wrote the unpacked tar.
+type decodeSink struct {
+	dst      io.Writer
+	encoding string
+	pw       *io.PipeWriter
+	done     chan error
+}
+
+// checkThen returns a header check that records the response's
+// Content-Encoding, refuses one that cannot be decoded before the file
+// opens (exit 61), and then runs next.
+func (d *decodeSink) checkThen(next func(gholatransport.StreamMeta) error) func(gholatransport.StreamMeta) error {
+	return func(meta gholatransport.StreamMeta) error {
+		if err := gholatransport.CheckEncoding(meta.ContentEncoding); err != nil {
+			return err
 		}
-		// Not gzip: pass through verbatim.
-		_, cerr := io.Copy(dst, br)
-		done <- cerr
-	}()
-	return pw, func() error {
-		pw.Close()
-		return <-done
+		d.encoding = meta.ContentEncoding
+		return next(meta)
 	}
 }
 
-// buildDownloadRequest sets URI, method, body, headers, and the active
-// browser profile / ghost / auth identity, mirroring prepareRequest but for
-// the streaming path. It reuses the profile builder for header realism.
+func (d *decodeSink) Write(p []byte) (int, error) {
+	if d.pw == nil {
+		pr, pw := io.Pipe()
+		d.pw, d.done = pw, make(chan error, 1)
+		go func() {
+			decoded, err := gholatransport.DecodeBody(pr, d.encoding)
+			if err == nil {
+				_, err = io.Copy(d.dst, decoded)
+			}
+			pr.CloseWithError(err) // a failed decode or write stops the stream
+			d.done <- err
+		}()
+	}
+	return d.pw.Write(p)
+}
+
+// flush ends the stream and returns the decoder's error.
+func (d *decodeSink) flush() error {
+	if d.pw == nil {
+		return nil
+	}
+	d.pw.Close()
+	return <-d.done
+}
+
+// buildDownloadRequest sets URI, method, body and headers for the streaming
+// path. The headers come from setHeaders, as on the stdout path.
 func buildDownloadRequest(req *fasthttp.Request, opts *config.Options, url, method, data string) {
 	req.SetRequestURI(url)
 	req.Header.SetMethod(method)
@@ -475,32 +760,5 @@ func buildDownloadRequest(req *fasthttp.Request, opts *config.Options, url, meth
 			active = resolved
 		}
 	}
-	overrides := parseHeaderOverrides(opts.Headers)
-	for _, generated := range profile.BuildHeaders(active, profile.HeaderOptions{
-		Method:         method,
-		TargetURL:      url,
-		RefererMode:    opts.Stealth.Referer,
-		ExplicitUA:     resolveUserAgent(opts, active),
-		ExplicitLang:   opts.Stealth.AcceptLanguage,
-		StealthHeaders: opts.Stealth.StealthHeaders,
-	}) {
-		if _, ok := overrides[strings.ToLower(generated.Key)]; ok {
-			continue
-		}
-		req.Header.Set(generated.Key, generated.Value)
-	}
-	for _, h := range opts.Headers {
-		if k, v, ok := parseHeader(h); ok {
-			req.Header.Set(k, v)
-		}
-	}
-	if _, ok := overrides["user-agent"]; !ok {
-		req.Header.Set("User-Agent", resolveUserAgent(opts, active))
-	}
-	if opts.Stealth.Ghost {
-		applyGhostSign(req, url)
-	}
-	if opts.Stealth.Compressed {
-		req.Header.Set("Accept-Encoding", "gzip")
-	}
+	setHeaders(req, opts, active, parseHeaderOverrides(opts.Headers), url, method)
 }

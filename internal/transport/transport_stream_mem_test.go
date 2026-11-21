@@ -31,7 +31,7 @@ func (z *zeroReader) Read(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// TestSimpleTransport_StreamBoundedMemory asserts the default (fasthttp)
+// TestSimpleTransport_StreamBoundedMemory asserts the default (net/http)
 // transport's Stream writes the body to the sink WITHOUT first buffering the
 // whole thing in RAM. A large fixed-Content-Length response streamed to
 // io.Discard must allocate far less than the body size. This fails when the

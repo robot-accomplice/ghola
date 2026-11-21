@@ -98,3 +98,17 @@ func parseContentRange(v string) (start, end int64, ok bool) {
 	}
 	return start, end, true
 }
+
+// contentRangeTotal returns TOTAL from "bytes START-END/TOTAL", or -1 when it
+// is "*" or the value is not valid.
+func contentRangeTotal(v string) int64 {
+	if _, _, ok := parseContentRange(v); !ok {
+		return -1
+	}
+	_, total, _ := strings.Cut(v, "/")
+	n, err := strconv.ParseInt(strings.TrimSpace(total), 10, 64)
+	if err != nil || n < 0 {
+		return -1
+	}
+	return n
+}

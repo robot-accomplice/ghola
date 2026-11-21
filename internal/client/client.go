@@ -1,22 +1,19 @@
-// Package client provides the HTTP request engine for ghola, including
-// retry with exponential backoff, temporal drift jitter, ghost identity
-// signing, and concurrent request execution with clean shutdown.
+// Package client provides the request engine for ghola: retries with
+// exponential backoff, redirects, the cookie jar, and downloads to a file.
 package client
 
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/hex"
+	"errors"
 	"fmt"
 	"math/big"
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/robot-accomplice/ghola/internal/config"
@@ -77,16 +74,7 @@ func newFetchState(opts *config.Options, do Doer) (*fetchState, error) {
 	}
 	s.jar = jar
 
-	proxySelector, err := gholaproxy.NewSelector(opts.ProxyCfg.Proxy, opts.ProxyCfg.Auth, opts.ProxyCfg.File, opts.ProxyCfg.Strategy)
-	if err != nil {
-		return nil, err
-	}
-	if opts.ProxyCfg.HealthCheck {
-		if err := proxySelector.HealthCheck(); err != nil {
-			return nil, err
-		}
-	}
-	selectedProxy, err := proxySelector.Select()
+	selectedProxy, err := selectProxy(opts)
 	if err != nil {
 		return nil, err
 	}
@@ -106,55 +94,17 @@ func newFetchState(opts *config.Options, do Doer) (*fetchState, error) {
 			return transport.Do(ctx, req, resp)
 		}
 	}
+	s.do = withAuthAnswer(s.do) // --auth digest and any
 
 	return s, nil
 }
 
-// prepareRequest sets URI, body, headers, auth, cookies, and ghost signature
+// prepareRequest sets URI, body, headers, auth and cookies
 // on the request object for a single attempt.
 func (s *fetchState) prepareRequest(req *fasthttp.Request, opts *config.Options, effectiveURL, effectiveMethod, effectiveData string) {
 	req.SetRequestURI(effectiveURL)
 	req.SetBodyString(effectiveData)
-
-	for _, generated := range profile.BuildHeaders(s.activeProfile, profile.HeaderOptions{
-		Method:         effectiveMethod,
-		TargetURL:      effectiveURL,
-		RefererMode:    opts.Stealth.Referer,
-		ExplicitUA:     resolveUserAgent(opts, s.activeProfile),
-		ExplicitLang:   opts.Stealth.AcceptLanguage,
-		StealthHeaders: opts.Stealth.StealthHeaders,
-	}) {
-		if _, overridden := s.headerOverrides[strings.ToLower(generated.Key)]; overridden {
-			continue
-		}
-		req.Header.Set(generated.Key, generated.Value)
-	}
-
-	for _, h := range opts.Headers {
-		key, val, ok := parseHeader(h)
-		if !ok {
-			continue
-		}
-		req.Header.Set(key, val)
-	}
-
-	if _, overridden := s.headerOverrides["user-agent"]; !overridden {
-		req.Header.Set("User-Agent", resolveUserAgent(opts, s.activeProfile))
-	}
-
-	if opts.Stealth.Ghost {
-		applyGhostSign(req, effectiveURL)
-	}
-
-	if opts.Stealth.Compressed {
-		req.Header.Set("Accept-Encoding", "gzip")
-	}
-
-	if opts.User != "" {
-		auth := base64.StdEncoding.EncodeToString([]byte(opts.User))
-		req.Header.Set("Authorization", "Basic "+auth)
-	}
-
+	setHeaders(req, opts, s.activeProfile, s.headerOverrides, effectiveURL, effectiveMethod)
 	req.Header.SetMethod(effectiveMethod)
 
 	if _, overridden := s.headerOverrides["cookie"]; !overridden {
@@ -196,19 +146,39 @@ func handleRedirect(status int, method, data, location, baseURL string) (newURL,
 	return resolved, newMethod, newData, true
 }
 
+// ErrTooManyRedirects is returned when -L reaches --max-redirs.
+var ErrTooManyRedirects = errors.New("too many redirects")
+
+func tooManyRedirects(opts *config.Options) error {
+	return fmt.Errorf("%w: maximum (%d) redirects followed", ErrTooManyRedirects, opts.Resilience.MaxRedirs)
+}
+
+// WithTimeout applies --timeout to ctx. The deadline covers the whole
+// transfer, the body included, as curl's --max-time does. The caller keeps
+// ctx until it has read the body, because FetchURL returns the body as a
+// stream that is read after FetchURL returns.
+func WithTimeout(ctx context.Context, opts *config.Options) (context.Context, context.CancelFunc) {
+	if opts.Resilience.Timeout <= 0 {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(ctx, time.Duration(opts.Resilience.Timeout)*time.Millisecond)
+}
+
 // FetchURL sends an HTTP request according to opts, with retry and jitter.
+// It does not apply --timeout: use WithTimeout on ctx. The response body
+// can be a stream that needs ctx to stay alive until it is read.
 // The caller must release the returned Request and Response via
 // fasthttp.ReleaseRequest / ReleaseResponse.
 func FetchURL(ctx context.Context, opts *config.Options, do Doer) (*fasthttp.Request, *fasthttp.Response, error) {
+	// A negative count would run no attempt and return no response and no
+	// error (audit finding H5). The bridge reaches this point without the
+	// CLI's flag check.
+	if opts.Resilience.Retries < 0 {
+		return nil, nil, fmt.Errorf("retries cannot be negative: %d", opts.Resilience.Retries)
+	}
 	state, err := newFetchState(opts, do)
 	if err != nil {
 		return nil, nil, err
-	}
-
-	if opts.Resilience.Timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, time.Duration(opts.Resilience.Timeout)*time.Millisecond)
-		defer cancel()
 	}
 
 	req := fasthttp.AcquireRequest()
@@ -218,6 +188,7 @@ func FetchURL(ctx context.Context, opts *config.Options, do Doer) (*fasthttp.Req
 	effectiveMethod := opts.Method
 	effectiveData := opts.Data
 	redirectsFollowed := 0
+	start := time.Now() // --retry-max-time counts from the first attempt
 
 redirectLoop:
 	for {
@@ -232,15 +203,12 @@ redirectLoop:
 			}
 
 			if attempt > 0 {
-				wait := time.Duration(opts.Resilience.Backoff<<uint(attempt-1)) * time.Millisecond
+				wait := backoffWait(opts, attempt)
 				if haveNextWait {
 					wait = nextWait
 					haveNextWait = false
 				}
-				if !opts.Output.Silent {
-					fmt.Fprintf(os.Stderr, "Retry %d/%d in %v...\n", attempt, opts.Resilience.Retries, wait)
-				}
-				if err := sleepCtx(ctx, wait); err != nil {
+				if err := waitToRetry(ctx, opts, attempt, wait); err != nil {
 					lastErr = err
 					break
 				}
@@ -260,17 +228,30 @@ redirectLoop:
 
 			lastErr = state.do(ctx, &state.effectiveOpts, req, rsp)
 			if lastErr != nil {
+				if !retryTimeLeft(opts, start) {
+					break
+				}
 				continue
 			}
 			state.jar.AbsorbResponse(effectiveURL, rsp)
+			if out := opts.Output.HeaderOut; out != nil {
+				if _, err := out.Write(rsp.Header.Header()); err != nil {
+					lastErr = fmt.Errorf("--save-headers: %w", config.WriteError(err))
+					break
+				}
+			}
 			if err := state.jar.Save(); err != nil {
 				lastErr = err
 				break
 			}
 
 			status := rsp.StatusCode()
+			if info := opts.Output.Info; info != nil {
+				info.EffectiveURL, info.Status, info.Redirects = effectiveURL, status, redirectsFollowed
+				info.ContentType = string(rsp.Header.ContentType())
+			}
 
-			if opts.Resilience.RetryHTTP && attempt < opts.Resilience.Retries && isRetryableHTTPStatus(status) {
+			if opts.Resilience.RetryHTTP && attempt < opts.Resilience.Retries && isRetryableHTTPStatus(opts, status) && retryTimeLeft(opts, start) {
 				if d, ok := parseRetryAfter(rsp); ok {
 					nextWait = d
 					haveNextWait = true
@@ -278,9 +259,22 @@ redirectLoop:
 				continue
 			}
 
-			if opts.Resilience.Location && isRedirectStatus(status) && redirectsFollowed < opts.Resilience.MaxRedirs {
+			if opts.Resilience.Location && isRedirectStatus(status) {
 				loc := string(rsp.Header.Peek("Location"))
+				if err := checkRedirectScheme(effectiveURL, loc); err != nil {
+					fasthttp.ReleaseRequest(req)
+					fasthttp.ReleaseResponse(rsp)
+					return nil, nil, err
+				}
 				if newURL, newMethod, newData, ok := handleRedirect(status, effectiveMethod, effectiveData, loc, effectiveURL); ok {
+					// One more hop than --max-redirs is an error, as in curl
+					// (audit finding H6). A 3xx without a usable Location is
+					// the answer.
+					if redirectsFollowed >= opts.Resilience.MaxRedirs {
+						fasthttp.ReleaseRequest(req)
+						fasthttp.ReleaseResponse(rsp)
+						return nil, nil, tooManyRedirects(opts)
+					}
 					redirectsFollowed++
 					effectiveURL = newURL
 					effectiveMethod = newMethod
@@ -298,6 +292,29 @@ redirectLoop:
 	}
 }
 
+// Release gives the request and the answer of FetchURL back.
+func Release(req *fasthttp.Request, rsp *fasthttp.Response) {
+	fasthttp.ReleaseRequest(req)
+	fasthttp.ReleaseResponse(rsp)
+}
+
+// selectProxy returns the proxy from --proxy or --proxy-file, or "" when
+// neither is set. Then the transport takes the proxy from the environment.
+// FetchURL and the download path both call it, so a proxy cannot reach one
+// path and miss the other (audit finding M8).
+func selectProxy(opts *config.Options) (string, error) {
+	selector, err := gholaproxy.NewSelector(opts.ProxyCfg.Proxy, opts.ProxyCfg.Auth, opts.ProxyCfg.File, opts.ProxyCfg.Strategy)
+	if err != nil {
+		return "", err
+	}
+	if opts.ProxyCfg.HealthCheck {
+		if err := selector.HealthCheck(); err != nil {
+			return "", err
+		}
+	}
+	return selector.Select()
+}
+
 func resolveUserAgent(opts *config.Options, activeProfile profile.BrowserProfile) string {
 	if opts.Stealth.AgentExplicit {
 		return opts.Stealth.Agent
@@ -311,25 +328,12 @@ func resolveUserAgent(opts *config.Options, activeProfile profile.BrowserProfile
 func parseHeaderOverrides(headers []string) map[string]string {
 	overrides := make(map[string]string, len(headers))
 	for _, raw := range headers {
-		key, val, ok := parseHeader(raw)
+		key, val, ok := config.ParseHeader(raw)
 		if ok {
 			overrides[strings.ToLower(key)] = val
 		}
 	}
 	return overrides
-}
-
-func parseHeader(raw string) (string, string, bool) {
-	i := strings.IndexByte(raw, ':')
-	if i < 0 {
-		return "", "", false
-	}
-	key := strings.TrimSpace(raw[:i])
-	val := strings.TrimSpace(raw[i+1:])
-	if key == "" {
-		return "", "", false
-	}
-	return key, val, true
 }
 
 func isRedirectStatus(status int) bool {
@@ -343,6 +347,30 @@ func isRedirectStatus(status int) bool {
 	default:
 		return false
 	}
+}
+
+// ErrRedirectScheme marks a redirect to a protocol that ghola does not
+// follow. A server must not send ghola to file:// (a local file) or to any
+// other protocol: curl follows only http, https, ftp and ftps, and stops
+// with "Protocol not supported" (exit 1).
+var ErrRedirectScheme = errors.New("redirect to a protocol that ghola does not follow")
+
+// redirectSchemes are the protocols that a redirect may go to: curl's
+// default list.
+var redirectSchemes = map[string]bool{"http": true, "https": true, "ftp": true, "ftps": true}
+
+// checkRedirectScheme refuses a redirect to a protocol outside
+// redirectSchemes. A Location that does not resolve is the caller's case.
+func checkRedirectScheme(baseURL, location string) error {
+	next, ok := resolveLocation(baseURL, location)
+	if !ok {
+		return nil
+	}
+	u, err := url.Parse(next)
+	if err != nil || redirectSchemes[strings.ToLower(u.Scheme)] {
+		return nil
+	}
+	return fmt.Errorf("%w: %s (Location %q)", ErrRedirectScheme, u.Scheme, location)
 }
 
 func resolveLocation(baseURL, location string) (string, bool) {
@@ -361,7 +389,34 @@ func resolveLocation(baseURL, location string) (string, bool) {
 	return resolved.String(), true
 }
 
-func isRetryableHTTPStatus(status int) bool {
+// backoffWait returns the wait before retry number attempt (1 for the first
+// retry): --backoff milliseconds, doubled for each retry after the first.
+func backoffWait(opts *config.Options, attempt int) time.Duration {
+	return time.Duration(opts.Resilience.Backoff<<uint(attempt-1)) * time.Millisecond
+}
+
+// retryTimeLeft reports whether --retry-max-time still allows a retry. As
+// in curl, no retry starts after the limit, counted from the first attempt.
+func retryTimeLeft(opts *config.Options, start time.Time) bool {
+	limit := opts.Resilience.RetryMaxTime
+	return limit <= 0 || time.Since(start) < limit
+}
+
+// waitToRetry announces retry number attempt on stderr and waits.
+func waitToRetry(ctx context.Context, opts *config.Options, attempt int, wait time.Duration) error {
+	opts.Output.Events.Retry(opts.URL, attempt, opts.Resilience.Retries, wait)
+	if !opts.Output.Silent {
+		fmt.Fprintf(os.Stderr, "Retry %d/%d in %v...\n", attempt, opts.Resilience.Retries, wait)
+	}
+	return sleepCtx(ctx, wait)
+}
+
+// isRetryableHTTPStatus reports a status that a retry may cure: the list of
+// --retry-status, else the v0 list.
+func isRetryableHTTPStatus(opts *config.Options, status int) bool {
+	if list := opts.Resilience.RetryStatus; len(list) > 0 {
+		return slices.Contains(list, status)
+	}
 	switch status {
 	case 429, 500, 502, 503, 504:
 		return true
@@ -371,7 +426,11 @@ func isRetryableHTTPStatus(status int) bool {
 }
 
 func parseRetryAfter(rsp *fasthttp.Response) (time.Duration, bool) {
-	raw := string(rsp.Header.Peek("Retry-After"))
+	return retryAfter(string(rsp.Header.Peek("Retry-After")))
+}
+
+// retryAfter parses a Retry-After value: seconds, or an HTTP date.
+func retryAfter(raw string) (time.Duration, bool) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return 0, false
@@ -409,96 +468,4 @@ func applyDrift(ctx context.Context, driftMs int) error {
 		return fmt.Errorf("drift jitter: %w", err)
 	}
 	return sleepCtx(ctx, time.Duration(n.Int64())*time.Millisecond)
-}
-
-func applyGhostSign(req *fasthttp.Request, rawURL string) {
-	id := fmt.Sprintf("%d-%s", time.Now().Unix(), rawURL)
-	hash := sha256.Sum256([]byte(id))
-	req.Header.Set("X-Ghola-Identity", hex.EncodeToString(hash[:]))
-}
-
-// RunConcurrent spawns opts.Concurrency goroutines, each calling FetchURL.
-// The first successful response is passed to out; the remaining goroutines
-// are cancelled immediately via the or-done pattern.
-func orDone[T any](done <-chan struct{}, ch <-chan T) <-chan T {
-	out := make(chan T)
-	go func() {
-		defer close(out)
-		for {
-			select {
-			case <-done:
-				return
-			case v, ok := <-ch:
-				if !ok {
-					return
-				}
-				select {
-				case out <- v:
-				case <-done:
-					return
-				}
-			}
-		}
-	}()
-	return out
-}
-
-func RunConcurrent(ctx context.Context, opts *config.Options, do Doer, out func(*fasthttp.Request, *fasthttp.Response)) {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	type result struct {
-		req *fasthttp.Request
-		rsp *fasthttp.Response
-		err error
-	}
-
-	results := make(chan result, opts.Concurrency)
-	var wg sync.WaitGroup
-	for i := 0; i < opts.Concurrency; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			req, rsp, err := FetchURL(ctx, opts, do)
-			if err != nil {
-				return
-			}
-			select {
-			case results <- result{req: req, rsp: rsp, err: nil}:
-			case <-ctx.Done():
-				fasthttp.ReleaseRequest(req)
-				fasthttp.ReleaseResponse(rsp)
-			}
-		}()
-	}
-
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	winnerProcessed := false
-	for r := range orDone(ctx.Done(), results) {
-		if r.err != nil {
-			continue
-		}
-		if !winnerProcessed {
-			winnerProcessed = true
-			out(r.req, r.rsp)
-			cancel()
-			continue
-		}
-		fasthttp.ReleaseRequest(r.req)
-		fasthttp.ReleaseResponse(r.rsp)
-	}
-
-	if winnerProcessed {
-		for r := range results {
-			if r.err != nil {
-				continue
-			}
-			fasthttp.ReleaseRequest(r.req)
-			fasthttp.ReleaseResponse(r.rsp)
-		}
-	}
 }

@@ -1,0 +1,63 @@
+v0,v1,note
+--accept-language,--impersonate-accept-language,
+-b / --backoff MS,--retry-delay DURATION,The value has a unit: 1s and not 1000.
+--buffer-size N,--max-header-size SIZE,It only raised the header limit after fasthttp went (plan section 9).
+-c / --chain NAME,--chain NAME,No short letter: -c is --continue.
+--cacert,--tls-ca,
+--cert,--tls-cert,
+--compressed,(default),Use --no-compressed to turn it off.
+--connect-timeout SECONDS,--timeout-connect DURATION,A bare number is still seconds.
+-n / --connections N,-n / --connections N,Only for ghola download.
+-C / --continue-at OFFSET,-c / --continue or --continue-at OFFSET,-C - becomes -c.
+--cookie,--cookie,
+--cookie-jar FILE,--cookie-jar FILE,ghola reads the v0 JSON jar and writes it back as JSON. A new jar is Netscape.
+-d / --data,-d / --data,v1 sends a file from @file without changes. v0 did the same.
+--data-binary,-d / --data,
+--data-urlencode,--field,
+-D / --drift MS,--wait-jitter DURATION,
+-f / --fail,(default),Use --no-fail to turn it off. The rule is now status 400 and above.
+-F / --form,--form,No short letter (1.4% of curl files).
+-G / --ghost,(removed),It sent an X-Ghola-Identity header that marked each request as coming from ghola.
+--har,--har,
+-H / --header,-H / --header,
+-h / --help,-h / --help,
+--http3,--http 3,
+--impersonate,--impersonate,
+-i / --include,--show-headers,curl 8.10 uses the same name.
+-k / --insecure,--no-tls-verify,
+--jq PATH,--output-select PATH,The syntax is gjson and not jq. See open question 2.
+--key,--tls-key,
+--limit-rate,--rate-max,
+-L / --location,(default),Use --no-follow to turn it off.
+--location-trusted,--follow-trusted,
+--max-redirs,--follow-max,The default is now 20.
+--max-time SECONDS,--timeout DURATION,
+-o / --output,-o / --output,
+--profile-list,ghola profiles,The job is a word.
+--proxy,--proxy,
+--proxy-auth,--proxy-user,
+--proxy-check,--proxy-check,
+--proxy-file,--proxy-file,
+--proxy-strategy,--proxy-strategy,
+--range,--range,
+--referer,--referer,
+-J / --remote-header-name,--output-name header,
+-O / --remote-name,ghola download URL or -o DIR/,
+-R / --remote-time,--output-remote-time,
+-X / --request,-m / --method,
+-r / --retry N,--retry-max N,The default is now 3 for idempotent methods.
+--retry-http,(default),--retry-status sets the codes.
+--serve,ghola serve,There is no alias.
+-s / --silent,-q / --quiet,v1 -q still writes errors (as curl -sS).
+-S / --snoop,ghola inspect URL,The job is a word.
+--speed-limit,--stall-rate RATE,
+--speed-time,--stall-time DURATION,
+--stealth-headers,--impersonate-headers,
+--timeout MS,--timeout DURATION,The value has a unit: 30s and not 30000. A bare number is seconds.
+--timing,--output-template or -v,-v writes the timing to stderr.
+-T / --upload-file,--upload,
+-u / --user,-u / --user,
+-A / --user-agent,--user-agent,No short letter (1.3% of curl files).
+-v / --verbose,-v / --verbose,
+-V / --version,-V / --version,
+-w / --wget,ghola download URL,ghola wget runs wget syntax.

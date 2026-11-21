@@ -3,6 +3,8 @@ package output
 import (
 	"bytes"
 	"compress/gzip"
+	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,7 +26,7 @@ func TestProcessResponse_Stdout(t *testing.T) {
 
 	var buf bytes.Buffer
 	opts := &config.Options{}
-	err := ProcessResponse(&buf, opts, req, rsp, 0)
+	err := ProcessResponse(&buf, io.Discard, opts, req, rsp, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -58,7 +60,7 @@ func TestProcessResponse_CompressedGzip(t *testing.T) {
 
 	var buf bytes.Buffer
 	opts := &config.Options{Stealth: config.StealthOptions{Compressed: true}}
-	if err := ProcessResponse(&buf, opts, req, rsp, 0); err != nil {
+	if err := ProcessResponse(&buf, io.Discard, opts, req, rsp, 0); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if !strings.Contains(buf.String(), "decoded-body-content") {
@@ -78,7 +80,7 @@ func TestProcessResponse_IncludeHeaders(t *testing.T) {
 
 	var buf bytes.Buffer
 	opts := &config.Options{Output: config.OutputOptions{Include: true}}
-	err := ProcessResponse(&buf, opts, req, rsp, 0)
+	err := ProcessResponse(&buf, io.Discard, opts, req, rsp, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -96,18 +98,19 @@ func TestProcessResponse_Verbose(t *testing.T) {
 	defer fasthttp.ReleaseRequest(req)
 	defer fasthttp.ReleaseResponse(rsp)
 
-	req.Header.Set("X-Ghola-Identity", "abc123")
 	rsp.Header.SetStatusCode(200)
 	rsp.SetBodyString("data")
 
-	var buf bytes.Buffer
+	// -v lines are metadata: they go to stderr, as curl's -v does, so that
+	// stdout holds only the body (audit finding H2).
+	var buf, errBuf bytes.Buffer
 	opts := &config.Options{Output: config.OutputOptions{Verbose: true}}
-	err := ProcessResponse(&buf, opts, req, rsp, 0)
+	err := ProcessResponse(&buf, &errBuf, opts, req, rsp, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(buf.String(), "Ghost Signature: abc123") {
-		t.Errorf("verbose output missing ghost signature, got %q", buf.String())
+	if buf.String() != "data" {
+		t.Errorf("stdout = %q, want only the body", buf.String())
 	}
 }
 
@@ -118,16 +121,17 @@ func TestProcessResponse_Silent(t *testing.T) {
 	defer fasthttp.ReleaseResponse(rsp)
 
 	rsp.Header.SetStatusCode(200)
-	rsp.SetBodyString("should not appear")
+	rsp.SetBodyString("the body")
 
-	var buf bytes.Buffer
+	// -q hides notes and the meter, not the body (v1 spec), as curl -s.
+	var buf, errBuf bytes.Buffer
 	opts := &config.Options{Output: config.OutputOptions{Silent: true}}
-	err := ProcessResponse(&buf, opts, req, rsp, 0)
+	err := ProcessResponse(&buf, &errBuf, opts, req, rsp, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if buf.Len() != 0 {
-		t.Errorf("silent mode should produce no output, got %q", buf.String())
+	if buf.String() != "the body" || errBuf.Len() != 0 {
+		t.Errorf("stdout %q, stderr %q; want the body and nothing on stderr", buf.String(), errBuf.String())
 	}
 }
 
@@ -142,7 +146,7 @@ func TestProcessResponse_FailOnHTTPError(t *testing.T) {
 
 	var buf bytes.Buffer
 	opts := &config.Options{Output: config.OutputOptions{Fail: true}}
-	err := ProcessResponse(&buf, opts, req, rsp, 0)
+	err := ProcessResponse(&buf, io.Discard, opts, req, rsp, 0)
 	if err == nil {
 		t.Fatal("expected error for non-2xx with fail=true")
 	}
@@ -162,7 +166,7 @@ func TestProcessResponse_FailWithSuccess(t *testing.T) {
 
 	var buf bytes.Buffer
 	opts := &config.Options{Output: config.OutputOptions{Fail: true}}
-	err := ProcessResponse(&buf, opts, req, rsp, 0)
+	err := ProcessResponse(&buf, io.Discard, opts, req, rsp, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -184,7 +188,7 @@ func TestProcessResponse_FileOutput(t *testing.T) {
 
 	var buf bytes.Buffer
 	opts := &config.Options{Output: config.OutputOptions{File: tmpFile}}
-	err := ProcessResponse(&buf, opts, req, rsp, 0)
+	err := ProcessResponse(&buf, io.Discard, opts, req, rsp, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -220,7 +224,7 @@ func TestProcessResponse_FileOutputFailSuppresses(t *testing.T) {
 
 	opts := &config.Options{Output: config.OutputOptions{File: tmpFile, Fail: true}}
 	var buf bytes.Buffer
-	err := ProcessResponse(&buf, opts, req, rsp, 0)
+	err := ProcessResponse(&buf, io.Discard, opts, req, rsp, 0)
 	if err == nil {
 		t.Fatal("expected error for non-2xx with fail=true")
 	}
@@ -241,7 +245,7 @@ func TestProcessResponse_FileOutputError(t *testing.T) {
 
 	opts := &config.Options{Output: config.OutputOptions{File: "/nonexistent/dir/file.txt"}}
 	var buf bytes.Buffer
-	err := ProcessResponse(&buf, opts, req, rsp, 0)
+	err := ProcessResponse(&buf, io.Discard, opts, req, rsp, 0)
 	if err == nil {
 		t.Fatal("expected error for invalid output path")
 	}
@@ -337,7 +341,7 @@ func TestProcessResponse_StatusCodes(t *testing.T) {
 
 			var buf bytes.Buffer
 			opts := &config.Options{Output: config.OutputOptions{Fail: tt.fail}}
-			_ = ProcessResponse(&buf, opts, req, rsp, 0)
+			_ = ProcessResponse(&buf, io.Discard, opts, req, rsp, 0)
 
 			hasOutput := buf.Len() > 0
 			if hasOutput != tt.output {
@@ -375,7 +379,7 @@ func TestProcessResponse_JQ(t *testing.T) {
 
 	var buf bytes.Buffer
 	opts := &config.Options{Output: config.OutputOptions{JQ: "result"}}
-	err := ProcessResponse(&buf, opts, req, rsp, 0)
+	err := ProcessResponse(&buf, io.Discard, opts, req, rsp, 0)
 	if err != nil {
 		t.Fatalf("ProcessResponse: %v", err)
 	}
@@ -395,7 +399,7 @@ func TestProcessResponse_JQ_NoMatch(t *testing.T) {
 
 	var buf bytes.Buffer
 	opts := &config.Options{Output: config.OutputOptions{JQ: "nonexistent"}}
-	err := ProcessResponse(&buf, opts, req, rsp, 0)
+	err := ProcessResponse(&buf, io.Discard, opts, req, rsp, 0)
 	if err == nil {
 		t.Fatal("expected error for non-matching JQ path")
 	}
@@ -410,14 +414,18 @@ func TestProcessResponse_Timing(t *testing.T) {
 	rsp.SetStatusCode(200)
 	rsp.SetBodyString("ok")
 
-	var buf bytes.Buffer
-	opts := &config.Options{Output: config.OutputOptions{Timing: true}}
-	err := ProcessResponse(&buf, opts, req, rsp, 150*time.Millisecond)
+	// The timing line is metadata: it goes to stderr (audit finding H2).
+	var buf, errBuf bytes.Buffer
+	opts := &config.Options{Output: config.OutputOptions{Verbose: true}} // -v writes the total time (v0 --timing)
+	err := ProcessResponse(&buf, &errBuf, opts, req, rsp, 150*time.Millisecond)
 	if err != nil {
 		t.Fatalf("ProcessResponse: %v", err)
 	}
-	if !strings.Contains(buf.String(), "Total: 150ms") {
-		t.Errorf("timing output = %q, want 'Total: 150ms'", buf.String())
+	if !strings.Contains(errBuf.String(), "Total: 150ms") {
+		t.Errorf("stderr = %q, want 'Total: 150ms'", errBuf.String())
+	}
+	if buf.String() != "ok" {
+		t.Errorf("stdout = %q, want only the body", buf.String())
 	}
 }
 
@@ -433,7 +441,7 @@ func TestProcessResponse_JQ_WithFileOutput(t *testing.T) {
 	tmpFile := filepath.Join(t.TempDir(), "jq-out.txt")
 	var buf bytes.Buffer
 	opts := &config.Options{Output: config.OutputOptions{File: tmpFile, JQ: "data.value"}}
-	err := ProcessResponse(&buf, opts, req, rsp, 0)
+	err := ProcessResponse(&buf, io.Discard, opts, req, rsp, 0)
 	if err != nil {
 		t.Fatalf("ProcessResponse: %v", err)
 	}
@@ -511,5 +519,65 @@ func TestRunSnoop_RateLimitHeaders(t *testing.T) {
 	out := buf.String()
 	if !strings.Contains(out, "Rate Limiting") {
 		t.Error("missing rate limit section in snoop output")
+	}
+}
+
+// TestProcessResponse_LimitRateStdout checks that --limit-rate applies to the
+// body on stdout, not only to a download to a file (audit finding M3). A
+// script that limits the rate must not flood the link when it pipes the body.
+func TestProcessResponse_LimitRateStdout(t *testing.T) {
+	req := fasthttp.AcquireRequest()
+	rsp := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseRequest(req)
+	defer fasthttp.ReleaseResponse(rsp)
+
+	body := bytes.Repeat([]byte("x"), 10_000)
+	rsp.Header.SetStatusCode(200)
+	rsp.SetBody(body)
+
+	var buf bytes.Buffer
+	opts := &config.Options{Output: config.OutputOptions{LimitRate: "10k"}}
+	start := time.Now()
+	if err := ProcessResponse(&buf, io.Discard, opts, req, rsp, 0); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// 10 000 bytes at 10 000 bytes/s with an empty bucket take about 1 s.
+	if elapsed := time.Since(start); elapsed < 700*time.Millisecond {
+		t.Errorf("body took %v, want about 1s at --limit-rate 10k", elapsed)
+	}
+	if !bytes.Equal(buf.Bytes(), body) {
+		t.Errorf("wrote %d bytes, want the %d body bytes", buf.Len(), len(body))
+	}
+}
+
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("broken pipe") }
+
+type failingReader struct{}
+
+func (failingReader) Read([]byte) (int, error) { return 0, errors.New("connection reset") }
+
+// TestProcessResponse_WriteErrorIsMarked checks that a failed write to stdout
+// is a write error (curl exit 23), and that a body that breaks off is not
+// (audit finding M6). Both come out of the same io.Copy.
+func TestProcessResponse_WriteErrorIsMarked(t *testing.T) {
+	req := fasthttp.AcquireRequest()
+	defer fasthttp.ReleaseRequest(req)
+
+	rsp := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseResponse(rsp)
+	rsp.SetBodyString("hello")
+	err := ProcessResponse(failingWriter{}, io.Discard, &config.Options{}, req, rsp, 0)
+	if !errors.Is(err, config.ErrWrite) {
+		t.Errorf("write to a broken stdout: err = %v, want ErrWrite", err)
+	}
+
+	broken := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseResponse(broken)
+	broken.SetBodyStream(failingReader{}, -1)
+	err = ProcessResponse(io.Discard, io.Discard, &config.Options{}, req, broken, 0)
+	if err == nil || errors.Is(err, config.ErrWrite) {
+		t.Errorf("broken body: err = %v, want an error that is not ErrWrite", err)
 	}
 }

@@ -1,0 +1,140 @@
+name,short,group,scope,type,default,curl,wget,aria2,phase,description
+output,-o,output,all,path,stdout (fetch); remote name (download and mirror),-o / -O / --output-dir,-O / -P,-o / -d,0B,"Write the body to PATH. A PATH that ends in / or names a folder gets the remote file name inside it. With several URLs: one -o DIR/ serves all, or one -o for each URL in order."
+output-name,,output,all,url|header,url,-J,--content-disposition,(default header),0B,Take the remote file name from the URL or from Content-Disposition. A name with a folder part is refused.
+output-overwrite,,output,all,bool,true (fetch); false (download and mirror),--no-clobber (inverse),-nc (inverse),--allow-overwrite,2,Replace an existing file. Without it an existing file stops the job with exit 23.
+output-create-dirs,,output,all,bool,false,--create-dirs,-x,(default),2,Create the missing folders of PATH.
+output-remote-time,,output,all,bool,false,-R,(default with -N),--remote-time,0B,Set the file time to the Last-Modified time.
+output-select,,output,fetch,gjson path,,,,,0B,Write only the value at the path of a JSON body (gjson syntax).
+output-template,-w,output,all,template,,-w,,,2,After each transfer write the template. It uses curl's %{name} variables and %{json}.
+output-events,,output,all,none|json,none,,,(RPC),2,"Write one JSON line to stderr for each transfer event: start, retry, done and error. docs/cli/output-events.schema.json defines the lines."
+show-headers,,output,fetch,bool,false,-i / --show-headers,-S (stderr),,0B,Write the response header block to stdout before the body.
+save-headers,,output,all,path,,-D,--save-headers,,2,Write the response header block to PATH.
+quiet,-q,output,all,bool,false,-sS,-q,-q,0B,Write no progress meter and no notes. Errors still go to stderr.
+verbose,-v,output,all,bool,false,-v,-v,--console-log-level=debug,0B,Write the request and response headers and the connection steps to stderr.
+progress,,output,all,bool,auto,-# / --no-progress-meter,--progress / -nv,--summary-interval,0B,Show the progress meter. Default: only when stderr is a terminal and the body does not go to it.
+max-size,,output,all,size,,--max-filesize,--quota (total),,2,Stop with exit 63 when the body is larger than SIZE.
+har,,output,fetch,path,,,,,0B,Write the request and the response to PATH as HAR 1.2.
+trace,,output,all,path,,--trace / --trace-ascii,,,2,Write all bytes sent and received to PATH (- for stderr).
+trace-format,,output,all,hex|ascii,hex,--trace-ascii,,,2,The format of --trace.
+trace-time,,output,all,bool,false,--trace-time,,,2,Add a time to each --trace and --verbose line.
+method,-m,request,fetch,string,GET; POST with a body,-X,--method,,0B,Send the request with this method.
+head,-I,request,fetch,bool,false,-I,--spider -S,,0B,Send HEAD and write the response headers to stdout.
+header,-H,request,all,Name: value (repeat),,-H,--header,--header,0B,"Add a request header. ""Name:"" removes a header that ghola or the profile sets."
+user-agent,,request,all,string,ghola/VERSION,-A,-U,-U,0B,Set the User-Agent header.
+referer,,request,all,none|auto|URL,none,-e,--referer,--referer,0B,Set the Referer header. auto sends the previous URL after a redirect.
+data,-d,request,fetch,text | @file | @-,,--data-binary,--post-data / --post-file,,0B,Send the body without changes. @file reads a file and @- reads stdin. The Content-Type is application/x-www-form-urlencoded unless -H sets one.
+data-literal,,request,fetch,text,,--data-raw,--post-data,,0B,"Send the text as the body, also when it starts with @."
+field,,request,fetch,name=value (repeat),,--data-urlencode,,,0B,Add a URL-encoded form field to the body.
+form,,request,fetch,name=value | name=@file (repeat),,-F,,,0B,Send a multipart/form-data body.
+json,,request,fetch,text | @file | @-,,--json,,,2,Send a JSON body. Sets Content-Type and Accept to application/json.
+query,,request,all,name=value (repeat),,--url-query / -G,,,2,Add a URL-encoded query parameter to each URL.
+upload,,request,fetch,path,,-T,--body-file --method=PUT,,0B,Send the file as the body of a PUT.
+range,,request,all,byte range,,-r,,,0B,"Request only the byte range, for example 0-1023."
+continue,-c,request,all,bool,false,-C -,-c,-c,0B,"Resume a partial file. The request sends If-Range, so a file that changed on the server starts again from byte 0."
+continue-at,,request,fetch,bytes,,-C N,--start-pos,,0B,Resume at this byte offset.
+chain,,request,fetch,eth|base|solana,,,,,0B,JSON-RPC shortcut: POST with the RPC headers of the chain.
+url-glob,,request,all,bool,true,-g (inverse),,-Z,2,"Expand {a,b} and [1-9] in URLs."
+url-path-as-is,,request,all,bool,false,--path-as-is,,,2,Send the path without removing ./ and ../.
+request-target,,request,fetch,string,,--request-target,,,2,Send this request target in place of the URL path.
+variable,,request,fetch,name=value (repeat),,--variable,,,2,"Set a variable: NAME=VALUE, NAME@FILE or %NAME (from the environment). Only the --expand-NAME form of an option expands {{name}} in its value, as in curl."
+next,,request,fetch,(separator),,-: / --next,,,2,Start the options for the next URL.
+input,-i,request,all,path,,-K (partly),-i,-i,3,"Read URLs from PATH (- for stdin): one for each line, with options for each URL in aria2's format."
+input-format,,request,all,lines|html|sitemap|metalink,lines,,-F / --force-html,(detected),3,The format of --input.
+http,,http,all,auto|1.0|1.1|2|2-prior|3|3-only,auto,--http1.0 / --http1.1 / --http2 / --http2-prior-knowledge / --http3 / --http3-only,--no-http2 (Wget2),,2,"The HTTP version. 3 and 3-only need --impersonate with a profile that has HTTP/3; 3-only fails when the answer is not HTTP/3. 1.0 is refused: ghola's HTTP clients write only HTTP/1.1 request lines."
+compressed,,http,all,bool,true,--compressed,--compression (Wget2),--http-accept-gzip,0B,"Ask for gzip, br and zstd and decode the body. A segment of a download asks for identity."
+follow,,http,all,bool,true,-L,(default),(default),0B,Follow redirects.
+follow-max,,http,all,int,20,--max-redirs,--max-redirect,,0B,Stop with exit 47 after this many redirects.
+follow-trusted,,http,all,bool,false,--location-trusted,,,0B,Send -u and the Authorization and Cookie headers to other hosts after a redirect too.
+fail,,http,all,bool,true,--fail-with-body,(default),(default),0B,Exit 22 on status 400 and above. stdout keeps the body. -o writes no file.
+hsts,,http,all,path,,--hsts,--hsts-file,,2,Read and write the HSTS cache at PATH.
+alt-svc,,http,all,path,,--alt-svc,,,2,"Read and write the Alt-Svc cache at PATH, in curl's format. An h3 entry turns on HTTP/3 for that origin only with --impersonate and a profile that has HTTP/3."
+cond-time,,http,all,[-]date | file,,-z,-N,--conditional-get,2,Send If-Modified-Since (or If-Unmodified-Since with -) for the date or the file time.
+cond-etag-save,,http,all,path,,--etag-save,,,2,Write the ETag of the response to PATH.
+cond-etag-compare,,http,all,path,,--etag-compare,,,2,Send If-None-Match with the ETag in PATH.
+max-header-size,,http,all,size,1MiB,,,,0B,The largest response header block that ghola accepts.
+timeout,-t,limits,all,duration,none,-m / --max-time,-T,--timeout,0B,Stop with exit 28 when one transfer takes longer.
+timeout-connect,,limits,all,duration,none,--connect-timeout,--connect-timeout,--connect-timeout,0B,Stop with exit 28 when DNS + TCP + proxy + TLS take longer.
+stall-time,,limits,all,duration,30s (with --stall-rate),-y / --speed-time,--read-timeout (close),--lowest-speed-limit (with a fixed time),0B,Stop with exit 28 when the speed is below --stall-rate for this long.
+stall-rate,,limits,all,rate,1B/s (with --stall-time),-Y / --speed-limit,,--lowest-speed-limit,0B,The speed limit for --stall-time.
+rate-max,,limits,all,rate,,--limit-rate,--limit-rate,--max-download-limit,0B,Limit the speed of each transfer.
+rate-max-total,,limits,all,rate,,,,--max-overall-download-limit,3,Limit the speed of all transfers together.
+wait,,limits,all,duration,0,,-w,,4,Wait between requests.
+wait-jitter,,limits,all,duration,0,,--random-wait,,0B,Add a random wait from 0 to this duration before each request.
+retry-max,-r,retry,all,int,3 (idempotent methods); 0 (others),--retry,-t,-m,0B,Retries after a transient failure. A POST retries only when this is set.
+retry-delay,,retry,all,duration,1s (doubles each time),--retry-delay,--waitretry,--retry-wait,0B,The first wait before a retry. Retry-After from the server wins.
+retry-max-time,,retry,all,duration,,--retry-max-time,,,2,Stop retries after this total time.
+retry-status,,retry,all,list,"408,429,500,502,503,504,522,524",(fixed list),--retry-on-http-error,,0B,The status codes that are retried. A refused or reset connection and a timeout are always retried.
+ip,,net,all,any|4|6,any,-4 / -6,-4 / -6,--disable-ipv6,2,The IP version.
+resolve,,net,all,host:port:addr (repeat),,--resolve,,,2,Use this address for host:port.
+connect-to,,net,all,host:port:host2:port2 (repeat),,--connect-to,,,2,Connect to host2:port2 for requests to host:port.
+interface,,net,all,name | address,,--interface,--bind-address,--interface,2,Send from this interface or address.
+local-port,,net,all,port range,,--local-port,,,2,Send from a local port in this range.
+unix-socket,,net,all,path,,--unix-socket,,,2,Connect through this Unix socket.
+doh,,net,all,URL,,--doh-url,--dns-over-https (Wget2),,2,Resolve names with DNS over HTTPS at this URL.
+tls-verify,-k,tls,all,bool,true,-k (inverse),--no-check-certificate (inverse),--check-certificate,0B,Check the server certificate. -k is --no-tls-verify.
+tls-ca,,tls,all,path,system store,--cacert,--ca-certificate,--ca-certificate,0B,Trust the CA certificates in PATH.
+tls-ca-dir,,tls,all,path,,--capath,--ca-directory,,2,Trust the CA certificates in this folder.
+tls-cert,,tls,all,path,,-E / --cert,--certificate,--certificate,0B,Send this client certificate.
+tls-key,,tls,all,path,,--key,--private-key,--private-key,0B,The private key of --tls-cert.
+tls-cert-type,,tls,all,PEM|DER|P12,PEM,--cert-type,--certificate-type,,2,The format of --tls-cert.
+tls-min,,tls,all,1.2|1.3,1.2,--tlsv1.2 / --tlsv1.3,--secure-protocol,--min-tls-version,2,The lowest TLS version.
+tls-max,,tls,all,1.2|1.3,1.3,--tls-max,,,2,The highest TLS version.
+tls-ciphers,,tls,all,list,,--ciphers / --tls13-ciphers,--ciphers,,2,The cipher suites. With --impersonate this changes the fingerprint and ghola writes a warning.
+tls-pin,,tls,all,sha256//hash (list),,--pinnedpubkey,--pinnedpubkey (Wget2),,2,Refuse a server key that does not match.
+tls-crl,,tls,all,path,,--crlfile,--crl-file,,2,Refuse certificates in this CRL.
+tls-ocsp,,tls,all,bool,false,--cert-status,--ocsp (Wget2),,2,Require a good OCSP staple.
+tls-ech,,tls,all,bool,false,--ech,,,2,Use Encrypted Client Hello when the server offers it.
+user,-u,auth,all,user:password,,-u,--user / --password,--http-user / --http-passwd,0B,Send these credentials. They go only to the host of the first URL unless --follow-trusted.
+auth,,auth,all,basic|digest|ntlm|negotiate|any,basic,--basic / --digest / --ntlm / --negotiate / --anyauth,,,2,The authentication method for --user.
+auth-bearer,,auth,all,token,,--oauth2-bearer,,,2,Send Authorization: Bearer with the token.
+auth-aws-sigv4,,auth,all,provider:region:service,,--aws-sigv4,,,2,Sign the request with AWS Signature Version 4.
+auth-netrc,,auth,all,bool,false,-n / --netrc,(default on),(default on),2,Read credentials from ~/.netrc.
+auth-netrc-file,,auth,all,path,,--netrc-file,,--netrc-path,2,Read credentials from this netrc file.
+proxy,,proxy,all,URL,from the environment,-x,-e use_proxy=on,--all-proxy,0B,Send through this proxy: http https socks4 socks4a socks5 socks5h (SOCKS in phase 2).
+proxy-user,,proxy,all,user:password,,-U,--proxy-user / --proxy-password,--all-proxy-user,0B,The proxy credentials.
+proxy-file,,proxy,all,path,,,,,0B,Read proxy URLs from PATH (one for each line).
+proxy-strategy,,proxy,all,sticky|random|round-robin,sticky,,,,0B,How --proxy-file picks a proxy for each request.
+proxy-check,,proxy,all,bool,false,,,,0B,Check each proxy before use and drop dead ones.
+proxy-bypass,,proxy,all,list,from no_proxy,--noproxy,(no_proxy),--no-proxy,2,Hosts that go direct.
+proxy-tls-*,,proxy,all,(as --tls-*),,--proxy-cacert / --proxy-insecure / ...,,,2,Each --tls-* option has a --proxy-tls-* form for an HTTPS proxy.
+cookie,,cookie,all,name=value | file (repeat),,-b,--load-cookies,--load-cookies,0B,"Send this cookie, or the cookies in the file."
+cookie-jar,,cookie,all,path,,-c (write) with -b (read),--load-cookies / --save-cookies,--load-cookies / --save-cookies,0B,Read cookies from PATH and write them back. ghola reads the Netscape format and the v0 JSON jar. A new jar is Netscape.
+impersonate,,impersonate,all,profile,,,,,0B,Copy a browser's TLS and HTTP/2 fingerprint: chrome firefox safari edge. ghola profiles lists them.
+impersonate-headers,,impersonate,all,bool,false,,,,0B,Send the browser's default headers in its order.
+impersonate-accept-language,,impersonate,all,string,profile default,,,,0B,Override the profile's Accept-Language.
+connections,-n,download,download,int,1,,,-x / -s,3,Split one file into N ranges on N connections. Needs Range support.
+jobs,-j,download,all,int,1,-Z / --parallel-max,,-j,3,Run up to N transfers at the same time.
+source,,download,download,URL (repeat),,,,(several URIs on one line),3,Another mirror of the same file. Segments go to the faster mirrors.
+file-allocation,,download,download,none|prealloc|falloc|trunc,none,,,--file-allocation,3,How the file space is reserved before the download.
+checksum,,download,all,algo=hex,,,,--checksum,3,Check the file against this digest before the job is done. Content-Digest and Metalink digests are checked by default.
+session,,download,download,bool,true,,,--save-session,3,"Keep a state file next to each partial download, so ghola jobs resume can restart it."
+on-complete,,download,download,command,,,,--on-download-complete,3,Run this command when a job finishes.
+on-error,,download,download,command,,,,--on-download-error,3,Run this command when a job fails.
+background,,download,all,bool,false,,-b,(daemon),4,Run in the background and write messages to --log.
+log,,download,all,path,ghola.log with --background,--stderr,-o / -a,-l,4,Write messages to PATH.
+depth,,mirror,mirror,int,5,,-l,,4,Follow links this many levels deep (0 = no limit).
+parent,,mirror,mirror,bool,false,,-np (inverse),,4,Follow links above the start folder.
+hosts,,mirror,mirror,list,start host,,-H / -D,,4,The hosts that links may go to.
+accept,,mirror,mirror,glob list,,,-A,,4,Keep only file names that match.
+reject,,mirror,mirror,glob list,,,-R,,4,Skip file names that match.
+accept-regex,,mirror,mirror,regex,,,--accept-regex,,4,Keep only URLs that match.
+reject-regex,,mirror,mirror,regex,,,--reject-regex,,4,Skip URLs that match.
+include-dirs,,mirror,mirror,list,,,-I,,4,Follow only these folders.
+exclude-dirs,,mirror,mirror,list,,,-X,,4,Skip these folders.
+layout,,mirror,mirror,full|no-host|flat,full,,-x / -nH / -nd,,4,How the local folders copy the URL.
+cut-dirs,,mirror,mirror,int,0,,--cut-dirs,,4,Drop this many leading folders from the local path.
+timestamps,,mirror,mirror,bool,true,,-N,--conditional-get,4,Get a file again only when the server copy is newer.
+requisites,,mirror,mirror,bool,false,,-p,,4,Also get the images and styles that a page needs.
+convert-links,,mirror,mirror,bool,false,,-k,,4,Change links to work offline.
+backup-converted,,mirror,mirror,bool,false,,-K,,4,Keep the original of each converted file.
+adjust-extension,,mirror,mirror,bool,false,,-E,,4,Add .html or .css when the type needs it.
+offline,,mirror,mirror,bool,false,,-p -k -E,,4,"Make the copy work offline: --requisites, --convert-links and --adjust-extension together."
+robots,,mirror,mirror,bool,true,,-e robots=off (inverse),,4,Obey robots.txt and nofollow.
+quota,,mirror,mirror,size,,,-Q,,4,Stop after this many bytes in total.
+spider,,mirror,all,bool,false,,--spider,--dry-run,4,Check the links and save nothing.
+file-names,,mirror,all,unix|windows|ascii,system,,--restrict-file-names,,4,Which characters a local file name may hold.
+warc,,mirror,all,path,,,--warc-file,,4,Also write the exchange as a WARC file.
+config,,general,all,path,~/.config/ghola/config,-K,--config / -e,--conf-path,2,Read options from PATH.
+no-config,,general,all,bool,false,-q (first),--no-config,--no-conf,2,Read no config file.
+help,-h,general,all,topic,,-h / --help category,-h,-h,0B,"Show help, or the help for a topic."
+version,-V,general,all,bool,false,-V,-V,-v,0B,Show the version.

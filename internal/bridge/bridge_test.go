@@ -127,38 +127,20 @@ func TestBridge_CustomHeaders(t *testing.T) {
 	}
 }
 
-func TestBridge_GhostSigning(t *testing.T) {
-	ln, c := newBridgeServer(func(ctx *fasthttp.RequestCtx) {
-		ghost := string(ctx.Request.Header.Peek("X-Ghola-Identity"))
-		if ghost == "" {
-			t.Error("X-Ghola-Identity header missing when ghost=true")
-		}
-		if len(ghost) != 64 {
-			t.Errorf("ghost hash length = %d, want 64", len(ghost))
-		}
-		ctx.SetStatusCode(200)
-	})
-	defer ln.Close()
-
-	postBridge(t, c, Request{
-		URL:   "http://upstream",
-		Ghost: true,
-	})
-}
-
-func TestBridge_NoGhostByDefault(t *testing.T) {
+// The bridge accepts "ghost": true and sends no X-Ghola-Identity header.
+// v0 sent one, so the stealth mode of scope and scope-bca marked every
+// request as coming from ghola (v1 spec, question A).
+func TestBridge_GhostIsIgnored(t *testing.T) {
 	ln, c := newBridgeServer(func(ctx *fasthttp.RequestCtx) {
 		if len(ctx.Request.Header.Peek("X-Ghola-Identity")) > 0 {
-			t.Error("X-Ghola-Identity should not be set when ghost=false")
+			t.Error("the request carries X-Ghola-Identity")
 		}
 		ctx.SetStatusCode(200)
 	})
 	defer ln.Close()
-
-	postBridge(t, c, Request{
-		URL:   "http://upstream",
-		Ghost: false,
-	})
+	if resp := postBridge(t, c, Request{URL: "http://upstream", Method: "GET", Ghost: true}); resp.StatusCode != 200 {
+		t.Errorf("status = %d, error %q", resp.StatusCode, resp.Error)
+	}
 }
 
 func TestBridge_DefaultMethodIsGET(t *testing.T) {

@@ -17,7 +17,11 @@ type Streamer func(ctx context.Context, opts *config.Options, req *fasthttp.Requ
 
 // DefaultStreamer builds the production transport and streams through it.
 func DefaultStreamer(ctx context.Context, opts *config.Options, req *fasthttp.Request, sink io.Writer) (gholatransport.StreamMeta, error) {
-	tr, err := gholatransport.New(opts, "")
+	proxy, err := selectProxy(opts)
+	if err != nil {
+		return gholatransport.StreamMeta{}, err
+	}
+	tr, err := gholatransport.New(opts, proxy)
 	if err != nil {
 		return gholatransport.StreamMeta{}, err
 	}
