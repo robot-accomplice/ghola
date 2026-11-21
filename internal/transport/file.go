@@ -34,6 +34,35 @@ type protocolTransport struct {
 	network Transport
 	opts    *config.Options
 	proxy   string // the --proxy URL, "" for the environment
+	// direct serves the hosts in --proxy-bypass when --proxy is set. nil
+	// without both.
+	direct Transport
+	// hsts is the --hsts cache, nil without it.
+	hsts *hstsCache
+	// altsvc is the --alt-svc cache, nil without it. h3 is the HTTP/3
+	// stack for an origin with an h3 entry; nil when the stack has no
+	// HTTP/3 (decision K).
+	altsvc *altSvcCache
+	h3     Transport
+	// trace writes --trace, nil without it.
+	trace *tracer
+	// warc writes --warc, nil without it.
+	warc *warcWriter
+}
+
+// networkFor returns the network transport for u: direct for a host in
+// --proxy-bypass, else the one with the proxy.
+func (t protocolTransport) networkFor(u *fasthttp.URI) Transport {
+	if t.direct != nil && bypassed(&url.URL{Host: string(u.Host())}, t.opts.ProxyCfg.Bypass) {
+		return t.direct
+	}
+	if t.h3 != nil && t.altsvc.h3(u) {
+		if t.trace != nil {
+			t.trace.block("== Info", []byte("--alt-svc: HTTP/3 for "+string(u.Host())+"\n"))
+		}
+		return t.h3
+	}
+	return t.network
 }
 
 // serve answers req when its protocol is not HTTP. ok is false for HTTP.
@@ -60,22 +89,110 @@ func (t protocolTransport) serve(ctx context.Context, req *fasthttp.Request) (a 
 
 func (t protocolTransport) Name() string { return t.network.Name() }
 
+// prepare applies --url-path-as-is to req, and puts --request-target in
+// the context, where both stacks read it.
+func (t protocolTransport) prepare(ctx context.Context, req *fasthttp.Request) context.Context {
+	req.URI().DisablePathNormalizing = t.opts.PathAsIs
+	if t.hsts != nil {
+		t.hsts.upgrade(req.URI()) // before the scheme picks the protocol
+	}
+	if t.opts.RequestTarget != "" {
+		ctx = context.WithValue(ctx, requestTargetKey{}, t.opts.RequestTarget)
+	}
+	if t.trace != nil {
+		ctx = context.WithValue(ctx, tracerKey{}, t.trace)
+	}
+	return ctx
+}
+
+type requestTargetKey struct{}
+
+// streamWARC streams the answer, and writes the exchange to --warc.
+func (t protocolTransport) streamWARC(ctx context.Context, req *fasthttp.Request, sink io.Writer) (StreamMeta, error) {
+	tmp, err := os.CreateTemp("", "ghola-warc-")
+	if err != nil {
+		return StreamMeta{}, fmt.Errorf("--warc: %w", err)
+	}
+	defer func() { tmp.Close(); os.Remove(tmp.Name()) }()
+	meta, err := t.networkFor(req.URI()).Stream(ctx, req, warcSink{sink, tmp})
+	if err == nil {
+		err = t.recordAnswer(req, meta.StatusLine, meta.Header.Get)
+	}
+	if meta.StatusLine != "" {
+		if werr := t.warc.record(req, meta, tmp); werr != nil && err == nil {
+			err = werr
+		}
+	}
+	return meta, err
+}
+
+// recordAnswer keeps the Strict-Transport-Security of an answer in --hsts
+// and its Alt-Svc in --alt-svc. proto is the answer's protocol, such as
+// "HTTP/2.0" or a status line that starts with it.
+func (t protocolTransport) recordAnswer(req *fasthttp.Request, proto string, header func(string) string) error {
+	if t.hsts != nil {
+		if err := t.hsts.record(req.URI(), header("Strict-Transport-Security")); err != nil {
+			return err
+		}
+	}
+	if t.altsvc != nil {
+		alpn := "h1"
+		if strings.HasPrefix(proto, "HTTP/2") {
+			alpn = "h2"
+		} else if strings.HasPrefix(proto, "HTTP/3") {
+			alpn = "h3"
+		}
+		return t.altsvc.record(req.URI(), alpn, header("Alt-Svc"))
+	}
+	return nil
+}
+
+// applyRequestTarget sets the --request-target of ctx on u: Go writes
+// u.Opaque as the request target.
+func applyRequestTarget(ctx context.Context, u *url.URL) {
+	if target, ok := ctx.Value(requestTargetKey{}).(string); ok {
+		u.Opaque, u.RawQuery = target, ""
+	}
+}
+
 func (t protocolTransport) Do(ctx context.Context, req *fasthttp.Request, rsp *fasthttp.Response) error {
+	ctx = t.prepare(ctx, req)
 	a, ok, err := t.serve(ctx, req)
 	if !ok {
-		return t.network.Do(ctx, req, rsp)
+		if t.trace != nil {
+			t.trace.request(req)
+		}
+		if err := t.networkFor(req.URI()).Do(ctx, req, rsp); err != nil {
+			return err
+		}
+		if t.trace != nil {
+			t.trace.block("<= Recv header", rsp.Header.Header()) // the body: fillResponse
+		}
+		return t.recordAnswer(req, string(rsp.Header.Protocol()), func(k string) string { return string(rsp.Header.Peek(k)) })
 	}
 	if err != nil {
 		return err
 	}
-	fillResponse(rsp, a.status, a.header, a.body, a.length)
+	fillResponse(ctx, rsp, a.status, a.header, a.body, a.length)
 	return nil
 }
 
 func (t protocolTransport) Stream(ctx context.Context, req *fasthttp.Request, sink io.Writer) (StreamMeta, error) {
+	ctx = t.prepare(ctx, req)
 	a, ok, err := t.serve(ctx, req)
 	if !ok {
-		return t.network.Stream(ctx, req, sink)
+		if t.trace != nil {
+			t.trace.request(req)
+			sink = traceSink{sink, t.trace}
+		}
+		if t.warc != nil {
+			return t.streamWARC(ctx, req, sink)
+		}
+		meta, err := t.networkFor(req.URI()).Stream(ctx, req, sink)
+		if err == nil {
+			err = t.recordAnswer(req, meta.StatusLine, meta.Header.Get)
+		}
+		return meta, err
 	}
 	if err != nil {
 		return StreamMeta{}, err

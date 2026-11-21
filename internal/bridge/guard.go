@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/fasthttp/websocket"
 	"github.com/valyala/fasthttp"
 )
 
@@ -23,6 +24,9 @@ import (
 //     can read the user's config directory know it.
 //  3. Content-Type must be application/json. A browser sends that type
 //     cross-origin only after a preflight, which the bridge never approves.
+//     A WebSocket upgrade of the RPC has no body, so this check does not
+//     apply to it. Check 2 covers it: a browser cannot set Authorization
+//     on a WebSocket.
 
 // tokenBytes is the size of the random bridge token before hex encoding.
 const tokenBytes = 32
@@ -72,6 +76,8 @@ func Guard(next fasthttp.RequestHandler, addr, token string) fasthttp.RequestHan
 			next(ctx)
 		case subtle.ConstantTimeCompare(ctx.Request.Header.Peek("Authorization"), want) != 1:
 			reject(ctx, fasthttp.StatusUnauthorized, "missing or wrong bridge token")
+		case string(ctx.Path()) == RPCPath && websocket.FastHTTPIsWebSocketUpgrade(ctx):
+			next(ctx)
 		case !isJSON(ctx.Request.Header.ContentType()):
 			reject(ctx, fasthttp.StatusUnsupportedMediaType, "content type must be application/json")
 		default:

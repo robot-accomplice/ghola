@@ -16,62 +16,59 @@ Attribution: the direction for Ghola's browser-like fetching work was inspired b
 
 ## Features
 
-### Browser-Like Fetching
+ghola v1 has one command line for three jobs: fetch (as curl), download (as aria2) and mirror (as wget). The full spec, with each option, its type, its default and its curl, wget and aria2 equivalents, is [docs/cli-v1.md](docs/cli-v1.md).
 
-| Flag | Description |
-| ------ | ------------- |
-| `-D, --drift <ms>` | **Temporal Drift** -- injects cryptographically random jitter into request timing to evade bot-detection and timing analysis. |
-| `-G, --ghost` | **Ghost Sign** -- adds a unique `X-Ghola-Identity` header (SHA256 hash of timestamp + URL) for distributed auditing and traceability. |
-| `--impersonate <profile>` | **Pure-Go browser impersonation** -- use a browser-like transport profile such as `chrome`, `firefox`, `safari`, or `edge`. |
-| `--stealth-headers` | **Coherent headers** -- generate browser-like headers that match the active profile. |
-| `--http3` | **HTTP/3** -- enable HTTP/3 when supported by the active impersonation profile. |
-| `--referer <mode>` | **Referer control** -- use `none`, `auto`, or an explicit URL. |
-| `--accept-language <value>` | **Locale shaping** -- override the profile default `Accept-Language`. |
+### Jobs
 
-### Forensic & Companion Tools
+| Command | Job |
+|---|---|
+| `ghola URL...` | Fetch each URL. The body goes to stdout, or to `-o`. |
+| `ghola download URL...` | Save each URL under its remote name; `-n N` splits a file into N ranges. |
+| `ghola inspect URL` | Check the headers and the security posture (Cloudflare and other WAFs). |
+| `ghola serve` | Run the local bridge on 127.0.0.1:18789 (for scope and scope-bca). Its JSON-RPC 2.0 endpoint `/jsonrpc` adds, lists, pauses, resumes and stops download jobs (`ghola.add`, `ghola.list`, `ghola.pause`, `ghola.resume`, `ghola.stop`, `ghola.purge`), behind the same token. It takes HTTP POST and WebSocket; a WebSocket client also gets `ghola.onComplete` and `ghola.onError`. |
+| `ghola profiles` | List the browser profiles of `--impersonate`. |
+| `ghola explain CODE` | Explain an exit code. |
+| `ghola completion SHELL` | Write the completion script for bash, zsh, fish or PowerShell. |
+| `ghola curl ARGS` | Run curl syntax, with curl's defaults. `--show-native` prints the ghola command. |
+| `ghola wget ARGS`, `ghola aria2c ARGS` | Run wget or aria2c syntax, with that tool's defaults. |
 
-| Flag | Description |
-| ------ | ------------- |
-| `-S, --snoop` | **Snoop Mode** -- pre-flight reconnaissance of target headers, security posture, and WAF detection (Cloudflare, X-Ray). |
-| `-c, --chain <type>` | **Chain Shortcuts** -- pre-fills RPC headers for `eth`, `base`, or `solana` ecosystems. |
-| `-r, --retry <n>` | **Autonomous Retries** -- exponential backoff with configurable base delay (`-b`). |
+### Short options
 
-### Core Utility
+| Letter | Option | Letter | Option |
+|---|---|---|---|
+| `-o` | `--output FILE` (`-o -` is stdout, `-o DIR/` keeps the remote name) | `-c` | `--continue` (resume) |
+| `-q` | `--quiet` (no meter, no notes; errors still show) | `-k` | `--no-tls-verify` |
+| `-v` | `--verbose` | `-r` | `--retry-max N` |
+| `-H` | `--header "Name: value"` | `-t` | `--timeout DURATION` |
+| `-d` | `--data TEXT \| @file \| @-` | `-w` | `--output-template` |
+| `-m` | `--method` | `-i` | `--input FILE` |
+| `-I` | `--head` | `-n` | `--connections N` (download) |
+| `-u` | `--user user:password` | `-j` | `--jobs N` |
 
-| Flag | Description |
-| ------ | ------------- |
-| `-n <int>` | **Segmented download** -- split a download to a file (`-o`) into this many parallel ranges. It does not repeat a request. |
-| `-w, --wget` | **Wget mode** -- auto-saves to local file using the inferred remote filename. |
-| `-u <user:pass>` | **Basic Auth** -- native HTTP basic authentication. |
-| `-T <file>` | **Upload** -- send a local file as the request body. |
-| `file:///path` | **Local files** -- a `file://` URL reads a local file (a folder lists its names), with `-o`, `-C -`, `-r` ranges and `-T` uploads, as in curl. A redirect never goes to `file://`, and the bridge refuses it. |
-| `ftp://` `ftps://` | **FTP** -- download (with `-o`, `-C -` and ranges through `REST`), list a folder (a path that ends in `/`) and upload (`-T`). The login is anonymous unless the URL or `-u` gives a user. `ftps://` is implicit TLS with the HTTPS TLS options. A SOCKS proxy carries FTP; an HTTP proxy is refused, so ghola never goes direct without a word. |
-| `sftp://` `scp://` | **SSH** -- download (with ranges and resume), list a folder (sftp) and upload (`-T`). `/~/` starts at the home folder. The login uses the password of the URL or `-u`, else the keys in `~/.ssh` and the ssh-agent. The host key must be in `~/.ssh/known_hosts` (exit 60 otherwise); `-k` skips the check, as in curl. A SOCKS proxy carries SSH; an HTTP proxy is refused. |
-| `ws://` `wss://` | **WebSocket** -- write each message that the server sends to stdout (or `-o`) until it closes, as curl does. `-d` sends one text message after the handshake, `-T` one binary message. The handshake carries `-H`, cookies and `-u`. With `--impersonate`, the TLS handshake has the browser fingerprint. `--max-time` ends a session that stays open (exit 28). |
-| `-o <file>` | **Output** -- write response body to a file. While the download runs, `<file>.ghola` records the `ETag` or `Last-Modified` of the remote version. ghola removes it when the download is done. `-o -` writes to stdout, as in curl. Without `-o -`, ghola refuses binary data (a NUL byte) to a terminal with exit 23, as curl does, so the bytes cannot change the terminal state. |
-| `-C -` | **Resume** a partial file. With a `<file>.ghola` state file, the request sends `If-Range`: when the remote file changed, the server sends the new version and ghola writes it from byte 0, so old and new bytes are never joined. Without a state file (a partial file from another tool), ghola resumes as curl does. |
-| `-H <header>` | **Custom headers** -- repeatable. A GET has no `Content-Type`. `-d`, `--data-binary` and `--data-urlencode` send `application/x-www-form-urlencoded`, as in curl. `--chain` sends `application/json`. A `Content-Type` from `-H` wins. |
-| `-X <method>` | **HTTP method** -- defaults to GET, auto-switches to POST when `-d` is used. |
-| `-i` | **Include headers** in output. |
-| `-v` | **Verbose** -- show ghost signature and extra diagnostics. |
-| `-s` | **Silent** -- suppress all output. |
-| `-f` | **Fail** on non-2xx HTTP status (exit non-zero, suppress body output). |
-| `-L, --location` | **Follow redirects** (HTTP 3xx). `-u`, `Authorization` and `Cookie` go only to the scheme, host and port you gave, as in curl. |
-| `--location-trusted` | **Follow redirects** and send `-u`, `Authorization` and `Cookie` to every host, as in curl. |
-| `--max-redirs <n>` | **Max redirects** to follow when `--location` is enabled. |
-| `--retry-http` | **Retry on statuses** (e.g. 429, 5xx) in addition to transport failures. |
-| `--timeout <ms>` | **Request timeout** in milliseconds (0 disables). It covers the whole transfer, the body included. |
-| `--max-time <s>` | **Request timeout** in seconds, as curl `--max-time`. Use it or `--timeout`, not both. |
-| `--connect-timeout <s>` | **Connect timeout** in seconds: DNS, TCP, proxy CONNECT and TLS only. |
-| `--speed-limit <B/s>` | **Stall check** -- stop when slower than this many bytes per second for `--speed-time` (default 30 s). |
-| `--speed-time <s>` | **Stall window** in seconds for `--speed-limit` (default limit 1 byte per second). |
-| `--compressed` | **Decompression** -- ask for `gzip, deflate, br, zstd` and decode the body, on stdout and with `-o`. The `Content-Encoding` header decides: a `.gz` file sent as it is stays a `.gz` file. |
-| `--cookie-jar <file>` | **Persistent cookies** -- save and reuse cookies across runs, on stdout and with `-o`. A new jar uses the Netscape format, so curl (`-b`, `-c`) and wget (`--load-cookies`) read it, and ghola reads theirs. A v0 JSON jar is read and written back as JSON. The jar follows RFC 6265: a server can set a cookie only for its own domain, never for a public suffix, and a cookie without `Domain` goes back only to its host. |
-| `--cookie <name=value>` | **Seed cookies** -- add one or more cookies to the request session. |
-| `--proxy <url>` | **Single proxy** -- route traffic through a proxy: `http://`, `https://`, `socks4://`, `socks4a://`, `socks5://` or `socks5h://`, as in curl. `socks4` and `socks5` resolve the host name in ghola; `socks4a` and `socks5h` let the proxy resolve it. `socks5://user:pass@host` sends credentials. Without `--proxy`, ghola reads `http_proxy`, `https_proxy`, `ALL_PROXY` and `no_proxy`, as curl does, and a SOCKS URL there works the same way. |
-| `--proxy-file <path>` | **Proxy pool** -- load proxies from a newline-delimited file. |
-| `--proxy-strategy <mode>` | **Proxy selection** -- choose from `sticky`, `random`, or `round-robin`. |
-| `--profile-list` | **List profiles** -- print the built-in impersonation profiles and exit. |
+Values have units: `30s`, `500ms`, `2M`, `1GiB`, `2M/s`. `K`, `M` and `G` are 1024-based, as in curl, wget and aria2; `kB` and `MB` are 1000-based. Every on/off option has a `--no-` form.
+
+### Defaults
+
+ghola follows redirects (up to 20), fails on status 400 and above (exit 22; stdout keeps the body, `-o` writes no file), retries a transient failure 3 times for GET, HEAD, PUT, DELETE and OPTIONS, and asks for gzip, br and zstd. `--no-follow`, `--no-fail`, `-r 0` and `--no-compressed` turn them off. Binary data to a terminal is refused, as in curl; `-o -` writes it anyway.
+
+### Protocols
+
+HTTP and HTTPS (with `--impersonate` on the tls-client stack), `file://`, `ftp://` and `ftps://`, `sftp://` and `scp://`, and `ws://` and `wss://`. Proxies: `http://`, `https://`, `socks4://`, `socks4a://`, `socks5://` and `socks5h://`, and the `http_proxy`, `https_proxy`, `ftp_proxy`, `ALL_PROXY` and `no_proxy` variables.
+
+### Browser-like fetching
+
+| Option | What it does |
+|---|---|
+| `--impersonate PROFILE` | Copy a browser's TLS and HTTP/2 fingerprint: `chrome`, `firefox`, `safari`, `edge`. |
+| `--impersonate-headers` | Send the browser's default headers in its order (on with `--impersonate`). |
+| `--impersonate-accept-language VALUE` | Override the profile's `Accept-Language`. |
+| `--wait-jitter DURATION` | Wait a random time up to DURATION before each request. |
+| `--referer none\|auto\|URL` | Set the Referer; `auto` sends the previous URL after a redirect. |
+| `--chain eth\|base\|solana` | JSON-RPC shortcut: POST with the RPC headers of the chain. |
+
+### Moving from v0
+
+v1.0.0 removes the v0 flags. A v0 flag stops with an argument error that names its v1 form, for example `--serve is a ghola v0 flag. In v1 it is ghola serve.` The full table is in [docs/cli-v1.md](docs/cli-v1.md#9-migration-from-v0). Scripts in curl syntax can run as they are with `ghola curl`.
 
 ## Installation
 
@@ -150,35 +147,33 @@ Ghola now targets Go 1.27 for development and release builds.
 ## Usage
 
 ```bash
-# Basic GET request
+# Fetch a URL (redirects are followed, an HTTP error exits 22)
 ghola https://httpbin.org/get
 
 # Browser-like fetch with a pure-Go Chrome fingerprint
-ghola --impersonate chrome --stealth-headers https://example.com
+ghola --impersonate chrome https://example.com
 
-# Stateful probing with persistent cookies
-ghola --impersonate firefox --cookie-jar ~/.config/ghola/cookies.json https://example.com
+# Keep cookies across runs, in the Netscape format of curl and wget
+ghola --impersonate firefox --cookie-jar ~/.config/ghola/cookies.txt https://example.com
 
-# Proxy-backed browser-like fetch
-ghola --impersonate chrome --proxy http://user:pass@proxy.local:8080 https://example.com
+# Send through a SOCKS proxy that resolves the names
+ghola --proxy socks5h://127.0.0.1:9050 https://example.com
 
-# Inspect available impersonation profiles
-ghola --profile-list
+# POST JSON-RPC to a chain node, with retries
+ghola --chain base -r 3 -d '{"jsonrpc":"2.0","id":1,"method":"eth_blockNumber","params":[]}' https://rpc.base.org
 
-# POST with data and verbose ghost signing
-ghola -vG -H 'Content-Type: application/json' -d '{"query": "balance"}' https://rpc.example.com
+# Check the security posture of a site
+ghola inspect https://example.com
 
-# Snoop mode -- check security posture
-ghola -S https://example.com
+# Download a file under its remote name, in 5 parallel ranges
+ghola download -n 5 https://example.com/big.iso
 
-# Chain-aware request with retries
-ghola -c base -r 3 https://rpc.base.org
+# Resume a partial download; If-Range starts again if the file changed
+ghola download -c https://example.com/big.iso
 
-# Download a file (wget mode)
-ghola -w https://example.com/report.pdf
-
-# Download a large file in 5 parallel ranges
-ghola -n 5 -o big.iso https://example.com/big.iso
+# Run a pasted curl command, or see its ghola form
+ghola curl -sSL -H 'Accept: application/json' https://example.com/api
+ghola curl --show-native -sSL -o out.zip https://example.com/out.zip
 ```
 
 ### Exit codes
@@ -190,21 +185,26 @@ ghola uses curl's exit codes for the same causes, so a script written for curl r
 | 0 | Success |
 | 1 | A redirect went to a protocol that ghola does not follow (for example `file://`) |
 | 2 | Invalid or missing argument |
+| 3 | A URL glob (`{a,b}` or `[1-9]`) is not valid (`--no-url-glob` turns globs off) |
 | 6 | The host name did not resolve |
 | 7 | The connection failed (for example, refused) |
-| 22 | `-f` refused the HTTP status |
+| 22 | The server answered with status 400 or above (`--no-fail` turns it off) |
 | 23 | ghola could not write the output (stdout or the `-o` file) |
-| 26 | ghola could not read a local file (`-d @file`, `-T`, `-F name=@file`) |
-| 28 | A time limit ended the transfer (`--max-time`, `--connect-timeout`, `--speed-limit`) |
+| 26 | ghola could not read a local file (`-d @file`, `--upload`, `--form name=@file`) |
+| 28 | A time limit ended the transfer (`--timeout`, `--timeout-connect`, `--stall-time`) |
+| 32 | The body does not match `--checksum` or the server's `Content-Digest` (aria2's code; curl does not use 32) |
 | 35 | The TLS handshake failed |
 | 37 | ghola could not read the file of a `file://` URL |
 | 67 | The FTP server refused the login |
 | 78 | The FTP file does not exist |
-| 47 | `-L` reached `--max-redirs` |
+| 47 | Redirects reached `--follow-max` |
 | 55 | The request failed for another cause |
 | 56 | The connection failed after it was ready (for example, a reset, or a TLS alert after the handshake) |
 | 60 | The server certificate did not verify, or the SSH host key is not in `~/.ssh/known_hosts` |
-| 61 | `--compressed` got a `Content-Encoding` that it cannot decode |
+| 63 | The body is larger than `--max-size` |
+| 61 | The `Content-Encoding` of the answer cannot be decoded (`--no-compressed` gets it as it is) |
+| 90 | The server public key does not match `--tls-pin` |
+| 91 | The server sent no good OCSP staple (`--tls-ocsp`) |
 
 ## Architecture
 

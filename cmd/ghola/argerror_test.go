@@ -70,7 +70,7 @@ func TestExecute_ArgumentErrorPrintsUsageAroundError(t *testing.T) {
 	if code != config.BadFlag.Int() {
 		t.Errorf("exit code = %d, want %d (BadFlag)", code, config.BadFlag.Int())
 	}
-	const usageLine = "Usage: ghola [options...] <url>"
+	const usageLine = "Usage: ghola [options] URL..."
 	if n := strings.Count(out, usageLine); n != 2 {
 		t.Fatalf("usage printed %d times, want 2:\n%s", n, out)
 	}
@@ -90,7 +90,7 @@ func TestExecute_RequestFailureHasNoUsage(t *testing.T) {
 	}
 	var code int
 	out := captureStderr(t, func() {
-		code = execute(bg(), []string{"http://test"}, failing, nil, os.Stdout)
+		code = execute(bg(), []string{"-r", "0", "http://test"}, failing, nil, os.Stdout)
 	})
 	if code != config.SendFailed.Int() {
 		t.Errorf("exit code = %d, want %d (SendFailed)", code, config.SendFailed.Int())

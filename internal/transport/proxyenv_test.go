@@ -51,7 +51,7 @@ func checkProxyCase(t *testing.T, env map[string]string, target, want string, ca
 		t.Setenv(n, v)
 	}
 	u, _ := url.Parse(target)
-	p, err := proxyFromEnv(u)
+	p, err := proxyFromEnv(u, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

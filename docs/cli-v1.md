@@ -32,7 +32,7 @@ The first word picks the job. Without a job word, ghola fetches.
 Rules:
 1. The job word must be the first argument.
 2. Options can come before or after the URLs, as in curl. `--` ends the options.
-3. Each option has a scope: `all` (fetch, download and mirror), or one job. An option outside its scope is an argument error that names the job where it works.
+3. Each option has a scope: `all` (fetch, download, mirror and inspect), or one job. `ghola inspect` also takes the fetch options, because it makes a request as a fetch does (for example with `--impersonate` or `--proxy`). An option outside its scope is an argument error that names the job where it works.
 
 ## 2. Short letters
 
@@ -102,7 +102,7 @@ The phase column says where each option is built. 0B is the parser build (step 7
 | `--output-remote-time` | bool | false | -R | (default with -N) | --remote-time | 0B | Set the file time to the Last-Modified time. |
 | `--output-select` (fetch) | gjson path |  |  |  |  | 0B | Write only the value at the path of a JSON body (gjson syntax). |
 | `--output-template`, `-w` | template |  | -w |  |  | 2 | After each transfer write the template. It uses curl's %{name} variables and %{json}. |
-| `--output-events` | none\|json | none |  |  | (RPC) | 2 | Write one JSON line to stderr for each transfer event. A JSON schema in the repo defines the lines. |
+| `--output-events` | none\|json | none |  |  | (RPC) | 2 | Write one JSON line to stderr for each transfer event: start, retry, done and error. docs/cli/output-events.schema.json defines the lines. |
 | `--show-headers` (fetch) | bool | false | -i / --show-headers | -S (stderr) |  | 0B | Write the response header block to stdout before the body. |
 | `--save-headers` | path |  | -D | --save-headers |  | 2 | Write the response header block to PATH. |
 | `--quiet`, `-q` | bool | false | -sS | -q | -q | 0B | Write no progress meter and no notes. Errors still go to stderr. |
@@ -137,7 +137,7 @@ The phase column says where each option is built. 0B is the parser build (step 7
 | `--url-glob` | bool | true | -g (inverse) |  | -Z | 2 | Expand {a,b} and [1-9] in URLs. |
 | `--url-path-as-is` | bool | false | --path-as-is |  |  | 2 | Send the path without removing ./ and ../. |
 | `--request-target` (fetch) | string |  | --request-target |  |  | 2 | Send this request target in place of the URL path. |
-| `--variable` (fetch) | name=value (repeat) |  | --variable |  |  | 2 | Set a variable for {{name}} expansion in other option values. |
+| `--variable` (fetch) | name=value (repeat) |  | --variable |  |  | 2 | Set a variable: NAME=VALUE, NAME@FILE or %NAME (from the environment). Only the --expand-NAME form of an option expands {{name}} in its value, as in curl. |
 | `--next` (fetch) | (separator) |  | -: / --next |  |  | 2 | Start the options for the next URL. |
 | `--input`, `-i` | path |  | -K (partly) | -i | -i | 3 | Read URLs from PATH (- for stdin): one for each line, with options for each URL in aria2's format. |
 | `--input-format` | lines\|html\|sitemap\|metalink | lines |  | -F / --force-html | (detected) | 3 | The format of --input. |
@@ -146,14 +146,14 @@ The phase column says where each option is built. 0B is the parser build (step 7
 
 | Option | Type | Default | curl | wget | aria2 | Phase | Description |
 |---|---|---|---|---|---|---|---|
-| `--http` | auto\|1.0\|1.1\|2\|2-prior\|3\|3-only | auto | --http1.0 / --http1.1 / --http2 / --http2-prior-knowledge / --http3 / --http3-only | --no-http2 (Wget2) |  | 2 | The HTTP version. |
+| `--http` | auto\|1.0\|1.1\|2\|2-prior\|3\|3-only | auto | --http1.0 / --http1.1 / --http2 / --http2-prior-knowledge / --http3 / --http3-only | --no-http2 (Wget2) |  | 2 | The HTTP version. 3 and 3-only need --impersonate with a profile that has HTTP/3; 3-only fails when the answer is not HTTP/3. 1.0 is refused: ghola's HTTP clients write only HTTP/1.1 request lines. |
 | `--compressed` | bool | true | --compressed | --compression (Wget2) | --http-accept-gzip | 0B | Ask for gzip, br and zstd and decode the body. A segment of a download asks for identity. |
 | `--follow` | bool | true | -L | (default) | (default) | 0B | Follow redirects. |
 | `--follow-max` | int | 20 | --max-redirs | --max-redirect |  | 0B | Stop with exit 47 after this many redirects. |
 | `--follow-trusted` | bool | false | --location-trusted |  |  | 0B | Send -u and the Authorization and Cookie headers to other hosts after a redirect too. |
 | `--fail` | bool | true | --fail-with-body | (default) | (default) | 0B | Exit 22 on status 400 and above. stdout keeps the body. -o writes no file. |
 | `--hsts` | path |  | --hsts | --hsts-file |  | 2 | Read and write the HSTS cache at PATH. |
-| `--alt-svc` | path |  | --alt-svc |  |  | 2 | Read and write the Alt-Svc cache at PATH. |
+| `--alt-svc` | path |  | --alt-svc |  |  | 2 | Read and write the Alt-Svc cache at PATH, in curl's format. An h3 entry turns on HTTP/3 for that origin only with --impersonate and a profile that has HTTP/3. |
 | `--cond-time` | [-]date \| file |  | -z | -N | --conditional-get | 2 | Send If-Modified-Since (or If-Unmodified-Since with -) for the date or the file time. |
 | `--cond-etag-save` | path |  | --etag-save |  |  | 2 | Write the ETag of the response to PATH. |
 | `--cond-etag-compare` | path |  | --etag-compare |  |  | 2 | Send If-None-Match with the ETag in PATH. |
@@ -261,7 +261,6 @@ The phase column says where each option is built. 0B is the parser build (step 7
 | `--session` (download) | bool | true |  |  | --save-session | 3 | Keep a state file next to each partial download, so ghola jobs resume can restart it. |
 | `--on-complete` (download) | command |  |  |  | --on-download-complete | 3 | Run this command when a job finishes. |
 | `--on-error` (download) | command |  |  |  | --on-download-error | 3 | Run this command when a job fails. |
-| `--seed-ratio` (download) | float | 1.0 |  |  | --seed-ratio | 3 | BitTorrent: stop seeding at this upload ratio (D5). |
 | `--background` | bool | false |  | -b | (daemon) | 4 | Run in the background and write messages to --log. |
 | `--log` | path | ghola.log with --background | --stderr | -o / -a | -l | 4 | Write messages to PATH. |
 
@@ -354,7 +353,7 @@ v1.0.0 removes the v0 flags (plan step 8). A v0 flag stops with an argument erro
 | `-D / --drift MS` | --wait-jitter DURATION |  |
 | `-f / --fail` | (default) | Use --no-fail to turn it off. The rule is now status 400 and above. |
 | `-F / --form` | --form | No short letter (1.4% of curl files). |
-| `-G / --ghost` | (removed) | See open question 1. |
+| `-G / --ghost` | (removed) | It sent an X-Ghola-Identity header that marked each request as coming from ghola. |
 | `--har` | --har |  |
 | `-H / --header` | -H / --header |  |
 | `-h / --help` | -h / --help |  |
@@ -384,7 +383,7 @@ v1.0.0 removes the v0 flags (plan step 8). A v0 flag stops with an argument erro
 | `-X / --request` | -m / --method |  |
 | `-r / --retry N` | --retry-max N | The default is now 3 for idempotent methods. |
 | `--retry-http` | (default) | --retry-status sets the codes. |
-| `--serve` | ghola serve | No alias (v1 defaults item 11). |
+| `--serve` | ghola serve | There is no alias. |
 | `-s / --silent` | -q / --quiet | v1 -q still writes errors (as curl -sS). |
 | `-S / --snoop` | ghola inspect URL | The job is a word. |
 | `--speed-limit` | --stall-rate RATE |  |

@@ -10,7 +10,7 @@ section 5A). The spec data lives in three CSV files in docs/cli/:
 
 The script checks the data and fails on an error:
     1. Each option name and each short letter is used once.
-    2. Each flag that `ghola --help` lists has a row in v0-to-v1.csv.
+    2. Each v0 flag (docs/cli/v0-flags.txt) has a row in v0-to-v1.csv.
     3. Each option in a v1 column (mapping or task) exists in v1-options.csv.
 
 Then it measures each task: the number of options and the number of
@@ -33,10 +33,10 @@ Usage:
 """
 
 import csv
+import json
 import os
 import re
 import shlex
-import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -89,14 +89,18 @@ class Options:
                 if not self.long_exists(t[2:].split("=", 1)[0]):
                     bad.append(t)
             elif re.match(r"-[A-Za-z]", t):
-                # A letter group, or one letter with its value attached (-n8).
-                for ch in t[1:]:
-                    if ch not in self.by_short:
-                        bad.append(f"-{ch}")
-                        break
-                    if self.by_short[ch]["type"] != "bool":
-                        break
+                bad += self.bad_letters(t[1:])
         return bad
+
+    def bad_letters(self, letters):
+        """The first unknown letter of a group such as -qo, or none. A letter
+        that takes a value ends the group (-n8)."""
+        for ch in letters:
+            if ch not in self.by_short:
+                return [f"-{ch}"]
+            if self.by_short[ch]["type"] != "bool":
+                return []
+        return []
 
 
 def option_tokens(cmd):
@@ -113,9 +117,10 @@ def option_tokens(cmd):
 
 
 def ghola_v0_flags():
-    out = subprocess.run(["go", "run", "./cmd/ghola", "--help"], cwd=ROOT, capture_output=True, text=True)
-    text = out.stdout + out.stderr
-    return sorted(set(re.findall(r"^\s+(?:-[A-Za-z], )?(--[a-z0-9-]+)", text, re.M)))
+    """The long flags of ghola v0, frozen in docs/cli/v0-flags.txt: the v0 parser"""
+    """is gone in v1, so its --help cannot list them any more."""
+    with open(os.path.join(CLI, "v0-flags.txt"), encoding="utf-8") as f:
+        return sorted(l.strip() for l in f if l.startswith("--"))
 
 
 def check_mapping(opts, mapping):
@@ -132,7 +137,7 @@ def check_mapping(opts, mapping):
     return errs, len(v0)
 
 
-def all_long_names(opts):
+def all_long_names():
     """Long option names of curl, wget and aria2, from the flag inventory."""
     names = set()
     for r in read("flag-inventory.csv"):
@@ -141,33 +146,50 @@ def all_long_names(opts):
     return names
 
 
+def other_tools(task):
+    """The (options, characters) of each tool that can do the task."""
+    others = {}
+    for tool in TOOLS:
+        cmd = task[tool]
+        if cmd:
+            others[tool] = (option_tokens(cmd)[1], len(cmd) - len(cmd.split()[0]))
+    return others
+
+
+def note_errors(task, won):
+    """A loss needs an Accepted note, and a pass must not have one."""
+    accepted = task["note"].startswith("Accepted:")
+    if won and accepted:
+        return [f"task {task['id']} passes but has an Accepted note: remove the note"]
+    if not won and not accepted:
+        return [f"task {task['id']} loses and has no Accepted note"]
+    return []
+
+
+def measure_task(opts, t, other_names):
+    toks, strict_n = option_tokens(t["native"])
+    errs = [f"task {t['id']}: unknown native option {b}" for b in opts.check_tokens(toks)]
+    strict_chars = len(t["native"]) - len("ghola")
+    job = toks[0] if toks and toks[0] in SUBCOMMANDS else ""
+    n = strict_n - (1 if job else 0)
+    chars = strict_chars - (len(job) + 1 if job else 0)
+    new = sorted({x[2:].split("=", 1)[0] for x in toks if x.startswith("--")} - other_names)
+    others = other_tools(t)
+    best_n = min((v[0] for v in others.values()), default=n)
+    best_c = min((v[1] for v in others.values()), default=chars)
+    won = n <= best_n and chars <= best_c
+    errs += note_errors(t, won)
+    return {**t, "n": n, "chars": chars, "new": new, "others": others, "pass": won,
+            "strict": strict_n <= best_n and strict_chars <= best_c}, errs
+
+
 def measure(opts, tasks):
-    other_names = all_long_names(opts)
+    other_names = all_long_names()
     results, errs = [], []
     for t in tasks:
-        toks, strict_n = option_tokens(t["native"])
-        errs += [f"task {t['id']}: unknown native option {b}" for b in opts.check_tokens(toks)]
-        strict_chars = len(t["native"]) - len("ghola")
-        job = toks[0] if toks and toks[0] in SUBCOMMANDS else ""
-        n = strict_n - (1 if job else 0)
-        chars = strict_chars - (len(job) + 1 if job else 0)
-        new = sorted({x[2:].split("=", 1)[0] for x in toks if x.startswith("--")} - other_names)
-        others = {}
-        for tool in TOOLS:
-            cmd = t[tool]
-            if cmd:
-                prog = cmd.split()[0]
-                others[tool] = (option_tokens(cmd)[1], len(cmd) - len(prog))
-        best_n = min((v[0] for v in others.values()), default=n)
-        best_c = min((v[1] for v in others.values()), default=chars)
-        won = n <= best_n and chars <= best_c
-        accepted = t["note"].startswith("Accepted:")
-        if won and accepted:
-            errs.append(f"task {t['id']} passes but has an Accepted note: remove the note")
-        if not won and not accepted:
-            errs.append(f"task {t['id']} loses (native {n}/{chars}, others {others}) and has no Accepted note")
-        results.append({**t, "n": n, "chars": chars, "new": new, "others": others, "pass": won,
-                        "strict": strict_n <= best_n and strict_chars <= best_c})
+        r, e = measure_task(opts, t, other_names)
+        results.append(r)
+        errs += e
     return results, errs
 
 
@@ -219,6 +241,33 @@ def write_section(text, marker, lines):
     return text[:i] + "\n" + "\n".join(lines) + text[j:]
 
 
+GO_TABLE = os.path.join(ROOT, "internal", "cli", "table_gen.go")
+
+
+def go_table():
+    """The Go source that holds the two spec CSV files as strings. The cli
+    package reads them at start, so the table has no repeated literals and
+    cannot differ from the CSV."""
+    def raw(name):
+        with open(os.path.join(CLI, name), encoding="utf-8", newline="") as f:
+            text = f.read().replace("\r\n", "\n")
+        assert "`" not in text, f"{name} has a backquote"
+        return "`" + text + "`"
+    return "\n".join([
+        "// Code generated by scripts/cli_spec.py from docs/cli/v1-options.csv",
+        "// and docs/cli/v0-to-v1.csv. DO NOT EDIT.",
+        "",
+        "package cli",
+        "",
+        "// optionsCSV is docs/cli/v1-options.csv.",
+        "const optionsCSV = " + raw("v1-options.csv"),
+        "",
+        "// v0CSV is docs/cli/v0-to-v1.csv.",
+        "const v0CSV = " + raw("v0-to-v1.csv"),
+        "",
+    ])
+
+
 def main():
     opts = Options(read("v1-options.csv"))
     mapping = read("v0-to-v1.csv")
@@ -238,6 +287,9 @@ def main():
         sys.exit(1)
     if "--check" in sys.argv:
         return
+    os.makedirs(os.path.dirname(GO_TABLE), exist_ok=True)
+    with open(GO_TABLE, "w", encoding="utf-8", newline="\n") as f:
+        f.write(go_table())
     with open(SPEC, encoding="utf-8", newline="") as f:
         text = f.read()
     nl = "\r\n" if "\r\n" in text else "\n"

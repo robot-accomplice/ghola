@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/fasthttp/websocket"
 	"github.com/robot-accomplice/ghola/internal/client"
 	"github.com/robot-accomplice/ghola/internal/config"
 	gholatransport "github.com/robot-accomplice/ghola/internal/transport"
@@ -19,30 +20,33 @@ import (
 
 // Request is the JSON payload accepted by the bridge server.
 type Request struct {
-	URL            string            `json:"url"`
-	Method         string            `json:"method"`
-	Headers        map[string]string `json:"headers"`
-	Body           string            `json:"body"`
-	Drift          bool              `json:"drift"`
-	Ghost          bool              `json:"ghost"`
-	Retries        int               `json:"retries"`
-	BufferSize     int               `json:"buffer_size"`
-	Impersonate    string            `json:"impersonate"`
-	StealthHeaders bool              `json:"stealth_headers"`
-	CookieJar      string            `json:"cookie_jar"`
-	Cookies        []string          `json:"cookies"`
-	Proxy          string            `json:"proxy"`
-	ProxyAuth      string            `json:"proxy_auth"`
-	ProxyFile      string            `json:"proxy_file"`
-	ProxyStrategy  string            `json:"proxy_strategy"`
-	Referer        string            `json:"referer"`
-	AcceptLanguage string            `json:"accept_language"`
-	HTTP3          bool              `json:"http3"`
-	Timeout        int               `json:"timeout"`
-	Location       bool              `json:"location"`
-	MaxRedirs      int               `json:"max_redirs"`
-	RetryHTTP      bool              `json:"retry_http"`
-	User           string            `json:"user"`
+	URL     string            `json:"url"`
+	Method  string            `json:"method"`
+	Headers map[string]string `json:"headers"`
+	Body    string            `json:"body"`
+	Drift   bool              `json:"drift"`
+	// Ghost is accepted and ignored. v0 sent an X-Ghola-Identity header
+	// for it, which marked each request as coming from ghola; scope and
+	// scope-bca set it in their stealth mode (v1 spec, question A).
+	Ghost          bool     `json:"ghost"`
+	Retries        int      `json:"retries"`
+	BufferSize     int      `json:"buffer_size"`
+	Impersonate    string   `json:"impersonate"`
+	StealthHeaders bool     `json:"stealth_headers"`
+	CookieJar      string   `json:"cookie_jar"`
+	Cookies        []string `json:"cookies"`
+	Proxy          string   `json:"proxy"`
+	ProxyAuth      string   `json:"proxy_auth"`
+	ProxyFile      string   `json:"proxy_file"`
+	ProxyStrategy  string   `json:"proxy_strategy"`
+	Referer        string   `json:"referer"`
+	AcceptLanguage string   `json:"accept_language"`
+	HTTP3          bool     `json:"http3"`
+	Timeout        int      `json:"timeout"`
+	Location       bool     `json:"location"`
+	MaxRedirs      int      `json:"max_redirs"`
+	RetryHTTP      bool     `json:"retry_http"`
+	User           string   `json:"user"`
 }
 
 // Response is the JSON payload returned by the bridge server.
@@ -59,6 +63,7 @@ const Addr = "127.0.0.1:18789"
 // Handler processes a single bridge request. Exported for testing with
 // custom Doer injection; production callers should use ListenAndServe.
 func Handler(do client.Doer) fasthttp.RequestHandler {
+	rpc := newRPC(nil) // the jobs live as long as the bridge
 	return func(ctx *fasthttp.RequestCtx) {
 		if string(ctx.Path()) == "/health" {
 			ctx.SetContentType("application/json")
@@ -66,6 +71,10 @@ func Handler(do client.Doer) fasthttp.RequestHandler {
 			return
 		}
 
+		if string(ctx.Path()) == RPCPath && (ctx.IsPost() || websocket.FastHTTPIsWebSocketUpgrade(ctx)) {
+			rpc.serve(ctx)
+			return
+		}
 		if !ctx.IsPost() {
 			ctx.SetStatusCode(fasthttp.StatusMethodNotAllowed)
 			return
@@ -109,7 +118,6 @@ func Handler(do client.Doer) fasthttp.RequestHandler {
 			User:    br.User,
 			Headers: nil,
 			Stealth: config.StealthOptions{
-				Ghost:          br.Ghost,
 				Agent:          config.DefaultAgent,
 				Impersonate:    br.Impersonate,
 				StealthHeaders: br.StealthHeaders,

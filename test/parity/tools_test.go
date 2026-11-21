@@ -40,7 +40,16 @@ func findTools(t *testing.T, ghola string) map[string]*tool {
 		}
 		found[name] = &tool{Name: name, Path: path}
 	}
+	// The compatibility commands run the arguments of the tool they copy on
+	// the ghola binary, with that tool's config switch first (v1 spec,
+	// section 6).
+	for name, c := range compatTools {
+		found[name] = &tool{Name: name, Path: ghola, base: c.base, Version: "ghola " + c.base[0]}
+	}
 	for _, tl := range found {
+		if _, isCompat := compatTools[tl.Name]; isCompat {
+			continue
+		}
 		tl.Version = version(tl.Path)
 		switch {
 		case tl.Name == "curl":

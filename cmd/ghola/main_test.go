@@ -113,7 +113,7 @@ func TestExecute_DialErrorIsCouldntConnect(t *testing.T) {
 		return &net.OpError{Op: "dial", Err: &os.SyscallError{Syscall: "connect", Err: os.ErrNotExist}}
 	}
 
-	code := execute(bg(), []string{"http://test"}, failDoer, nil, os.Stdout)
+	code := execute(bg(), []string{"-r", "0", "http://test"}, failDoer, nil, os.Stdout)
 	if code != config.CouldntConnect.Int() {
 		t.Errorf("exit code = %d, want %d (CouldntConnect)", code, config.CouldntConnect.Int())
 	}
@@ -124,7 +124,7 @@ func TestExecute_DialErrorIsCouldntConnectSilent(t *testing.T) {
 		return &net.OpError{Op: "dial", Err: &os.SyscallError{Syscall: "connect", Err: os.ErrNotExist}}
 	}
 
-	code := execute(bg(), []string{"-s", "http://test"}, failDoer, nil, os.Stdout)
+	code := execute(bg(), []string{"-q", "-r", "0", "http://test"}, failDoer, nil, os.Stdout)
 	if code != config.CouldntConnect.Int() {
 		t.Errorf("exit code = %d, want %d (CouldntConnect)", code, config.CouldntConnect.Int())
 	}
@@ -137,7 +137,7 @@ func TestExecute_SnoopMode(t *testing.T) {
 	})
 	defer cleanup()
 
-	code := execute(bg(), []string{"-S", "http://test"}, do, nil, os.Stdout)
+	code := execute(bg(), []string{"inspect", "http://test"}, do, nil, os.Stdout)
 	if code != config.NoError.Int() {
 		t.Errorf("exit code = %d, want %d", code, config.NoError.Int())
 	}
@@ -177,7 +177,7 @@ func TestExecute_UploadFile(t *testing.T) {
 	})
 	defer cleanup()
 
-	code := execute(bg(), []string{"-T", uploadFile, "http://test"}, do, nil, os.Stdout)
+	code := execute(bg(), []string{"--upload", uploadFile, "http://test"}, do, nil, os.Stdout)
 	if code != config.NoError.Int() {
 		t.Errorf("exit code = %d, want %d", code, config.NoError.Int())
 	}
@@ -187,7 +187,7 @@ func TestExecute_UploadFileNotFound(t *testing.T) {
 	do, cleanup := testDoer(func(ctx *fasthttp.RequestCtx) {})
 	defer cleanup()
 
-	code := execute(bg(), []string{"-T", "/nonexistent/file.txt", "http://test"}, do, nil, os.Stdout)
+	code := execute(bg(), []string{"--upload", "/nonexistent/file.txt", "http://test"}, do, nil, os.Stdout)
 	if code != config.ReadFileFailed.Int() {
 		t.Errorf("exit code = %d, want %d (ReadFileFailed)", code, config.ReadFileFailed.Int())
 	}
@@ -206,27 +206,28 @@ func TestExecute_WriteFileFailed(t *testing.T) {
 	}
 }
 
-func TestExecute_ConcurrentMode(t *testing.T) {
+// In v1, -n splits a download (ghola download); a fetch with -n is an
+// argument error that names the job.
+func TestExecute_ConnectionsNeedDownload(t *testing.T) {
 	do, cleanup := testDoer(func(ctx *fasthttp.RequestCtx) {
 		ctx.SetStatusCode(200)
-		ctx.SetBodyString("concurrent")
 	})
 	defer cleanup()
 
 	code := execute(bg(), []string{"-n", "3", "http://test"}, do, nil, os.Stdout)
-	if code != config.NoError.Int() {
-		t.Errorf("exit code = %d, want %d", code, config.NoError.Int())
+	if code != config.BadFlag.Int() {
+		t.Errorf("exit code = %d, want %d", code, config.BadFlag.Int())
 	}
 }
 
-func TestExecute_ConcurrentSnoop(t *testing.T) {
+func TestExecute_InspectCloudflare(t *testing.T) {
 	do, cleanup := testDoer(func(ctx *fasthttp.RequestCtx) {
 		ctx.SetStatusCode(200)
 		ctx.Response.Header.Set("Server", "cloudflare")
 	})
 	defer cleanup()
 
-	code := execute(bg(), []string{"-n", "2", "-S", "http://test"}, do, nil, os.Stdout)
+	code := execute(bg(), []string{"inspect", "http://test"}, do, nil, os.Stdout)
 	if code != config.NoError.Int() {
 		t.Errorf("exit code = %d, want %d", code, config.NoError.Int())
 	}

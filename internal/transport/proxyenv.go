@@ -13,13 +13,13 @@ import (
 // proxyFromEnv returns the proxy for target from the environment, or nil
 // (audit finding M8). It reads http_proxy or HTTP_PROXY for http, and
 // https_proxy or HTTPS_PROXY for https, then skips the hosts in no_proxy or
-// NO_PROXY. It differs from Go's http.ProxyFromEnvironment in two ways:
+// NO_PROXY, or the hosts in bypass (--proxy-bypass) when it is set. It differs from Go's http.ProxyFromEnvironment in two ways:
 //   - It proxies localhost and loopback addresses, as curl and wget do.
 //   - It reads the environment on each call. Go reads it once per process.
 //
 // HTTP_PROXY is ignored when REQUEST_METHOD is set, as Go does: in a CGI
 // program a client can set it through the Proxy request header (httpoxy).
-func proxyFromEnv(target *url.URL) (*url.URL, error) {
+func proxyFromEnv(target *url.URL, bypass *string) (*url.URL, error) {
 	var raw string
 	switch strings.ToLower(target.Scheme) {
 	case "http":
@@ -36,7 +36,7 @@ func proxyFromEnv(target *url.URL) (*url.URL, error) {
 		// As in curl, ALL_PROXY serves a scheme whose own variable is unset.
 		raw = firstEnv("all_proxy", "ALL_PROXY")
 	}
-	if raw == "" || noProxy(target.Hostname(), firstEnv("no_proxy", "NO_PROXY")) {
+	if raw == "" || bypassed(target, bypass) {
 		return nil, nil
 	}
 	// A value without a scheme is an HTTP proxy, as in curl.
@@ -60,6 +60,16 @@ func firstEnv(names ...string) string {
 		}
 	}
 	return ""
+}
+
+// bypassed reports a target that goes direct: its host is in --proxy-bypass,
+// else in no_proxy, which is read on each call.
+func bypassed(target *url.URL, bypass *string) bool {
+	list := firstEnv("no_proxy", "NO_PROXY")
+	if bypass != nil {
+		list = *bypass
+	}
+	return noProxy(target.Hostname(), list)
 }
 
 // noProxy reports whether host matches the no_proxy list: "*", a host name
@@ -100,12 +110,12 @@ func withTarget(ctx context.Context, target *url.URL) context.Context {
 
 // envSOCKS returns the SOCKS proxy that the environment names for the
 // request in ctx, or nil when the environment names none or an HTTP proxy.
-func envSOCKS(ctx context.Context) (*url.URL, error) {
+func envSOCKS(ctx context.Context, bypass *string) (*url.URL, error) {
 	target, _ := ctx.Value(targetKey{}).(*url.URL)
 	if target == nil {
 		return nil, nil
 	}
-	p, err := proxyFromEnv(target)
+	p, err := proxyFromEnv(target, bypass)
 	if err != nil || p == nil || !isSOCKS(p) {
 		return nil, err
 	}
@@ -115,9 +125,9 @@ func envSOCKS(ctx context.Context) (*url.URL, error) {
 // envDialer dials through the SOCKS proxy that the environment names for
 // the request, with the shared SOCKS dialer, and else dials directly. An
 // HTTP proxy from the environment is the stack's own job.
-func envDialer(base dialFunc) dialFunc {
+func envDialer(base dialFunc, bypass *string) dialFunc {
 	return func(ctx context.Context, network, addr string) (net.Conn, error) {
-		p, err := envSOCKS(ctx)
+		p, err := envSOCKS(ctx, bypass)
 		if err != nil {
 			return nil, err
 		}
@@ -128,12 +138,14 @@ func envDialer(base dialFunc) dialFunc {
 	}
 }
 
-// httpProxyFromEnv is the net/http Proxy function: the environment proxy
-// for the request, unless it is SOCKS, which envDialer serves.
-func httpProxyFromEnv(r *http.Request) (*url.URL, error) {
-	p, err := proxyFromEnv(r.URL)
-	if err != nil || p == nil || isSOCKS(p) {
-		return nil, err
+// httpProxyFromEnv returns the net/http Proxy function: the environment
+// proxy for the request, unless it is SOCKS, which envDialer serves.
+func httpProxyFromEnv(bypass *string) func(*http.Request) (*url.URL, error) {
+	return func(r *http.Request) (*url.URL, error) {
+		p, err := proxyFromEnv(r.URL, bypass)
+		if err != nil || p == nil || isSOCKS(p) {
+			return nil, err
+		}
+		return p, nil
 	}
-	return p, nil
 }

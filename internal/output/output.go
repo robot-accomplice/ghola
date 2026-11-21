@@ -5,6 +5,7 @@ package output
 import (
 	"bytes"
 	"fmt"
+	"hash"
 	"io"
 	"os"
 	"strings"
@@ -24,10 +25,16 @@ import (
 // the timing line) goes to ew. It returns a non-nil error if the body cannot
 // be read or written.
 func ProcessResponse(w, ew io.Writer, opts *config.Options, req *fasthttp.Request, rsp *fasthttp.Response, elapsed time.Duration) error {
+	if opts.Output.TraceTime {
+		ew = timedLines{ew} // --trace-time also times the -v lines
+	}
 	if opts.Output.FailsOn(rsp.StatusCode()) {
 		return fmt.Errorf("%w: %d %s", config.ErrHTTPStatus, rsp.StatusCode(), fasthttp.StatusMessage(rsp.StatusCode()))
 	}
 
+	if err := opts.Output.SaveETag(rsp.StatusCode(), string(rsp.Header.Peek("ETag"))); err != nil {
+		return err
+	}
 	body, err := bodyReader(opts, rsp)
 	if err != nil {
 		return err
@@ -47,14 +54,14 @@ func ProcessResponse(w, ew io.Writer, opts *config.Options, req *fasthttp.Reques
 	}
 
 	if opts.Output.File != "" {
-		if err := writeFile(opts.Output.File, body); err != nil {
+		if opts.Output.CondTime && rsp.StatusCode() == fasthttp.StatusNotModified {
+			printTiming(ew, opts, elapsed)
+			return nil // the condition is not met: no file, as curl -z
+		}
+		if err := writeFile(opts.Output, opts.Output.File, body); err != nil {
 			return err
 		}
 		printTiming(ew, opts, elapsed)
-		return nil
-	}
-
-	if opts.Output.Silent {
 		return nil
 	}
 
@@ -66,8 +73,21 @@ func ProcessResponse(w, ew io.Writer, opts *config.Options, req *fasthttp.Reques
 			return fmt.Errorf("write output: %w", config.WriteError(err))
 		}
 	}
-	if _, err := io.Copy(config.MarkWrites(bodyOut(w, opts)), body); err != nil {
+	digest := opts.Output.DigestFor(rsp.StatusCode(), string(rsp.Header.Peek("Content-Digest")), string(rsp.Header.Peek("Content-Encoding")))
+	var sum hash.Hash
+	if digest != nil {
+		sum = digest.NewHash()
+		body = io.TeeReader(body, sum)
+	}
+	n, err := io.Copy(config.MarkWrites(bodyOut(w, opts)), body)
+	opts.Output.Info.AddSize(n)
+	if err != nil {
 		return fmt.Errorf("copy response body: %w", err)
+	}
+	if digest != nil {
+		if err := digest.Check(sum.Sum(nil), "the body"); err != nil {
+			return err
+		}
 	}
 
 	printTiming(ew, opts, elapsed)
@@ -88,6 +108,10 @@ func bodyReader(opts *config.Options, rsp *fasthttp.Response) (io.Reader, error)
 	if err != nil {
 		return nil, err
 	}
+	if opts.Output.TooLarge(int64(rsp.Header.ContentLength())) {
+		return nil, config.ErrTooLarge
+	}
+	body = opts.Output.LimitReader(body)
 	if opts.Stealth.Compressed {
 		if body, err = transport.DecodeBody(body, string(rsp.Header.Peek("Content-Encoding"))); err != nil {
 			return nil, err
@@ -97,12 +121,13 @@ func bodyReader(opts *config.Options, rsp *fasthttp.Response) (io.Reader, error)
 }
 
 // writeFile copies body to the file at name.
-func writeFile(name string, body io.Reader) error {
-	f, err := os.OpenFile(name, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+func writeFile(out config.OutputOptions, name string, body io.Reader) error {
+	f, err := config.OpenOutput(out, name, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, false)
 	if err != nil {
-		return fmt.Errorf("write output file: %w", config.WriteError(err))
+		return fmt.Errorf("write output file: %w", err)
 	}
-	_, err = io.Copy(config.MarkWrites(f), body)
+	n, err := io.Copy(config.MarkWrites(f), body)
+	out.Info.AddSize(n)
 	if cerr := f.Close(); err == nil {
 		err = config.WriteError(cerr)
 	}
@@ -114,7 +139,6 @@ func writeFile(name string, body io.Reader) error {
 
 // printVerbose writes the -v lines to ew.
 func printVerbose(ew io.Writer, opts *config.Options, req *fasthttp.Request) {
-	fmt.Fprintf(ew, "Ghost Signature: %s\n", req.Header.Peek("X-Ghola-Identity"))
 	if opts.Stealth.Impersonate != "" {
 		fmt.Fprintf(ew, "Profile: %s\n", opts.Stealth.Impersonate)
 		fmt.Fprintln(ew, "Transport: tls-client (pure Go)")
@@ -130,8 +154,19 @@ func printVerbose(ew io.Writer, opts *config.Options, req *fasthttp.Request) {
 	}
 }
 
+// timedLines puts the time in front of each -v line. Each line is one
+// write.
+type timedLines struct{ w io.Writer }
+
+func (t timedLines) Write(p []byte) (int, error) {
+	if _, err := io.WriteString(t.w, time.Now().Format("15:04:05.000000 ")); err != nil {
+		return 0, err
+	}
+	return t.w.Write(p)
+}
+
 func printTiming(ew io.Writer, opts *config.Options, elapsed time.Duration) {
-	if opts.Output.Timing {
+	if opts.Output.Verbose { // -v writes the total time (v0 --timing)
 		fmt.Fprintf(ew, "Total: %s\n", elapsed.Truncate(time.Millisecond))
 	}
 }

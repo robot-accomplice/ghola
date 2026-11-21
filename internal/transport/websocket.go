@@ -128,7 +128,11 @@ func endOfMessages(ctx context.Context, err error) error {
 
 // wsDialer returns the WebSocket dialer for the stack.
 func (t protocolTransport) wsDialer(u *url.URL) (*websocket.Dialer, error) {
-	if tc, ok := t.network.(*tlsClientTransport); ok {
+	network := t.network
+	if t.direct != nil && bypassed(u, t.opts.ProxyCfg.Bypass) {
+		network = t.direct
+	}
+	if tc, ok := network.(*tlsClientTransport); ok {
 		c := tc.client
 		if tc.envProxy {
 			// Pick the client for this target's environment proxy, as an
@@ -179,7 +183,10 @@ func (t protocolTransport) wsDialer(u *url.URL) (*websocket.Dialer, error) {
 // wsTunnel returns the dial function of the net/http stack for a WebSocket:
 // direct, through a SOCKS proxy, or through an HTTP proxy with CONNECT.
 func (t protocolTransport) wsTunnel(u *url.URL) (dialFunc, error) {
-	direct := (&net.Dialer{}).DialContext
+	direct, err := localDial(t.opts.Net, true)
+	if err != nil {
+		return nil, err
+	}
 	target := *u
 	target.Scheme = httpSchemeOf(u.Scheme) // ws uses http_proxy, wss https_proxy, as in curl
 	p, err := t.proxyFor(&target)
@@ -192,12 +199,16 @@ func (t protocolTransport) wsTunnel(u *url.URL) (dialFunc, error) {
 	return connectDialer(p, direct), nil
 }
 
-// proxyFor returns --proxy, else the environment proxy for target.
+// proxyFor returns --proxy, else the environment proxy for target. A host
+// in --proxy-bypass goes direct.
 func (t protocolTransport) proxyFor(target *url.URL) (*url.URL, error) {
 	if t.proxy != "" {
+		if t.opts.ProxyCfg.Bypass != nil && bypassed(target, t.opts.ProxyCfg.Bypass) {
+			return nil, nil
+		}
 		return url.Parse(t.proxy)
 	}
-	return proxyFromEnv(target)
+	return proxyFromEnv(target, t.opts.ProxyCfg.Bypass)
 }
 
 func httpSchemeOf(wsScheme string) string {

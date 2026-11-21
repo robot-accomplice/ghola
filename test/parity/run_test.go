@@ -36,6 +36,11 @@ type Spec struct {
 	// SeedFiles are more files to write in the working directory before the
 	// run, for example the state file that an earlier ghola run left.
 	SeedFiles map[string][]byte
+	// KillAfter kills the run after this time, as a user stops a job.
+	// Rerun is then the next command in the same folder, and its run is
+	// the result. (Plan section 6: every stopped download can restart.)
+	KillAfter time.Duration
+	Rerun     []string
 }
 
 type fileInfo struct {
@@ -101,6 +106,18 @@ func execute(tl *tool, spec Spec, dir string) (*Result, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
 	defer cancel()
+	if spec.KillAfter > 0 {
+		first := exec.CommandContext(ctx, tl.Path, append(append([]string(nil), tl.base...), spec.Args...)...)
+		first.Dir, first.Stdout, first.Stderr = r.work, io.Discard, io.Discard
+		first.Env = append(cleanEnv(dir), spec.Env...)
+		if err := first.Start(); err != nil {
+			return nil, err
+		}
+		stop := time.AfterFunc(spec.KillAfter, func() { first.Process.Kill() }) //nolint:errcheck
+		first.Wait()                                                            //nolint:errcheck // killed on purpose
+		stop.Stop()
+		spec.Args = spec.Rerun
+	}
 	r.Args = append(append([]string(nil), tl.base...), spec.Args...)
 	cmd := exec.CommandContext(ctx, tl.Path, r.Args...)
 	cmd.Dir = r.work
@@ -192,7 +209,7 @@ func hashTree(root string) (map[string]fileInfo, error) {
 func cleanEnv(dir string) []string {
 	drop := map[string]bool{
 		"HTTP_PROXY": true, "HTTPS_PROXY": true, "ALL_PROXY": true, "NO_PROXY": true,
-		"CURL_HOME": true, "WGETRC": true, "XDG_CONFIG_HOME": true,
+		"CURL_HOME": true, "WGETRC": true, "XDG_CONFIG_HOME": true, "APPDATA": true, "XDG_STATE_HOME": true, "LOCALAPPDATA": true,
 	}
 	var env []string
 	for _, kv := range os.Environ() {
@@ -201,5 +218,7 @@ func cleanEnv(dir string) []string {
 			env = append(env, kv)
 		}
 	}
-	return append(env, "CURL_HOME="+dir, "XDG_CONFIG_HOME="+dir, "WGETRC="+os.DevNull)
+	// ghola reads its config under XDG_CONFIG_HOME (APPDATA on Windows) and
+	// keeps its job list under XDG_STATE_HOME (LOCALAPPDATA).
+	return append(env, "CURL_HOME="+dir, "XDG_CONFIG_HOME="+dir, "APPDATA="+dir, "XDG_STATE_HOME="+dir, "LOCALAPPDATA="+dir, "WGETRC="+os.DevNull)
 }

@@ -97,21 +97,21 @@ func TestExecute_CurlExitCodes(t *testing.T) {
 		{"unknown host", []string{"http://no-such-host.invalid/"}, 6},
 		{"refused", []string{deadURL(t)}, 7},
 		{"refused, -o", []string{"-o", filepath.Join(t.TempDir(), "f"), deadURL(t)}, 7},
-		{"-f on 404", []string{"-f", plain.URL + "/missing"}, 22},
-		{"-f on 404, -o", []string{"-f", "-o", filepath.Join(t.TempDir(), "f"), plain.URL + "/missing"}, 22},
+		{"-f on 404", []string{plain.URL + "/missing"}, 22},
+		{"-f on 404, -o", []string{"-o", filepath.Join(t.TempDir(), "f"), plain.URL + "/missing"}, 22},
 		{"cannot write the file", []string{"-o", noDir, plain.URL}, 23},
 		{"read file missing", []string{"-d", "@" + filepath.Join(t.TempDir(), "missing"), plain.URL}, 26},
-		{"--max-time", []string{"--max-time", "0.3", hang.URL}, 28},
-		{"--max-time, -o", []string{"--max-time", "0.3", "-o", filepath.Join(t.TempDir(), "f"), hang.URL}, 28},
-		{"--speed-limit", []string{"--speed-limit", "1000", "--speed-time", "1", hang.URL}, 28},
+		{"--timeout", []string{"--timeout", "0.3", hang.URL}, 28},
+		{"--timeout, -o", []string{"--timeout", "0.3", "-o", filepath.Join(t.TempDir(), "f"), hang.URL}, 28},
+		{"--stall-rate", []string{"--stall-rate", "1000", "--stall-time", "1", hang.URL}, 28},
 		{"TLS to a plain server", []string{httpsToPlain}, 35},
 		{"TLS to a plain server, impersonate", []string{"--impersonate", "chrome", httpsToPlain}, 35},
 		{"not TLS", []string{garbageURL}, 35},
 		{"not TLS, impersonate", []string{"--impersonate", "chrome", garbageURL}, 35},
 		{"TLS alert after the handshake", []string{"-k", certSrv.URL}, 56},
 		{"TLS alert after the handshake, impersonate", []string{"-k", "--impersonate", "chrome", certSrv.URL}, 56},
-		{"redirect limit", []string{"-L", "--max-redirs", "2", plain.URL + "/loop"}, 47},
-		{"redirect limit, -o", []string{"-L", "--max-redirs", "2", "-o", filepath.Join(t.TempDir(), "f"), plain.URL + "/loop"}, 47},
+		{"redirect limit", []string{"--follow-max", "2", plain.URL + "/loop"}, 47},
+		{"redirect limit, -o", []string{"--follow-max", "2", "-o", filepath.Join(t.TempDir(), "f"), plain.URL + "/loop"}, 47},
 		{"untrusted certificate", []string{tlsSrv.URL}, 60},
 		{"untrusted certificate, -o", []string{"-o", filepath.Join(t.TempDir(), "f"), tlsSrv.URL}, 60},
 		{"untrusted certificate, impersonate", []string{"--impersonate", "chrome", tlsSrv.URL}, 60},
@@ -125,7 +125,7 @@ func TestExecute_CurlExitCodes(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer out.Close()
-			if got := execute(ctx, append([]string{"-s"}, tc.args...), nil, nil, out); got != tc.want.Int() {
+			if got := execute(ctx, append([]string{"-q", "-r", "0"}, tc.args...), nil, nil, out); got != tc.want.Int() {
 				t.Errorf("ghola %q exit = %d, want %d", tc.args, got, tc.want)
 			}
 		})
@@ -146,6 +146,11 @@ func TestExitFor_WrappedCauses(t *testing.T) {
 		{fmt.Errorf("download: %w", client.ErrTooManyRedirects), 47},
 		{fmt.Errorf("x: %w", config.ErrHTTPStatus), 22},
 		{config.WriteError(errors.New("disk full")), 23},
+		{fmt.Errorf("x: %w", config.ErrTooLarge), 63},
+		{fmt.Errorf("x: %w", gholatransport.ErrCertStatus), 91},
+		{fmt.Errorf("x: %w", gholatransport.ErrCertRevoked), 60},
+		{fmt.Errorf("x: %w", gholatransport.ErrNoAddress), 6},
+		{fmt.Errorf("x: %w", config.ErrChecksum), 32},
 		// A TLS alert during the handshake (before GotConn).
 		{fmt.Errorf("x: %w", &net.OpError{Op: "remote error", Err: errors.New("tls: handshake failure")}), 35},
 		{fmt.Errorf("x: %w: %w", gholatransport.ErrRecv, errors.New("connection reset")), 56},

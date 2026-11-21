@@ -11,6 +11,65 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
+// withInfo returns stream that records each response for
+// --output-template: the status, the URL, the redirects and the body
+// bytes. The probe writes no body, and the segments add up.
+func withInfo(stream Streamer, opts *config.Options) Streamer {
+	info := opts.Output.Info
+	if info == nil {
+		return stream
+	}
+	return func(ctx context.Context, opts *config.Options, req *fasthttp.Request, sink io.Writer) (gholatransport.StreamMeta, error) {
+		meta, err := stream(ctx, opts, req, countWriter{sink, info})
+		if meta.StatusCode != 0 {
+			info.EffectiveURL, info.Status = string(req.URI().FullURI()), meta.StatusCode
+			info.ContentType = meta.Header.Get("Content-Type")
+			if meta.StatusCode >= 300 && meta.StatusCode < 400 && meta.Location != "" {
+				info.Redirects++
+			}
+		}
+		return meta, err
+	}
+}
+
+type countWriter struct {
+	w    io.Writer
+	info *config.TransferInfo
+}
+
+// CheckHeaders passes the header check on to the sink, which the
+// download path needs before the body (rangecheck.go).
+func (c countWriter) CheckHeaders(meta gholatransport.StreamMeta) error {
+	if hc, ok := c.w.(gholatransport.HeaderChecker); ok {
+		return hc.CheckHeaders(meta)
+	}
+	return nil
+}
+
+func (c countWriter) Write(p []byte) (int, error) {
+	n, err := c.w.Write(p)
+	c.info.AddSize(int64(n))
+	return n, err
+}
+
+// withHeaderSave returns stream with --save-headers: the head of each
+// response (the probe, each segment, each redirect) goes to HeaderOut.
+func withHeaderSave(stream Streamer, opts *config.Options) Streamer {
+	out := opts.Output.HeaderOut
+	if out == nil {
+		return stream
+	}
+	return func(ctx context.Context, opts *config.Options, req *fasthttp.Request, sink io.Writer) (gholatransport.StreamMeta, error) {
+		meta, err := stream(ctx, opts, req, sink)
+		if meta.StatusLine != "" {
+			if _, werr := out.Write(meta.HeaderBlock()); werr != nil && err == nil {
+				err = fmt.Errorf("--save-headers: %w", config.WriteError(werr))
+			}
+		}
+		return meta, err
+	}
+}
+
 // withCookieJar returns stream with the cookie jar on each request: the
 // probe, every segment, and every redirect of a download. Before, only
 // FetchURL (stdout) used the jar, so --cookie and --cookie-jar did nothing

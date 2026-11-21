@@ -1,19 +1,17 @@
-// Package client provides the HTTP request engine for ghola, including
-// retry with exponential backoff, temporal drift jitter, ghost identity
-// signing, and concurrent request execution with clean shutdown.
+// Package client provides the request engine for ghola: retries with
+// exponential backoff, redirects, the cookie jar, and downloads to a file.
 package client
 
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -96,11 +94,12 @@ func newFetchState(opts *config.Options, do Doer) (*fetchState, error) {
 			return transport.Do(ctx, req, resp)
 		}
 	}
+	s.do = withAuthAnswer(s.do) // --auth digest and any
 
 	return s, nil
 }
 
-// prepareRequest sets URI, body, headers, auth, cookies, and ghost signature
+// prepareRequest sets URI, body, headers, auth and cookies
 // on the request object for a single attempt.
 func (s *fetchState) prepareRequest(req *fasthttp.Request, opts *config.Options, effectiveURL, effectiveMethod, effectiveData string) {
 	req.SetRequestURI(effectiveURL)
@@ -189,6 +188,7 @@ func FetchURL(ctx context.Context, opts *config.Options, do Doer) (*fasthttp.Req
 	effectiveMethod := opts.Method
 	effectiveData := opts.Data
 	redirectsFollowed := 0
+	start := time.Now() // --retry-max-time counts from the first attempt
 
 redirectLoop:
 	for {
@@ -228,17 +228,30 @@ redirectLoop:
 
 			lastErr = state.do(ctx, &state.effectiveOpts, req, rsp)
 			if lastErr != nil {
+				if !retryTimeLeft(opts, start) {
+					break
+				}
 				continue
 			}
 			state.jar.AbsorbResponse(effectiveURL, rsp)
+			if out := opts.Output.HeaderOut; out != nil {
+				if _, err := out.Write(rsp.Header.Header()); err != nil {
+					lastErr = fmt.Errorf("--save-headers: %w", config.WriteError(err))
+					break
+				}
+			}
 			if err := state.jar.Save(); err != nil {
 				lastErr = err
 				break
 			}
 
 			status := rsp.StatusCode()
+			if info := opts.Output.Info; info != nil {
+				info.EffectiveURL, info.Status, info.Redirects = effectiveURL, status, redirectsFollowed
+				info.ContentType = string(rsp.Header.ContentType())
+			}
 
-			if opts.Resilience.RetryHTTP && attempt < opts.Resilience.Retries && isRetryableHTTPStatus(status) {
+			if opts.Resilience.RetryHTTP && attempt < opts.Resilience.Retries && isRetryableHTTPStatus(opts, status) && retryTimeLeft(opts, start) {
 				if d, ok := parseRetryAfter(rsp); ok {
 					nextWait = d
 					haveNextWait = true
@@ -277,6 +290,12 @@ redirectLoop:
 		fasthttp.ReleaseResponse(rsp)
 		return nil, nil, lastErr
 	}
+}
+
+// Release gives the request and the answer of FetchURL back.
+func Release(req *fasthttp.Request, rsp *fasthttp.Response) {
+	fasthttp.ReleaseRequest(req)
+	fasthttp.ReleaseResponse(rsp)
 }
 
 // selectProxy returns the proxy from --proxy or --proxy-file, or "" when
@@ -376,15 +395,28 @@ func backoffWait(opts *config.Options, attempt int) time.Duration {
 	return time.Duration(opts.Resilience.Backoff<<uint(attempt-1)) * time.Millisecond
 }
 
+// retryTimeLeft reports whether --retry-max-time still allows a retry. As
+// in curl, no retry starts after the limit, counted from the first attempt.
+func retryTimeLeft(opts *config.Options, start time.Time) bool {
+	limit := opts.Resilience.RetryMaxTime
+	return limit <= 0 || time.Since(start) < limit
+}
+
 // waitToRetry announces retry number attempt on stderr and waits.
 func waitToRetry(ctx context.Context, opts *config.Options, attempt int, wait time.Duration) error {
+	opts.Output.Events.Retry(opts.URL, attempt, opts.Resilience.Retries, wait)
 	if !opts.Output.Silent {
 		fmt.Fprintf(os.Stderr, "Retry %d/%d in %v...\n", attempt, opts.Resilience.Retries, wait)
 	}
 	return sleepCtx(ctx, wait)
 }
 
-func isRetryableHTTPStatus(status int) bool {
+// isRetryableHTTPStatus reports a status that a retry may cure: the list of
+// --retry-status, else the v0 list.
+func isRetryableHTTPStatus(opts *config.Options, status int) bool {
+	if list := opts.Resilience.RetryStatus; len(list) > 0 {
+		return slices.Contains(list, status)
+	}
 	switch status {
 	case 429, 500, 502, 503, 504:
 		return true
@@ -436,10 +468,4 @@ func applyDrift(ctx context.Context, driftMs int) error {
 		return fmt.Errorf("drift jitter: %w", err)
 	}
 	return sleepCtx(ctx, time.Duration(n.Int64())*time.Millisecond)
-}
-
-func applyGhostSign(req *fasthttp.Request, rawURL string) {
-	id := fmt.Sprintf("%d-%s", time.Now().Unix(), rawURL)
-	hash := sha256.Sum256([]byte(id))
-	req.Header.Set("X-Ghola-Identity", hex.EncodeToString(hash[:]))
 }

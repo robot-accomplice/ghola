@@ -11,7 +11,7 @@ Attribution: Ghola's browser-like fetching direction was inspired by ideas demon
 
 ```text
 ┌───────────┐  JSON/HTTP   ┌──────────────────┐  fasthttp   ┌──────────┐
-│   scope   │─────────────▶│  ghola --serve   │────────────▶│  target  │
+│   scope   │─────────────▶│   ghola serve    │────────────▶│  target  │
 │  (Rust)   │  :18789      │  bridge server   │             │  RPC     │
 └───────────┘              └──────────────────┘             └──────────┘
       │                            │
@@ -75,7 +75,7 @@ You should see:
 When `use_ghola_sidecar: true`, scope automatically manages the sidecar:
 
 1. **Check** — scope sends `GET /health` to `127.0.0.1:18789`.
-2. **Spawn** — if there is no answer, scope runs `ghola --serve` as a
+2. **Spawn** — if there is no answer, scope runs `ghola serve` as a
    background child process.
 3. **Wait** — polls `/health` for up to 5 seconds.
 4. **Token** — scope reads the bridge token (see [Bridge Security](#bridge-security)).
@@ -85,7 +85,7 @@ When `use_ghola_sidecar: true`, scope automatically manages the sidecar:
 You can also start ghola manually:
 
 ```bash
-ghola --serve
+ghola serve
 # ghola bridge listening on 127.0.0.1:18789 (token in <config dir>/ghola/bridge-token)
 ```
 
@@ -172,7 +172,7 @@ Health check: `GET /health` → `{"status":"ok"}`
 | Symptom | Fix |
 | --- | --- |
 | `⚠️ Ghola not found` | Install ghola and ensure it's in `$PATH` |
-| Sidecar timeout | Run `ghola --serve` manually and check stderr |
+| Sidecar timeout | Run `ghola serve` manually and check stderr |
 | Fallback to native HTTP | Check `config.yaml` has `use_ghola_sidecar: true` |
 | Port 18789 in use | Kill existing ghola process: `lsof -ti:18789 \| xargs kill` |
-| `401 missing or wrong bridge token` | Restart `ghola --serve`; a bridge from before token support may still run |
+| `401 missing or wrong bridge token` | Restart `ghola serve`; a bridge from before token support may still run |

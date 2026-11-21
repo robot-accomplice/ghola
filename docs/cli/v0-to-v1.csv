@@ -17,7 +17,7 @@ v0,v1,note
 -D / --drift MS,--wait-jitter DURATION,
 -f / --fail,(default),Use --no-fail to turn it off. The rule is now status 400 and above.
 -F / --form,--form,No short letter (1.4% of curl files).
--G / --ghost,(removed),See open question 1.
+-G / --ghost,(removed),It sent an X-Ghola-Identity header that marked each request as coming from ghola.
 --har,--har,
 -H / --header,-H / --header,
 -h / --help,-h / --help,
@@ -47,7 +47,7 @@ v0,v1,note
 -X / --request,-m / --method,
 -r / --retry N,--retry-max N,The default is now 3 for idempotent methods.
 --retry-http,(default),--retry-status sets the codes.
---serve,ghola serve,No alias (v1 defaults item 11).
+--serve,ghola serve,There is no alias.
 -s / --silent,-q / --quiet,v1 -q still writes errors (as curl -sS).
 -S / --snoop,ghola inspect URL,The job is a word.
 --speed-limit,--stall-rate RATE,
