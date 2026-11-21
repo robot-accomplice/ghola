@@ -12,7 +12,7 @@ import (
 )
 
 // setHeaders sets every request header that comes from the options: the
-// profile headers, -H, the User-Agent, the ghost signature, Accept-Encoding
+// profile headers, -H, the User-Agent, Accept-Encoding
 // and -u. FetchURL (stdout) and the download path both call it, so an option
 // cannot reach one path and miss the other (audit finding H8).
 func setHeaders(req *fasthttp.Request, opts *config.Options, active profile.BrowserProfile, overrides map[string]string, target, method string) {
@@ -47,10 +47,6 @@ func setHeaders(req *fasthttp.Request, opts *config.Options, active profile.Brow
 
 	if _, overridden := overrides["user-agent"]; !overridden {
 		req.Header.Set("User-Agent", resolveUserAgent(opts, active))
-	}
-
-	if opts.Stealth.Ghost {
-		applyGhostSign(req, target)
 	}
 
 	if opts.Stealth.Compressed {

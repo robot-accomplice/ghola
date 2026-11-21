@@ -32,7 +32,7 @@ The first word picks the job. Without a job word, ghola fetches.
 Rules:
 1. The job word must be the first argument.
 2. Options can come before or after the URLs, as in curl. `--` ends the options.
-3. Each option has a scope: `all` (fetch, download and mirror), or one job. An option outside its scope is an argument error that names the job where it works.
+3. Each option has a scope: `all` (fetch, download, mirror and inspect), or one job. `ghola inspect` also takes the fetch options, because it makes a request as a fetch does (for example with `--impersonate` or `--proxy`). An option outside its scope is an argument error that names the job where it works.
 
 ## 2. Short letters
 
@@ -354,7 +354,7 @@ v1.0.0 removes the v0 flags (plan step 8). A v0 flag stops with an argument erro
 | `-D / --drift MS` | --wait-jitter DURATION |  |
 | `-f / --fail` | (default) | Use --no-fail to turn it off. The rule is now status 400 and above. |
 | `-F / --form` | --form | No short letter (1.4% of curl files). |
-| `-G / --ghost` | (removed) | See open question 1. |
+| `-G / --ghost` | (removed) | It sent an X-Ghola-Identity header that marked each request as coming from ghola. |
 | `--har` | --har |  |
 | `-H / --header` | -H / --header |  |
 | `-h / --help` | -h / --help |  |
@@ -384,7 +384,7 @@ v1.0.0 removes the v0 flags (plan step 8). A v0 flag stops with an argument erro
 | `-X / --request` | -m / --method |  |
 | `-r / --retry N` | --retry-max N | The default is now 3 for idempotent methods. |
 | `--retry-http` | (default) | --retry-status sets the codes. |
-| `--serve` | ghola serve | No alias (v1 defaults item 11). |
+| `--serve` | ghola serve | There is no alias. |
 | `-s / --silent` | -q / --quiet | v1 -q still writes errors (as curl -sS). |
 | `-S / --snoop` | ghola inspect URL | The job is a word. |
 | `--speed-limit` | --stall-rate RATE |  |

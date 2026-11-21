@@ -4,16 +4,13 @@ package config
 
 import (
 	"fmt"
-	"io"
 	"net/url"
-	"os"
 	"path"
+	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/robot-accomplice/ghola/internal/profile"
-	flag "github.com/spf13/pflag"
 	"github.com/valyala/fasthttp"
 )
 
@@ -84,9 +81,7 @@ type OutputOptions struct {
 	Include      bool
 	Silent       bool
 	Snoop        bool
-	WgetMode     bool
 	JQ           string
-	Timing       bool
 	HAR          string
 	ContinueAt   string // wired in Task 5; resume forces single-stream when set
 	Range        string // explicit byte range passthrough (e.g. "0-1023")
@@ -97,13 +92,23 @@ type OutputOptions struct {
 	// Stdout is -o -: write the body to stdout, also binary data to a
 	// terminal, as in curl. File is then "".
 	Stdout bool
+	// Progress forces the progress meter: "on" shows it also when stderr is
+	// not a terminal, "off" hides it, "" shows it only on a terminal.
+	Progress string
+	// HideErrors drops the error message on stderr. Only ghola curl -s
+	// (without -S) sets it, as curl does; native -q keeps the errors.
+	HideErrors bool
+	// Dir is the folder of -o DIR/: the remote file name goes inside it.
+	Dir string
+	// FailFrom400 is the v1 rule for Fail: status 400 and above fails, as
+	// in curl. The v0 rule fails every status that is not 2xx.
+	FailFrom400 bool
 }
 
 // StealthOptions controls browser impersonation and identity features.
 type StealthOptions struct {
 	Impersonate    string
 	StealthHeaders bool
-	Ghost          bool
 	Drift          int
 	Agent          string
 	AgentExplicit  bool
@@ -138,6 +143,9 @@ type ResilienceOptions struct {
 	LocationTrusted bool
 	MaxRedirs       int
 	BufferSize      int
+	// RetryStatus is the list of status codes that a retry may cure
+	// (--retry-status). Empty means the v0 list.
+	RetryStatus []int
 }
 
 // ProxyOptions controls proxy routing behavior.
@@ -160,10 +168,12 @@ type Options struct {
 	Form          []string
 	Headers       []string
 	Transfer      string
-	User          string
-	Concurrency   int
-	Chain         string
-	Serve         bool
+	// DataLiteral sends Data as it is: a value that starts with @ is not a
+	// file name (--data-literal).
+	DataLiteral bool
+	User        string
+	Concurrency int
+	Chain       string
 
 	Output     OutputOptions
 	Stealth    StealthOptions
@@ -173,8 +183,6 @@ type Options struct {
 
 // Version is set at build time via -ldflags.
 var Version = "dev"
-
-const banner = `Ghola - a high-performance, Go-based HTTP client designed as a tactical scout for blockchain forensic analysis and stealthy data acquisition.`
 
 // UsageError is an argument error. It carries the usage text so the CLI can
 // show the user how to type the command correctly.
@@ -186,200 +194,95 @@ type UsageError struct {
 func (e *UsageError) Error() string { return e.Err.Error() }
 func (e *UsageError) Unwrap() error { return e.Err }
 
-// writeUsage writes the usage text that --help prints.
-func writeUsage(w io.Writer, fs *flag.FlagSet) {
-	fmt.Fprint(w, banner)
-	fmt.Fprintf(w, "ghola version %s\n", Version)
-	fmt.Fprintln(w, "Usage: ghola [options...] <url>")
-	fmt.Fprint(w, fs.FlagUsages())
-	fmt.Fprintln(w, "\nNote: ghola's -c (--chain), -G (--ghost), and -b (--backoff) differ")
-	fmt.Fprintln(w, "from curl's -c/-G/-b. Resume is -C/--continue-at.")
-}
+// The names that Finish asks explicit about: whether the command line set
+// the option itself, so that a default does not override it.
+const (
+	ExplicitMethod         = "method"
+	ExplicitProfileHeaders = "profile-headers"
+)
 
-// ParseFlags parses CLI arguments into an Options struct.
-// It returns the parsed options, a boolean indicating whether the program
-// should exit cleanly (e.g. --help was requested), and any validation error.
-// Every error it returns is a *UsageError.
-func ParseFlags(args []string) (opts *Options, done bool, err error) {
-	opts = &Options{}
-	fs := flag.NewFlagSet("ghola", flag.ContinueOnError)
-	defer func() {
-		if err != nil {
-			var usage strings.Builder
-			writeUsage(&usage, fs)
-			err = &UsageError{Err: err, Usage: usage.String()}
-		}
-	}()
-
-	var help bool
-	var version bool
-	fs.BoolVarP(&help, "help", "h", false, "help")
-	fs.BoolVarP(&version, "version", "V", false, "version")
-	fs.StringVarP(&opts.Data, "data", "d", "", "HTTP POST data")
-	fs.StringArrayVarP(&opts.Form, "form", "F", nil, "Specify multipart form data (name=value or name=@file)")
-	fs.StringVar(&opts.DataBinary, "data-binary", "", "HTTP POST binary data (no munging); @file reads verbatim")
-	fs.StringArrayVar(&opts.DataURLEncode, "data-urlencode", nil, "URL-encode and POST the given data")
-	fs.BoolVarP(&opts.Output.Fail, "fail", "f", false, "Exit non-zero on non-2xx and suppress body output")
-	fs.BoolVarP(&opts.Output.Include, "include", "i", false, "Include protocol response headers")
-	fs.StringVarP(&opts.Output.File, "output", "o", "", "Write to file instead of stdout")
-	fs.BoolVarP(&opts.Output.WgetMode, "wget", "w", false, "Enable wget-compatible output")
-	fs.IntVarP(&opts.Concurrency, "connections", "n", DefaultConcurrency, "Number of concurrent connections")
-	fs.BoolVarP(&opts.Output.Silent, "silent", "s", false, "Silent mode")
-	fs.StringVarP(&opts.Transfer, "upload-file", "T", "", "Transfer local FILE to destination")
-	fs.StringVarP(&opts.User, "user", "u", "", "Server user and password <user:password>")
-	fs.StringVarP(&opts.Stealth.Agent, "user-agent", "A", DefaultAgent, "Send User-Agent <name>")
-	fs.StringVarP(&opts.Method, "request", "X", DefaultMethod, "HTTP request method")
-	fs.StringSliceVarP(&opts.Headers, "header", "H", nil, "Pass custom headers")
-	fs.BoolVarP(&opts.Output.Verbose, "verbose", "v", false, "verbose mode")
-
-	fs.IntVarP(&opts.Stealth.Drift, "drift", "D", 0, "Temporal Drift (ms jitter)")
-	fs.BoolVarP(&opts.Stealth.Ghost, "ghost", "G", false, "Ghost Sign (unique identity hash)")
-	fs.IntVar(&opts.Resilience.Timeout, "timeout", 0, "Request timeout in ms (0 disables)")
-	fs.IntVarP(&opts.Resilience.Retries, "retry", "r", 0, "Number of retries on failure")
-	fs.IntVarP(&opts.Resilience.Backoff, "backoff", "b", DefaultBackoffMs, "Base backoff time for retries (ms)")
-	fs.BoolVar(&opts.Resilience.RetryHTTP, "retry-http", false, "Retry on retryable HTTP status codes (e.g. 429, 5xx)")
-	fs.BoolVarP(&opts.Resilience.Location, "location", "L", false, "Follow HTTP redirects")
-	fs.BoolVar(&opts.Resilience.LocationTrusted, "location-trusted", false, "Like -L, and send -u, Authorization and Cookie to other hosts too")
-	fs.IntVar(&opts.Resilience.MaxRedirs, "max-redirs", DefaultMaxRedirs, "Maximum number of redirects to follow")
-	fs.BoolVarP(&opts.Output.Snoop, "snoop", "S", false, "Snoop Mode: Pre-flight check of headers and security posture")
-	fs.StringVarP(&opts.Chain, "chain", "c", "", "Chain-Aware Shortcut: Pre-fills RPC headers for [eth, base, solana]")
-	fs.BoolVar(&opts.Serve, "serve", false, "Run as local RPC bridge on 127.0.0.1:18789")
-	fs.IntVar(&opts.Resilience.BufferSize, "buffer-size", DefaultBufferSize, "Read buffer size for large headers")
-	fs.StringVar(&opts.Stealth.Impersonate, "impersonate", "", "Use a browser-like request profile (chrome, firefox, safari, edge)")
-	fs.BoolVar(&opts.Stealth.StealthHeaders, "stealth-headers", false, "Generate coherent browser-like headers")
-	fs.BoolVar(&opts.Stealth.HTTP3, "http3", false, "Attempt HTTP/3 when supported by the active transport")
-	fs.StringVar(&opts.Stealth.CookieJar, "cookie-jar", "", "Persist cookies to a JSON jar file")
-	fs.StringSliceVar(&opts.Stealth.Cookies, "cookie", nil, "Seed request cookies as name=value")
-	fs.StringVar(&opts.ProxyCfg.Proxy, "proxy", "", "Route traffic through an HTTP proxy URL")
-	fs.StringVar(&opts.ProxyCfg.Auth, "proxy-auth", "", "Proxy credentials in user:pass form")
-	fs.StringVar(&opts.ProxyCfg.File, "proxy-file", "", "Load proxies from a newline-delimited file")
-	fs.StringVar(&opts.ProxyCfg.Strategy, "proxy-strategy", DefaultProxyStrategy, "Proxy selection strategy: sticky, random, round-robin")
-	fs.BoolVar(&opts.ProxyCfg.HealthCheck, "proxy-check", false, "Check proxy health before use and evict dead proxies")
-	fs.StringVar(&opts.Stealth.Referer, "referer", DefaultReferer, "Referer behavior: none, auto, or an explicit URL")
-	fs.StringVar(&opts.Stealth.AcceptLanguage, "accept-language", "", "Override the profile default Accept-Language")
-	fs.BoolVar(&opts.Stealth.ProfileList, "profile-list", false, "List available browser-like profiles and exit")
-	fs.StringVar(&opts.Output.JQ, "jq", "", "Extract a JSON path from the response body (gjson syntax)")
-	fs.BoolVar(&opts.Output.Timing, "timing", false, "Show response timing information")
-	fs.StringVar(&opts.Output.HAR, "har", "", "Export request/response as HAR 1.2 to a file")
-	fs.StringVarP(&opts.Output.ContinueAt, "continue-at", "C", "", "Resume a partial download at OFFSET, or '-' for auto")
-	fs.StringVar(&opts.Output.Range, "range", "", "Request only a byte RANGE (e.g. 0-1023)")
-	fs.BoolVarP(&opts.Output.RemoteName, "remote-name", "O", false, "Write output to a file named like the remote file")
-	fs.BoolVarP(&opts.Output.RemoteHeader, "remote-header-name", "J", false, "Use Content-Disposition filename for -O")
-	fs.BoolVarP(&opts.Output.RemoteTime, "remote-time", "R", false, "Set the local file timestamp to the remote one")
-	fs.StringVar(&opts.Output.LimitRate, "limit-rate", "", "Limit transfer rate (e.g. 500k, 2M, 1g)")
-	fs.BoolVar(&opts.Stealth.Compressed, "compressed", false, "Request a gzip-compressed response and decode it")
-	fs.BoolVarP(&opts.Stealth.Insecure, "insecure", "k", false, "Allow insecure server connections (skip TLS verification)")
-	fs.StringVar(&opts.Stealth.CACert, "cacert", "", "CA certificate file to verify the peer")
-	fs.StringVar(&opts.Stealth.ClientCert, "cert", "", "Client certificate file")
-	fs.StringVar(&opts.Stealth.ClientKey, "key", "", "Private key file for the client certificate")
-
-	var limitFlags curlLimitFlags
-	limitFlags.register(fs)
-
-	fs.Usage = func() { writeUsage(os.Stdout, fs) }
-
-	if err := fs.Parse(args); err != nil {
-		return nil, false, err
-	}
-
-	if help {
-		fs.Usage()
-		return opts, true, nil
-	}
-
-	if version {
-		fmt.Printf("ghola version %s\n", Version)
-		return opts, true, nil
-	}
-
-	if opts.Stealth.ProfileList {
-		for _, name := range profile.ProfileNames() {
-			fmt.Println(name)
-		}
-		return opts, true, nil
-	}
-
-	takeURLs(opts, fs.Args())
+// Finish checks opts and applies the rules that follow from them: the
+// chain shortcut, the input checks, the option conflicts, the default
+// Content-Type, POST for a body, -o -, and the remote file name. The v0
+// flags (ParseFlags) and the v1 parser (internal/cli) both call it, so the
+// rules cannot drift. explicit reports whether the command line set an
+// option (ExplicitMethod, ExplicitProfileHeaders).
+func Finish(opts *Options, explicit func(name string) bool) error {
 	applyChainShortcuts(opts)
-
-	if opts.URL == "" && !opts.Serve {
-		return nil, false, fmt.Errorf("URL is mandatory")
+	if opts.URL == "" {
+		return fmt.Errorf("URL is mandatory")
 	}
-	opts.Stealth.AgentExplicit = fs.Changed("user-agent")
-	if err := limitFlags.apply(fs, &opts.Resilience); err != nil {
-		return nil, false, err
+	for _, check := range []func(*Options) error{checkInput, checkOneOutput, checkConflicts, checkValues} {
+		if err := check(opts); err != nil {
+			return err
+		}
 	}
-	if err := checkInput(opts); err != nil {
-		return nil, false, err
-	}
-	if err := checkOneOutput(opts); err != nil {
-		return nil, false, err
-	}
-	// curl --location-trusted is -L plus the credentials on every hop.
-	if opts.Resilience.LocationTrusted {
-		opts.Resilience.Location = true
-	}
-
 	if opts.Stealth.Impersonate != "" {
 		if _, err := profile.Resolve(opts.Stealth.Impersonate); err != nil {
-			return nil, false, err
-		}
-		if !fs.Changed("stealth-headers") {
-			opts.Stealth.StealthHeaders = true
+			return err
 		}
 	}
+	applyRules(opts, explicit)
+	return nil
+}
 
-	if opts.ProxyCfg.Proxy != "" && opts.ProxyCfg.File != "" {
-		return nil, false, fmt.Errorf("--proxy and --proxy-file cannot be used together")
+// checkConflicts refuses options that cannot go together.
+func checkConflicts(opts *Options) error {
+	o := opts.Output
+	switch {
+	case opts.ProxyCfg.Proxy != "" && opts.ProxyCfg.File != "":
+		return fmt.Errorf("--proxy and --proxy-file cannot be used together")
+	case o.ContinueAt != "" && o.Range != "":
+		return fmt.Errorf("--continue (or --continue-at) and --range cannot be used together")
+	case opts.Stealth.Compressed && (o.ContinueAt != "" || o.Range != ""):
+		return fmt.Errorf("--compressed cannot be combined with --continue or --range: the byte ranges would apply to the compressed stream")
+	case len(opts.Form) > 0 && (opts.Data != "" || opts.DataBinary != "" || len(opts.DataURLEncode) > 0):
+		return fmt.Errorf("--form cannot be combined with --data or --field")
 	}
-	if opts.Output.ContinueAt != "" && opts.Output.Range != "" {
-		return nil, false, fmt.Errorf("--continue-at and --range cannot be used together")
-	}
-	if opts.Stealth.Compressed && opts.Output.ContinueAt != "" {
-		return nil, false, fmt.Errorf("--compressed cannot be combined with --continue-at (byte ranges apply to the compressed stream)")
-	}
-	if opts.Stealth.Compressed && opts.Output.Range != "" {
-		return nil, false, fmt.Errorf("--compressed cannot be combined with --range (byte ranges apply to the compressed stream)")
-	}
-	if opts.Output.ContinueAt != "" && opts.Output.ContinueAt != "-" {
-		if _, err := strconv.ParseInt(opts.Output.ContinueAt, 10, 64); err != nil {
-			return nil, false, fmt.Errorf("invalid --continue-at value %q (want an integer offset or '-')", opts.Output.ContinueAt)
+	return nil
+}
+
+// checkValues checks the values that the parser keeps as text.
+func checkValues(opts *Options) error {
+	if c := opts.Output.ContinueAt; c != "" && c != "-" {
+		if _, err := strconv.ParseInt(c, 10, 64); err != nil {
+			return fmt.Errorf("invalid --continue-at value %q (want a byte offset)", c)
 		}
 	}
 	if opts.Output.LimitRate != "" {
 		if _, err := ParseRate(opts.Output.LimitRate); err != nil {
-			return nil, false, fmt.Errorf("invalid --limit-rate %q: %w", opts.Output.LimitRate, err)
+			return fmt.Errorf("invalid --rate-max %q: %w", opts.Output.LimitRate, err)
 		}
 	}
-	if opts.Stealth.Referer != "none" && opts.Stealth.Referer != "auto" {
-		if _, err := url.ParseRequestURI(opts.Stealth.Referer); err != nil {
-			return nil, false, fmt.Errorf("invalid --referer value %q", opts.Stealth.Referer)
+	if r := opts.Stealth.Referer; r != "none" && r != "auto" {
+		if _, err := url.ParseRequestURI(r); err != nil {
+			return fmt.Errorf("invalid --referer value %q", r)
 		}
 	}
+	return nil
+}
 
-	if len(opts.Form) > 0 && (opts.Data != "" || opts.DataBinary != "") {
-		return nil, false, fmt.Errorf("--form cannot be combined with -d/--data-binary")
+// applyRules sets what follows from the options: redirects for
+// --follow-trusted, the profile headers of --impersonate, the default
+// Content-Type, POST for a body, -o -, and the remote file name.
+func applyRules(opts *Options, explicit func(name string) bool) {
+	if opts.Resilience.LocationTrusted {
+		opts.Resilience.Location = true // curl --location-trusted is -L plus the credentials on every hop
 	}
-	if len(opts.Form) > 0 && len(opts.DataURLEncode) > 0 {
-		return nil, false, fmt.Errorf("--form cannot be combined with --data-urlencode")
+	if opts.Stealth.Impersonate != "" && !explicit(ExplicitProfileHeaders) {
+		opts.Stealth.StealthHeaders = true
 	}
-
 	addDefaultContentType(opts)
-	if (opts.Data != "" || opts.DataBinary != "" || len(opts.Form) > 0 || len(opts.DataURLEncode) > 0) && !fs.Changed("request") {
+	hasBody := opts.Data != "" || opts.DataBinary != "" || len(opts.Form) > 0 || len(opts.DataURLEncode) > 0
+	if hasBody && !explicit(ExplicitMethod) {
 		opts.Method = fasthttp.MethodPost
 	}
-
 	if opts.Output.File == "-" {
 		opts.Output.File, opts.Output.Stdout = "", true
-	}
-	if opts.Output.WgetMode && opts.Output.File == "" {
-		inferWgetFilename(opts)
 	}
 	if opts.Output.RemoteName && opts.Output.File == "" {
 		inferWgetFilename(opts)
 	}
-
-	return opts, false, nil
 }
 
 func applyChainShortcuts(opts *Options) {
@@ -406,11 +309,19 @@ func inferWgetFilename(opts *Options) {
 	if err != nil {
 		return
 	}
-	opts.Output.File = path.Base(u.Path)
-	if opts.Output.File == "." || opts.Output.File == "/" {
-		opts.Output.File = "index.html"
+	name := path.Base(u.Path)
+	if name == "." || name == "/" {
+		name = "index.html"
 	}
+	opts.Output.File = filepath.Join(opts.Output.Dir, name)
 }
+
+// TakeURLs stores the URLs of the command line, each with http:// when it
+// has no scheme. The v1 parser (internal/cli) calls it.
+func TakeURLs(opts *Options, args []string) { takeURLs(opts, args) }
+
+// DefaultSpeedTime is curl's --speed-time when only --speed-limit is set.
+const DefaultSpeedTime = defaultSpeedTime * time.Second
 
 // ShouldStream reports whether a request should take the streaming download
 // path (bounded memory, written to a file) instead of the buffered pipeline.

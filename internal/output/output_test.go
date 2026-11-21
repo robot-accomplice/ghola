@@ -98,7 +98,6 @@ func TestProcessResponse_Verbose(t *testing.T) {
 	defer fasthttp.ReleaseRequest(req)
 	defer fasthttp.ReleaseResponse(rsp)
 
-	req.Header.Set("X-Ghola-Identity", "abc123")
 	rsp.Header.SetStatusCode(200)
 	rsp.SetBodyString("data")
 
@@ -109,9 +108,6 @@ func TestProcessResponse_Verbose(t *testing.T) {
 	err := ProcessResponse(&buf, &errBuf, opts, req, rsp, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
-	}
-	if !strings.Contains(errBuf.String(), "Ghost Signature: abc123") {
-		t.Errorf("stderr missing ghost signature, got %q", errBuf.String())
 	}
 	if buf.String() != "data" {
 		t.Errorf("stdout = %q, want only the body", buf.String())
@@ -125,16 +121,17 @@ func TestProcessResponse_Silent(t *testing.T) {
 	defer fasthttp.ReleaseResponse(rsp)
 
 	rsp.Header.SetStatusCode(200)
-	rsp.SetBodyString("should not appear")
+	rsp.SetBodyString("the body")
 
-	var buf bytes.Buffer
+	// -q hides notes and the meter, not the body (v1 spec), as curl -s.
+	var buf, errBuf bytes.Buffer
 	opts := &config.Options{Output: config.OutputOptions{Silent: true}}
-	err := ProcessResponse(&buf, io.Discard, opts, req, rsp, 0)
+	err := ProcessResponse(&buf, &errBuf, opts, req, rsp, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if buf.Len() != 0 {
-		t.Errorf("silent mode should produce no output, got %q", buf.String())
+	if buf.String() != "the body" || errBuf.Len() != 0 {
+		t.Errorf("stdout %q, stderr %q; want the body and nothing on stderr", buf.String(), errBuf.String())
 	}
 }
 
@@ -419,7 +416,7 @@ func TestProcessResponse_Timing(t *testing.T) {
 
 	// The timing line is metadata: it goes to stderr (audit finding H2).
 	var buf, errBuf bytes.Buffer
-	opts := &config.Options{Output: config.OutputOptions{Timing: true}}
+	opts := &config.Options{Output: config.OutputOptions{Verbose: true}} // -v writes the total time (v0 --timing)
 	err := ProcessResponse(&buf, &errBuf, opts, req, rsp, 150*time.Millisecond)
 	if err != nil {
 		t.Fatalf("ProcessResponse: %v", err)

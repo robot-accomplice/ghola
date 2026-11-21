@@ -29,11 +29,13 @@ func TestExecute_ConnectionsDoesNotRepeatAPOST(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer out.Close()
-	if code := execute(context.Background(), []string{"-n", "3", "-d", "once", srv.URL}, nil, nil, out); code != 0 {
-		t.Fatalf("exit %d, want 0", code)
+	// In v1, -n belongs to ghola download (spec scope), so a fetch with -n
+	// is an argument error before any request: the POST is never repeated.
+	if code := execute(context.Background(), []string{"-n", "3", "-d", "once", srv.URL}, nil, nil, out); code != config.BadFlag.Int() {
+		t.Fatalf("exit %d, want %d (argument error)", code, config.BadFlag.Int())
 	}
-	if n := posts.Load(); n != 1 {
-		t.Errorf("server got %d POSTs, want 1", n)
+	if n := posts.Load(); n != 0 {
+		t.Errorf("server got %d POSTs, want 0", n)
 	}
 }
 
@@ -66,7 +68,7 @@ func TestExecute_FailToFileExitCode(t *testing.T) {
 	defer srv.Close()
 
 	file := t.TempDir() + "/f"
-	if code := execute(context.Background(), []string{"-s", "-f", "-o", file, srv.URL}, nil, nil, nil); code != config.HTTPError.Int() {
+	if code := execute(context.Background(), []string{"-q", "-o", file, srv.URL}, nil, nil, nil); code != config.HTTPError.Int() {
 		t.Errorf("exit %d, want %d", code, config.HTTPError.Int())
 	}
 	if _, err := os.Stat(file); !os.IsNotExist(err) {

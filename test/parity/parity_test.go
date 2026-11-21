@@ -84,16 +84,35 @@ func TestParity(t *testing.T) {
 			continue
 		}
 		t.Run(sc.ID, func(t *testing.T) {
-			for _, name := range toolOrder {
-				mk, tl := sc.Runs[name], tools[name]
-				if mk == nil || tl == nil {
-					continue
-				}
-				results = append(results, runOne(t, srv, out, sc, tl, mk))
-			}
+			results = append(results, runScenario(t, srv, out, sc, tools)...)
 		})
 	}
 	writeRecords(t, out, tools, results)
+}
+
+// runScenario runs each tool on one scenario, then each compatibility
+// command on the arguments of the tool it copies.
+func runScenario(t *testing.T, srv *server, out string, sc scenario, tools map[string]*tool) []*Result {
+	t.Helper()
+	var results []*Result
+	ref := map[string]*Result{}
+	for _, name := range toolOrder {
+		mk, tl := sc.Runs[name], tools[name]
+		if mk == nil || tl == nil {
+			continue
+		}
+		ref[name] = runOne(t, srv, out, sc, tl, mk)
+		results = append(results, ref[name])
+	}
+	for _, name := range compatOrder {
+		c := compatTools[name]
+		if mk, tl, r := sc.Runs[c.of], tools[name], ref[c.of]; mk != nil && tl != nil && r != nil {
+			got := runOne(t, srv, out, sc, tl, mk)
+			judgeCompat(t, sc, got, r)
+			results = append(results, got)
+		}
+	}
+	return results
 }
 
 // runOne runs one tool on one scenario, checks the result, and judges it.
@@ -112,12 +131,39 @@ func runOne(t *testing.T, srv *server, out string, sc scenario, tl *tool, mk fun
 	} else {
 		r.Pass = true
 	}
-	if tl.Name == "ghola" {
+	switch {
+	case tl.Name == "ghola":
 		judge(t, sc, r)
-	} else if !r.Pass {
+	case compatTools[tl.Name].of != "":
+		// judged against its tool by judgeCompat
+	case !r.Pass:
 		t.Logf("%s fails: %s", tl.Name, r.Reason)
 	}
 	return r
+}
+
+// compatTools are the pseudo-tools of the compatibility commands: the
+// ghola binary on the arguments of the tool they copy (of), with that
+// tool's config switch first, as the tool itself gets it.
+var compatTools = map[string]struct {
+	of   string
+	base []string
+}{
+	"ghola-curl":  {of: "curl", base: []string{"curl", "-q"}},
+	"ghola-wget":  {of: "wget", base: []string{"wget", "--no-config"}},
+	"ghola-aria2": {of: "aria2", base: []string{"aria2c", "--no-conf"}},
+}
+
+var compatOrder = []string{"ghola-curl", "ghola-wget", "ghola-aria2"}
+
+// judgeCompat requires a compatibility command to pass each scenario that
+// its tool passes. Where the tool fails, the command may pass: it keeps
+// ghola's fixes, such as If-Range on resume.
+func judgeCompat(t *testing.T, sc scenario, r, ref *Result) {
+	t.Helper()
+	if ref.Pass && !r.Pass {
+		t.Errorf("%s fails %s, which %s passes: %s (args %q, exit %d, stderr %q)", r.Tool, sc.ID, ref.Tool, r.Reason, r.Args, r.Exit, firstLine(r.Stderr))
+	}
 }
 
 // judge applies the ratchet in known_test.go to ghola's result.

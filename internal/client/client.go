@@ -1,19 +1,17 @@
-// Package client provides the HTTP request engine for ghola, including
-// retry with exponential backoff, temporal drift jitter, ghost identity
-// signing, and concurrent request execution with clean shutdown.
+// Package client provides the request engine for ghola: retries with
+// exponential backoff, redirects, the cookie jar, and downloads to a file.
 package client
 
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -100,7 +98,7 @@ func newFetchState(opts *config.Options, do Doer) (*fetchState, error) {
 	return s, nil
 }
 
-// prepareRequest sets URI, body, headers, auth, cookies, and ghost signature
+// prepareRequest sets URI, body, headers, auth and cookies
 // on the request object for a single attempt.
 func (s *fetchState) prepareRequest(req *fasthttp.Request, opts *config.Options, effectiveURL, effectiveMethod, effectiveData string) {
 	req.SetRequestURI(effectiveURL)
@@ -238,7 +236,7 @@ redirectLoop:
 
 			status := rsp.StatusCode()
 
-			if opts.Resilience.RetryHTTP && attempt < opts.Resilience.Retries && isRetryableHTTPStatus(status) {
+			if opts.Resilience.RetryHTTP && attempt < opts.Resilience.Retries && isRetryableHTTPStatus(opts, status) {
 				if d, ok := parseRetryAfter(rsp); ok {
 					nextWait = d
 					haveNextWait = true
@@ -384,7 +382,12 @@ func waitToRetry(ctx context.Context, opts *config.Options, attempt int, wait ti
 	return sleepCtx(ctx, wait)
 }
 
-func isRetryableHTTPStatus(status int) bool {
+// isRetryableHTTPStatus reports a status that a retry may cure: the list of
+// --retry-status, else the v0 list.
+func isRetryableHTTPStatus(opts *config.Options, status int) bool {
+	if list := opts.Resilience.RetryStatus; len(list) > 0 {
+		return slices.Contains(list, status)
+	}
 	switch status {
 	case 429, 500, 502, 503, 504:
 		return true
@@ -436,10 +439,4 @@ func applyDrift(ctx context.Context, driftMs int) error {
 		return fmt.Errorf("drift jitter: %w", err)
 	}
 	return sleepCtx(ctx, time.Duration(n.Int64())*time.Millisecond)
-}
-
-func applyGhostSign(req *fasthttp.Request, rawURL string) {
-	id := fmt.Sprintf("%d-%s", time.Now().Unix(), rawURL)
-	hash := sha256.Sum256([]byte(id))
-	req.Header.Set("X-Ghola-Identity", hex.EncodeToString(hash[:]))
 }

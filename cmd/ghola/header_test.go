@@ -20,7 +20,7 @@ func TestExecute_HeaderRemoval(t *testing.T) {
 	defer srv.Close()
 
 	for _, extra := range [][]string{nil, {"--impersonate", "chrome"}} {
-		args := append(append([]string{"-s", "-H", "User-Agent:", "-H", "Accept:"}, extra...), srv.URL)
+		args := append(append([]string{"-q", "-H", "User-Agent:", "-H", "Accept:"}, extra...), srv.URL)
 		out, err := os.CreateTemp(t.TempDir(), "out")
 		if err != nil {
 			t.Fatal(err)

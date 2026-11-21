@@ -31,7 +31,7 @@ func TestExecute_ProxyFromEnvironment(t *testing.T) {
 	}
 	for name, extra := range modes {
 		t.Run(name, func(t *testing.T) {
-			args := append(append([]string{"-s"}, extra...), srv.URL)
+			args := append(append([]string{"-q", "-r", "0"}, extra...), srv.URL)
 			for _, tc := range []struct {
 				noProxy  string
 				wantHits int32
@@ -67,7 +67,7 @@ func TestExecute_ProxyFlagOnDownload(t *testing.T) {
 		hits.Add(1)
 	}))
 	defer srv.Close()
-	args := []string{"-s", "--proxy", deadURL(t), "-o", filepath.Join(t.TempDir(), "f"), srv.URL}
+	args := []string{"-q", "-r", "0", "--proxy", deadURL(t), "-o", filepath.Join(t.TempDir(), "f"), srv.URL}
 	if code := execute(context.Background(), args, nil, nil, nil); code == 0 || hits.Load() != 0 {
 		t.Errorf("ghola %q: exit %d, server got %d requests; want a failure and none", args, code, hits.Load())
 	}

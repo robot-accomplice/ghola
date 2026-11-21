@@ -13,9 +13,11 @@ import (
 	"time"
 
 	"github.com/robot-accomplice/ghola/internal/bridge"
+	"github.com/robot-accomplice/ghola/internal/cli"
 	"github.com/robot-accomplice/ghola/internal/client"
 	"github.com/robot-accomplice/ghola/internal/config"
 	"github.com/robot-accomplice/ghola/internal/output"
+	"github.com/robot-accomplice/ghola/internal/profile"
 	gholatransport "github.com/robot-accomplice/ghola/internal/transport"
 	"github.com/valyala/fasthttp"
 )
@@ -27,22 +29,108 @@ func main() {
 }
 
 func execute(ctx context.Context, args []string, do client.Doer, stream client.Streamer, w *os.File) int {
-	opts, done, err := config.ParseFlags(args)
+	c, err := cli.Parse(args)
 	if err != nil {
-		reportArgError(os.Stderr, err, useColor(os.Stderr))
-		return config.BadFlag.Int()
+		return argError(err)
 	}
-	if done {
-		return config.NoError.Int()
+	hideErrors := false
+	if from := compatCommands[c.Job]; from != nil {
+		native, err := from(c.Args)
+		if err != nil {
+			return argError(err)
+		}
+		if native.ShowNative {
+			fmt.Fprintln(w, "ghola "+cli.ShellQuote(native.Args))
+			return config.NoError.Int()
+		}
+		if c, err = cli.Parse(native.Args); err != nil {
+			return argError(err)
+		}
+		hideErrors = native.HideErrors
 	}
+	if code, done := runJob(c, w); done {
+		return code
+	}
+	opts, err := cli.Apply(c)
+	if err != nil {
+		return argError(err)
+	}
+	opts.Output.HideErrors = hideErrors
+	if c.Job == cli.JobInspect {
+		opts.Output.Snoop = true
+	}
+	return transfer(ctx, opts, do, stream, w)
+}
 
-	if opts.Serve {
+// compatCommands translate the syntax of curl, wget and aria2c into native
+// arguments (v1 spec, section 6).
+var compatCommands = map[string]func([]string) (*cli.Compat, error){
+	cli.JobCurl: cli.FromCurl, cli.JobWget: cli.FromWget, cli.JobAria2c: cli.FromAria2c,
+}
+
+// argError reports an argument error with the short usage around it, as
+// Jon decided on 2026-11-12, and returns exit 2.
+func argError(err error) int {
+	reportArgError(os.Stderr, &config.UsageError{Err: err, Usage: cli.ShortUsage(config.Version)}, useColor(os.Stderr))
+	return config.BadFlag.Int()
+}
+
+// runJob runs --help, --version and the jobs that do not transfer. done is
+// false for fetch, download and inspect, which transfer.
+func runJob(c *cli.Command, w *os.File) (code int, done bool) {
+	switch {
+	case c.Has("help"):
+		text, err := cli.Help(config.Version, c.Last("help"))
+		if err != nil {
+			return argError(err), true
+		}
+		fmt.Fprint(w, text)
+		return config.NoError.Int(), true
+	case c.Has("version"):
+		fmt.Fprintf(w, "ghola version %s\n", config.Version)
+		return config.NoError.Int(), true
+	}
+	switch c.Job {
+	case cli.JobFetch, cli.JobDownload, cli.JobInspect:
+		return 0, false
+	case cli.JobServe:
 		if err := bridge.ListenAndServe(bridge.Addr); err != nil {
 			fmt.Fprintf(os.Stderr, "bridge: %v\n", err)
-			return config.SendFailed.Int()
+			return config.SendFailed.Int(), true
 		}
-		return config.NoError.Int()
+		return config.NoError.Int(), true
+	case cli.JobProfiles:
+		for _, name := range profile.ProfileNames() {
+			fmt.Fprintln(w, name)
+		}
+		return config.NoError.Int(), true
+	case cli.JobCompletion:
+		if len(c.Args) != 1 {
+			return argError(fmt.Errorf("ghola completion takes one shell: bash, zsh, fish or powershell")), true
+		}
+		text, err := cli.Completion(c.Args[0])
+		if err != nil {
+			return argError(err), true
+		}
+		fmt.Fprint(w, text)
+		return config.NoError.Int(), true
+	case cli.JobExplain:
+		if len(c.Args) != 1 {
+			return argError(fmt.Errorf("ghola explain takes one exit code, such as 28")), true
+		}
+		text, err := cli.Explain(c.Args[0])
+		if err != nil {
+			return argError(err), true
+		}
+		fmt.Fprint(w, text)
+		return config.NoError.Int(), true
+	default:
+		return argError(fmt.Errorf("ghola %s is in the v1 spec but not built yet", c.Job)), true
 	}
+}
+
+// transfer reads the request body sources and fetches each URL.
+func transfer(ctx context.Context, opts *config.Options, do client.Doer, stream client.Streamer, w *os.File) int {
 
 	if opts.Transfer != "" {
 		b, err := os.ReadFile(opts.Transfer)
@@ -54,7 +142,9 @@ func execute(ctx context.Context, args []string, do client.Doer, stream client.S
 	}
 
 	// Stdin/file substitution: -d - reads stdin, -d @file reads from file.
-	if opts.Data == "-" || opts.Data == "@-" {
+	if opts.DataLiteral {
+		// --data-literal: the value is the body, also when it starts with @.
+	} else if opts.Data == "-" || opts.Data == "@-" {
 		b, err := io.ReadAll(os.Stdin)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "read stdin: %v\n", err)
@@ -118,7 +208,7 @@ func fetch(ctx context.Context, opts *config.Options, do client.Doer, stream cli
 
 	if config.ShouldStream(opts) {
 		if err := client.Download(ctx, opts, stream); err != nil {
-			if !opts.Output.Silent {
+			if !opts.Output.HideErrors {
 				fmt.Fprintf(os.Stderr, "Failed: %s\n", err)
 			}
 			return exitFor(err).Int()
@@ -136,7 +226,7 @@ func fetch(ctx context.Context, opts *config.Options, do client.Doer, stream cli
 	req, rsp, err := client.FetchURL(ctx, opts, do)
 	elapsed := time.Since(start)
 	if err != nil {
-		if !opts.Output.Silent {
+		if !opts.Output.HideErrors {
 			fmt.Fprintf(os.Stderr, "Failed: %s\n", err)
 		}
 		return exitFor(err).Int()

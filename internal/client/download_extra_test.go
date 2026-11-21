@@ -230,15 +230,14 @@ func TestResumeOffset_AutoMissing(t *testing.T) {
 	}
 }
 
-// TestBuildDownloadRequest_GhostAndImpersonate covers the ghost-sign and
+// TestBuildDownloadRequest_Impersonate covers the
 // impersonation branches in buildDownloadRequest.
-func TestBuildDownloadRequest_GhostAndImpersonate(t *testing.T) {
+func TestBuildDownloadRequest_Impersonate(t *testing.T) {
 	req := fasthttp.AcquireRequest()
 	defer fasthttp.ReleaseRequest(req)
 
 	opts := &config.Options{
 		Stealth: config.StealthOptions{
-			Ghost:          true,
 			Impersonate:    "chrome",
 			StealthHeaders: true,
 			Compressed:     true,
@@ -249,7 +248,6 @@ func TestBuildDownloadRequest_GhostAndImpersonate(t *testing.T) {
 	if len(req.Body()) == 0 {
 		t.Errorf("expected body to be set")
 	}
-	// Ghost signing adds a custom header; verify the request was built.
 	if string(req.Header.Method()) != fasthttp.MethodGet {
 		t.Errorf("method = %q, want GET", req.Header.Method())
 	}
@@ -533,5 +531,23 @@ func TestProgressTap_UnknownTotal(t *testing.T) {
 	}
 	if pw.written != 50 {
 		t.Errorf("tap written = %d, want 50", pw.written)
+	}
+}
+
+// --progress on shows the meter also when stderr is not a terminal;
+// --progress off and -q hide it; the default follows the terminal.
+func TestMeterFor(t *testing.T) {
+	old := meterOut
+	meterOut = func() io.Writer { return nil } // stderr is not a terminal
+	t.Cleanup(func() { meterOut = old })
+	cases := map[string]bool{"on": true, "off": false, "": false}
+	for progress, want := range cases {
+		got := meterFor(&config.Options{Output: config.OutputOptions{Progress: progress}}) != nil
+		if got != want {
+			t.Errorf("progress %q: meter %v, want %v", progress, got, want)
+		}
+	}
+	if meterFor(&config.Options{Output: config.OutputOptions{Progress: "on", Silent: true}}) != nil {
+		t.Error("-q did not hide a forced meter")
 	}
 }

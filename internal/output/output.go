@@ -54,10 +54,6 @@ func ProcessResponse(w, ew io.Writer, opts *config.Options, req *fasthttp.Reques
 		return nil
 	}
 
-	if opts.Output.Silent {
-		return nil
-	}
-
 	if opts.Output.Verbose {
 		printVerbose(ew, opts, req)
 	}
@@ -114,7 +110,6 @@ func writeFile(name string, body io.Reader) error {
 
 // printVerbose writes the -v lines to ew.
 func printVerbose(ew io.Writer, opts *config.Options, req *fasthttp.Request) {
-	fmt.Fprintf(ew, "Ghost Signature: %s\n", req.Header.Peek("X-Ghola-Identity"))
 	if opts.Stealth.Impersonate != "" {
 		fmt.Fprintf(ew, "Profile: %s\n", opts.Stealth.Impersonate)
 		fmt.Fprintln(ew, "Transport: tls-client (pure Go)")
@@ -131,7 +126,7 @@ func printVerbose(ew io.Writer, opts *config.Options, req *fasthttp.Request) {
 }
 
 func printTiming(ew io.Writer, opts *config.Options, elapsed time.Duration) {
-	if opts.Output.Timing {
+	if opts.Output.Verbose { // -v writes the total time (v0 --timing)
 		fmt.Fprintf(ew, "Total: %s\n", elapsed.Truncate(time.Millisecond))
 	}
 }

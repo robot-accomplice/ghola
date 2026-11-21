@@ -69,7 +69,7 @@ func eachToFile(url func(e *Env) string) map[string]func(e *Env) Spec {
 // resumeURL is resumeFrom for a URL that is not on the HTTP server.
 func resumeURL(url func(e *Env) string) map[string]func(e *Env) Spec {
 	return map[string]func(e *Env) Spec{
-		"ghola": seeded("1m", func(e *Env) Spec { return args("-C", "-", "-o", "f", url(e)) }),
+		"ghola": seeded("1m", func(e *Env) Spec { return args("-c", "-o", "f", url(e)) }),
 		"curl":  seeded("1m", func(e *Env) Spec { return args("-sS", "-C", "-", "-o", "f", url(e)) }),
 		"wget":  seeded("1m", func(e *Env) Spec { return args("-q", "-c", "-O", "f", url(e)) }),
 		"aria2": seeded("1m", func(e *Env) Spec { return args("-q", "-c", "--allow-overwrite=true", "-o", "f", url(e)) }),
@@ -79,7 +79,7 @@ func resumeURL(url func(e *Env) string) map[string]func(e *Env) Spec {
 // resumeFrom is the "resume the file f from URL" command of each tool.
 func resumeFrom(path string) map[string]func(e *Env) Spec {
 	return map[string]func(e *Env) Spec{
-		"ghola": seeded("1m", func(e *Env) Spec { return args("-C", "-", "-o", "f", e.URL(path)) }),
+		"ghola": seeded("1m", func(e *Env) Spec { return args("-c", "-o", "f", e.URL(path)) }),
 		"curl":  seeded("1m", func(e *Env) Spec { return args("-sS", "-C", "-", "-o", "f", e.URL(path)) }),
 		"wget":  seeded("1m", func(e *Env) Spec { return args("-q", "-c", "-O", "f", e.URL(path)) }),
 		"aria2": seeded("1m", func(e *Env) Spec { return args("-q", "-c", "--allow-overwrite=true", "-o", "f", e.URL(path)) }),
@@ -104,7 +104,7 @@ func resumeChanged(path string) map[string]func(e *Env) Spec {
 // segmented is the "download URL in 4 parts" command of the tools that can.
 func segmented(path string) map[string]func(e *Env) Spec {
 	return map[string]func(e *Env) Spec{
-		"ghola": func(e *Env) Spec { return args("-n", "4", "-o", "f", e.URL(path)) },
+		"ghola": func(e *Env) Spec { return args("download", "-n", "4", "-o", "f", e.URL(path)) },
 		"aria2": func(e *Env) Spec {
 			return args("-q", "-x", "4", "-s", "4", "-k", "1M", "--allow-overwrite=true", "-o", "f", e.URL(path))
 		},
@@ -126,7 +126,7 @@ var scenarios = []scenario{
 	{
 		ID: "rate_file", Finding: "ok", What: "64 KiB/s rate limit on a 256 KiB file takes about 4 s",
 		Runs: downloadTo("/file/256k", map[string][]string{
-			"ghola": {"--limit-rate", "64k"}, "curl": {"--limit-rate", "64k"},
+			"ghola": {"--rate-max", "64K"}, "curl": {"--limit-rate", "64k"},
 			"wget": {"--limit-rate=64k"}, "aria2": {"--max-download-limit=64K"},
 		}),
 		Check: all(exitZero, slowerThan(3000), fileIs("f", ref("256k"))),
@@ -193,7 +193,7 @@ var scenarios = []scenario{
 	{
 		ID: "rate_stdout", Finding: "M3", What: "the rate limit applies to stdout too",
 		Runs: map[string]func(e *Env) Spec{
-			"ghola": func(e *Env) Spec { return args("--limit-rate", "64k", e.URL("/file/256k")) },
+			"ghola": func(e *Env) Spec { return args("--rate-max", "64K", e.URL("/file/256k")) },
 			"curl":  func(e *Env) Spec { return args("-sS", "--limit-rate", "64k", e.URL("/file/256k")) },
 			"wget":  func(e *Env) Spec { return args("-q", "--limit-rate=64k", "-O", "-", e.URL("/file/256k")) },
 		},
@@ -226,13 +226,13 @@ var scenarios = []scenario{
 	// ---- Redirects and credentials ----
 	{
 		ID: "redirect_follow", Finding: "ok", What: "follow 3 redirects",
-		Runs:  downloadTo("/redirect/3", map[string][]string{"ghola": {"-L"}, "curl": {"-L"}}),
+		Runs:  downloadTo("/redirect/3", map[string][]string{"curl": {"-L"}}),
 		Check: all(exitZero, fileIs("f", ref("1k"))),
 	},
 	{
 		ID: "redirect_limit", Finding: "H6", What: "a 60-hop redirect chain is an error",
 		Runs: map[string]func(e *Env) Spec{
-			"ghola": func(e *Env) Spec { return args("-L", e.URL("/redirect/60")) },
+			"ghola": func(e *Env) Spec { return args(e.URL("/redirect/60")) },
 			"curl":  func(e *Env) Spec { return args("-sSL", e.URL("/redirect/60")) },
 			"wget":  func(e *Env) Spec { return args("-q", "-O", "-", e.URL("/redirect/60")) },
 			"aria2": func(e *Env) Spec { return args("-q", "--allow-overwrite=true", "-o", "f", e.URL("/redirect/60")) },
@@ -242,7 +242,7 @@ var scenarios = []scenario{
 	{
 		ID: "xhost_basic", Finding: "H1", What: "-u credentials do not follow a redirect to another host",
 		Runs: map[string]func(e *Env) Spec{
-			"ghola": func(e *Env) Spec { return args("-L", "-u", "alice:s3cret", e.URL("/xhost")) },
+			"ghola": func(e *Env) Spec { return args("-u", "alice:s3cret", e.URL("/xhost")) },
 			"curl":  func(e *Env) Spec { return args("-sSL", "-u", "alice:s3cret", e.URL("/xhost")) },
 			"wget": func(e *Env) Spec {
 				return args("-q", "--user", "alice", "--password", "s3cret", "--auth-no-challenge", "-O", "-", e.URL("/xhost"))
@@ -256,7 +256,7 @@ var scenarios = []scenario{
 	{
 		ID: "xhost_bearer", Finding: "H1", What: "an Authorization header does not follow a redirect to another host",
 		Runs: map[string]func(e *Env) Spec{
-			"ghola": func(e *Env) Spec { return args("-L", "-H", "Authorization: Bearer tok", e.URL("/xhost")) },
+			"ghola": func(e *Env) Spec { return args("-H", "Authorization: Bearer tok", e.URL("/xhost")) },
 			"curl":  func(e *Env) Spec { return args("-sSL", "-H", "Authorization: Bearer tok", e.URL("/xhost")) },
 			"wget": func(e *Env) Spec {
 				return args("-q", "--header", "Authorization: Bearer tok", "-O", "-", e.URL("/xhost"))
@@ -270,7 +270,7 @@ var scenarios = []scenario{
 	{
 		ID: "xhost_cookie", Finding: "H1", What: "a cookie given on the command line does not follow a redirect to another host",
 		Runs: map[string]func(e *Env) Spec{
-			"ghola": func(e *Env) Spec { return args("-L", "--cookie", "sid=abc", e.URL("/xhost")) },
+			"ghola": func(e *Env) Spec { return args("--cookie", "sid=abc", e.URL("/xhost")) },
 			"curl":  func(e *Env) Spec { return args("-sSL", "-b", "sid=abc", e.URL("/xhost")) },
 		},
 		Check: lastTo("/echo", "localhost", headerAbsent("Cookie")),
@@ -279,7 +279,7 @@ var scenarios = []scenario{
 		ID: "xhost_trusted", Finding: "H1", What: "--location-trusted sends the credentials to the other host",
 		Runs: map[string]func(e *Env) Spec{
 			"ghola": func(e *Env) Spec {
-				return args("--location-trusted", "-H", "Authorization: Bearer tok", e.URL("/xhost"))
+				return args("--follow-trusted", "-H", "Authorization: Bearer tok", e.URL("/xhost"))
 			},
 			"curl": func(e *Env) Spec {
 				return args("-sS", "--location-trusted", "-H", "Authorization: Bearer tok", e.URL("/xhost"))
@@ -290,7 +290,7 @@ var scenarios = []scenario{
 	{
 		ID: "r303", Finding: "ok", What: "a 303 after a POST becomes a GET",
 		Runs: map[string]func(e *Env) Spec{
-			"ghola": func(e *Env) Spec { return args("-L", "-d", "hello", e.URL("/r303")) },
+			"ghola": func(e *Env) Spec { return args("-d", "hello", e.URL("/r303")) },
 			"curl":  func(e *Env) Spec { return args("-sSL", "-d", "hello", e.URL("/r303")) },
 		},
 		Check: lastTo("/echo", "", methodBody("GET", "")),
@@ -298,7 +298,7 @@ var scenarios = []scenario{
 	{
 		ID: "r307", Finding: "ok", What: "a 307 keeps the POST and its body",
 		Runs: map[string]func(e *Env) Spec{
-			"ghola": func(e *Env) Spec { return args("-L", "-d", "hello", e.URL("/r307")) },
+			"ghola": func(e *Env) Spec { return args("-d", "hello", e.URL("/r307")) },
 			"curl":  func(e *Env) Spec { return args("-sSL", "-d", "hello", e.URL("/r307")) },
 		},
 		Check: lastTo("/echo", "", methodBody("POST", "hello")),
@@ -308,7 +308,7 @@ var scenarios = []scenario{
 	{
 		ID: "timeout_stdout", Finding: "ok", What: "a 2 s timeout stops a hung request",
 		Runs: map[string]func(e *Env) Spec{
-			"ghola": func(e *Env) Spec { return args("--timeout", "2000", e.URL("/hang")) },
+			"ghola": func(e *Env) Spec { return args("--timeout", "2", e.URL("/hang")) },
 			"curl":  func(e *Env) Spec { return args("-sS", "-m", "2", e.URL("/hang")) },
 		},
 		Check: all(exitNonzero, fasterThan(10000)),
@@ -316,7 +316,7 @@ var scenarios = []scenario{
 	{
 		ID: "timeout_file", Finding: "H3", What: "a 2 s timeout stops a hung download to a file",
 		Runs: downloadTo("/hang", map[string][]string{
-			"ghola": {"--timeout", "2000"}, "curl": {"-m", "2"},
+			"ghola": {"--timeout", "2"}, "curl": {"-m", "2"},
 			"wget": {"-t", "1", "-T", "2"}, "aria2": {"--max-tries=1", "--timeout=2"},
 		}),
 		Check: all(exitNonzero, fasterThan(10000)),
@@ -324,7 +324,7 @@ var scenarios = []scenario{
 	{
 		ID: "max_time", Finding: "H3", What: "--max-time 2 stops a hung request, as curl -m 2",
 		Runs: map[string]func(e *Env) Spec{
-			"ghola": func(e *Env) Spec { return args("--max-time", "2", e.URL("/hang")) },
+			"ghola": func(e *Env) Spec { return args("--timeout", "2", e.URL("/hang")) },
 			"curl":  func(e *Env) Spec { return args("-sS", "--max-time", "2", e.URL("/hang")) },
 		},
 		Check: all(exitNonzero, fasterThan(10000)),
@@ -332,7 +332,7 @@ var scenarios = []scenario{
 	{
 		ID: "connect_timeout", Finding: "H3", What: "--connect-timeout 2 stops a TLS handshake that never ends",
 		Runs: map[string]func(e *Env) Spec{
-			"ghola": func(e *Env) Spec { return args("--connect-timeout", "2", e.SilentURL()) },
+			"ghola": func(e *Env) Spec { return args("--timeout-connect", "2", "-r", "0", e.SilentURL()) },
 			"curl":  func(e *Env) Spec { return args("-sS", "--connect-timeout", "2", e.SilentURL()) },
 		},
 		Check: all(exitNonzero, fasterThan(10000)),
@@ -340,7 +340,7 @@ var scenarios = []scenario{
 	{
 		ID: "speed_limit_stdout", Finding: "H3", What: "--speed-limit stops a body that trickles in",
 		Runs: map[string]func(e *Env) Spec{
-			"ghola": func(e *Env) Spec { return args("--speed-limit", "1000", "--speed-time", "2", e.URL("/trickle")) },
+			"ghola": func(e *Env) Spec { return args("--stall-rate", "1000", "--stall-time", "2", e.URL("/trickle")) },
 			"curl":  func(e *Env) Spec { return args("-sS", "--speed-limit", "1000", "--speed-time", "2", e.URL("/trickle")) },
 		},
 		Check: all(exitNonzero, fasterThan(10000)),
@@ -349,7 +349,7 @@ var scenarios = []scenario{
 		ID: "speed_limit_file", Finding: "H3", What: "--speed-limit stops a download to a file that trickles in",
 		Runs: map[string]func(e *Env) Spec{
 			"ghola": func(e *Env) Spec {
-				return toFile("ghola", e.URL("/trickle"), "--speed-limit", "1000", "--speed-time", "2")
+				return toFile("ghola", e.URL("/trickle"), "--stall-rate", "1000", "--stall-time", "2")
 			},
 			"curl": func(e *Env) Spec {
 				return toFile("curl", e.URL("/trickle"), "--speed-limit", "1000", "--speed-time", "2")
@@ -363,9 +363,9 @@ var scenarios = []scenario{
 
 	// ---- -n with requests that are not downloads ----
 	{
-		ID: "n_post", Finding: "H4", What: "-n does not send a POST more than once",
+		ID: "n_post", Finding: "H4", What: "a POST is sent once (in v1, -n belongs to ghola download, which has no body)",
 		Runs: map[string]func(e *Env) Spec{
-			"ghola": func(e *Env) Spec { return args("-n", "3", "-d", "once", e.URL("/echo")) },
+			"ghola": func(e *Env) Spec { return args("-d", "once", e.URL("/echo")) },
 			"curl":  func(e *Env) Spec { return args("-sS", "-d", "once", e.URL("/echo")) },
 		},
 		Check: requestsAre("POST", 1),
@@ -373,7 +373,7 @@ var scenarios = []scenario{
 	{
 		ID: "n_refused", Finding: "H4", What: "-n reports a refused connection",
 		Runs: map[string]func(e *Env) Spec{
-			"ghola": func(e *Env) Spec { return args("-n", "3", e.DeadURL()) },
+			"ghola": func(e *Env) Spec { return args("download", "-n", "3", "-r", "0", "-o", "f", e.DeadURL()) },
 		},
 		Check: all(exitNonzero, stderrNotEmpty),
 	},
@@ -396,7 +396,7 @@ var scenarios = []scenario{
 	{
 		ID: "zero_connections", Finding: "M7", What: "-n 0 is rejected before any request",
 		Runs: map[string]func(e *Env) Spec{
-			"ghola": func(e *Env) Spec { return args("-n", "0", e.URL("/file/1k")) },
+			"ghola": func(e *Env) Spec { return args("download", "-n", "0", "-o", "f", e.URL("/file/1k")) },
 		},
 		Check: all(exitNonzero, noRequests),
 	},
@@ -475,7 +475,7 @@ var scenarios = []scenario{
 	{
 		ID: "retry_503", Finding: "ok", What: "retry 503 until it succeeds",
 		Runs: downloadTo("/flaky", map[string][]string{
-			"ghola": {"-r", "3", "--retry-http"}, "curl": {"--retry", "3"},
+			"ghola": {"-r", "3"}, "curl": {"--retry", "3"},
 			"wget": {"-t", "3", "--retry-on-http-error=503"}, "aria2": {"--max-tries=3", "--retry-wait=1"},
 		}),
 		Check: all(exitZero, fileIs("f", text("ok after retries\n"))),
@@ -485,7 +485,7 @@ var scenarios = []scenario{
 	{
 		ID: "fail_to_file", Finding: "H7", What: "-f with -o writes no file on a 404",
 		Runs: map[string]func(e *Env) Spec{
-			"ghola": func(e *Env) Spec { return args("-f", "-o", "f", e.URL("/status/404")) },
+			"ghola": func(e *Env) Spec { return args("-o", "f", e.URL("/status/404")) },
 			"curl":  func(e *Env) Spec { return args("-sSf", "-o", "f", e.URL("/status/404")) },
 		},
 		Check: all(exitNonzero, fileAbsent("f")),
@@ -517,7 +517,7 @@ var scenarios = []scenario{
 	{
 		ID: "exit_timeout", Finding: "M6", What: "a timeout exits 28, as curl does",
 		Runs: map[string]func(e *Env) Spec{
-			"ghola": func(e *Env) Spec { return args("--timeout", "2000", e.URL("/hang")) },
+			"ghola": func(e *Env) Spec { return args("--timeout", "2", e.URL("/hang")) },
 			"curl":  func(e *Env) Spec { return args("-sS", "-m", "2", e.URL("/hang")) },
 		},
 		Check: exitIs(28),
@@ -537,7 +537,7 @@ var scenarios = []scenario{
 	{
 		ID: "tls_cacert", Finding: "ok", What: "a CA file makes the certificate trusted",
 		Runs: map[string]func(e *Env) Spec{
-			"ghola": func(e *Env) Spec { return toFile("ghola", e.TLSURL("/file/1k"), "--cacert", e.CAFile()) },
+			"ghola": func(e *Env) Spec { return toFile("ghola", e.TLSURL("/file/1k"), "--tls-ca", e.CAFile()) },
 			"curl":  func(e *Env) Spec { return toFile("curl", e.TLSURL("/file/1k"), "--cacert", e.CAFile()) },
 			"wget":  func(e *Env) Spec { return toFile("wget", e.TLSURL("/file/1k"), "--ca-certificate", e.CAFile()) },
 			"aria2": func(e *Env) Spec { return toFile("aria2", e.TLSURL("/file/1k"), "--ca-certificate="+e.CAFile()) },
@@ -559,7 +559,7 @@ var scenarios = []scenario{
 	{
 		ID: "content_disposition_traversal", Finding: "ok", What: `Content-Disposition "../../evil.txt" stays in the working directory`,
 		Runs: map[string]func(e *Env) Spec{
-			"ghola": func(e *Env) Spec { return args("-O", "-J", e.URL("/cd-evil")) },
+			"ghola": func(e *Env) Spec { return args("download", "--output-name", "header", e.URL("/cd-evil")) },
 			"curl":  func(e *Env) Spec { return args("-sS", "-O", "-J", e.URL("/cd-evil")) },
 			"wget":  func(e *Env) Spec { return args("-q", "--content-disposition", e.URL("/cd-evil")) },
 			"aria2": func(e *Env) Spec { return args("-q", e.URL("/cd-evil")) },
