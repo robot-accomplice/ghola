@@ -1,6 +1,6 @@
-# ghola v1.0.0 release notes (draft)
+# ghola v1.0.0 release notes
 
-**Status (2026-11-21): draft.** v1.0.0 is not released. The command line follows the v1 spec (`docs/cli-v1.md`, PR 65). Jon decided the spec questions A to M on 2026-11-21. Every option of the v1 table is built; section 5 lists what v1.0.0 does not do, and why.
+**Released 2026-11-21.** The command line follows the v1 spec (`docs/cli-v1.md`). Every option of the v1 table is built. Section 4 lists what v1.0.0 does not do, and why.
 
 ## 1. Breaking changes
 
@@ -44,14 +44,7 @@
 5. The stdout body was not byte-exact, `-n` repeated a POST, and `-r -1` crashed the bridge (H2, H4, H5).
 6. The audit findings H1 to H8 and M1 to M9 are all fixed; `docs/audits/2026-11-12-v0.7.0-vs-curl-aria2-wget.md` has the list.
 
-## 4. Release steps (not done)
-
-1. Merge PR 65 (spec), PR 80 (parser), PR 81 (phases 2 and 3) and PR 82 (phase 4) into `develop`, in that order, each with green checks.
-2. Merge `develop` into `main` with a `--no-ff` commit.
-3. Push the annotated tag `v1.0.0` with these notes; GitHub releases in this repository cannot be changed after that.
-4. Dispatch the Homebrew workflow by hand: `gh workflow run homebrew.yml -f tag=v1.0.0`.
-
-## 5. Not in v1.0.0
+## 4. Not in v1.0.0
 
 Each item is refused with a message, not dropped.
 
