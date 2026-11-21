@@ -464,37 +464,65 @@ The plan's rule counts the job word as an option. No design can meet it, for two
 30 of 44 tasks pass (22 with the job word counted as an option). 12 tasks use a name that no other tool has.
 <!-- END tasks -->
 
-## 11. Open questions for Jon
+## 11. Decisions
 
 **A. `--ghost` and the bridge field `ghost`.** v0 `--ghost` adds an `X-Ghola-Identity` header, a SHA-256 of the time and the URL (`internal/client/client.go`, `applyGhostSign`). The header marks every request as coming from ghola. That works against impersonation and stealth. scope (`scope/src/http/ghola.rs`) and scope-bca both send `"ghost": true` in their stealth mode, so their stealth requests carry this header today.
+Decision (Jon, 2026-11-21): A.
+
 - A. Remove `--ghost`. The bridge accepts the `ghost` field and ignores it, so the clients keep working, and their stealth requests stop sending the header.
 - B. Keep it as `--ghost`.
 
 **B. `--jq`.** It takes a gjson path, not jq syntax, so the name misleads.
+Decision (Jon, 2026-11-21): A.
+
 - A. Rename it to `--output-select` (this draft).
 - B. Keep `--jq`.
 
 **C. Size units.** v0 reads `k` as 1000. curl, wget and aria2 read it as 1024.
+Decision (Jon, 2026-11-21): A.
+
 - A. `K`, `M` and `G` are 1024, as in the three tools. `kB`, `MB` and `GB` are 1000, and `KiB`, `MiB` and `GiB` are 1024.
 - B. Everything is 1000, as in v0.
 
 **D. The task-test rule.**
+Decision (Jon, 2026-11-21): A.
+
 - A. The job word counts as part of the program, and each loss has a recorded reason (this draft). The result: 30 of 44 tasks pass, and 14 have a reason.
 - B. The plan's rule: the job word counts as an option. The result: 22 of 44 pass, and no design can pass them all.
 
 **E. `-c`, `-i` and `-w` change their meaning from v0.** In v0 they are `--chain`, `--include` and `--wget`. In v1 they are `--continue`, `--input` and `--output-template`. A v0 command that uses them gets no v0 message. It fails as a different error, or, with `-c URL`, it resumes.
+Decision (Jon, 2026-11-21): A.
+
 - A. Keep the new meanings. They come from measured use.
 - B. Use other letters, so that each v0 use gets the v0 message.
 
 **F. Mirror depth.** wget `-r` stops at depth 5, and wget `-m` has no limit.
+Decision (Jon, 2026-11-21): A.
+
 - A. 5, as in wget `-r` (this draft).
 - B. No limit, as in wget `-m`.
 
 **G. Mirror above the start folder.** wget follows links to the parent folders unless `-np` is given.
+Decision (Jon, 2026-11-21): A.
+
 - A. Stay below the start folder: `--parent` is off (this draft).
 - B. Follow parent links, as in wget.
 
 **H. An existing file in `ghola download` and `ghola mirror`.** curl replaces it. wget and aria2c write `name.1`.
+Decision (Jon, 2026-11-21): A.
+
 - A. Stop with exit 23 and name `--output-overwrite` (this draft).
 - B. Write `name.1`, as in wget and aria2c.
 - C. Replace it, as in curl.
+
+**I. `--variable` expansion.** curl expands `{{name}}` only in an `--expand-NAME` form of an option, because a body that holds `{{` must not change without a sign.
+
+Decision (Jon, 2026-11-21): use curl's rule. `--expand-NAME VALUE` expands the variables in VALUE and then works as `--NAME VALUE`. Every option that takes a value has this form. Other values do not change.
+
+**J. `--output-events` lines.** Decision (Jon, 2026-11-21): one JSON object on each line of stderr, with the events `start`, `retry`, `done` and `error`. `docs/cli/output-events.schema.json` defines the fields.
+
+**K. `--alt-svc`.** Decision (Jon, 2026-11-21): build the cache in v1.0.0. ghola reads the file, records each `Alt-Svc` header, and writes the file in curl's format. An `h3` entry turns on HTTP/3 for that host only on the stack that has HTTP/3 (`--impersonate` with a profile that supports it). The default stack records the entries and does not use them.
+
+**L. BitTorrent (plan D5-B).** Decision (Jon, 2026-11-21): not in v1.0.0. Reason: it needs a large library (for example anacrolix/torrent), and it makes ghola a public peer that uploads to other hosts. That needs its own security review. `--seed-ratio` leaves the v1 table.
+
+**M. A WebSocket transport for the JSON-RPC endpoint.** Decision (Jon, 2026-11-21): add it in v1.0.0 with `github.com/fasthttp/websocket`. `/jsonrpc` takes HTTP POST and WebSocket, with the same Host and token checks.
