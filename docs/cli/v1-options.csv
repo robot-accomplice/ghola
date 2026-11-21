@@ -6,7 +6,7 @@ output-create-dirs,,output,all,bool,false,--create-dirs,-x,(default),2,Create th
 output-remote-time,,output,all,bool,false,-R,(default with -N),--remote-time,0B,Set the file time to the Last-Modified time.
 output-select,,output,fetch,gjson path,,,,,0B,Write only the value at the path of a JSON body (gjson syntax).
 output-template,-w,output,all,template,,-w,,,2,After each transfer write the template. It uses curl's %{name} variables and %{json}.
-output-events,,output,all,none|json,none,,,(RPC),2,Write one JSON line to stderr for each transfer event. A JSON schema in the repo defines the lines.
+output-events,,output,all,none|json,none,,,(RPC),2,"Write one JSON line to stderr for each transfer event: start, retry, done and error. docs/cli/output-events.schema.json defines the lines."
 show-headers,,output,fetch,bool,false,-i / --show-headers,-S (stderr),,0B,Write the response header block to stdout before the body.
 save-headers,,output,all,path,,-D,--save-headers,,2,Write the response header block to PATH.
 quiet,-q,output,all,bool,false,-sS,-q,-q,0B,Write no progress meter and no notes. Errors still go to stderr.

@@ -469,16 +469,21 @@ func runAll(ctx context.Context, runs []config.Options, do client.Doer, stream c
 // fetchWithTemplate runs fetch, and then writes --output-template for
 // the transfer, also after a failure, as curl -w does.
 func fetchWithTemplate(ctx context.Context, opts *config.Options, do client.Doer, stream client.Streamer, w *os.File) int {
-	if opts.Output.Template == nil {
+	if opts.Output.Template == nil && opts.Output.Events == nil {
 		return fetch(ctx, opts, do, stream, w)
 	}
 	info := &config.TransferInfo{URL: opts.URL}
 	opts.Output.Info = info
+	opts.Output.Events.Start(opts.URL)
 	start := time.Now()
 	code := fetch(ctx, opts, do, stream, w)
 	info.Time, info.ExitCode = time.Since(start), code
 	if code == config.NoError.Int() {
 		info.File = opts.Output.File
+	}
+	opts.Output.Events.End(*info)
+	if opts.Output.Template == nil {
+		return code
 	}
 	templateMu.Lock()
 	defer templateMu.Unlock()

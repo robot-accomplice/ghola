@@ -404,6 +404,7 @@ func retryTimeLeft(opts *config.Options, start time.Time) bool {
 
 // waitToRetry announces retry number attempt on stderr and waits.
 func waitToRetry(ctx context.Context, opts *config.Options, attempt int, wait time.Duration) error {
+	opts.Output.Events.Retry(opts.URL, attempt, opts.Resilience.Retries, wait)
 	if !opts.Output.Silent {
 		fmt.Fprintf(os.Stderr, "Retry %d/%d in %v...\n", attempt, opts.Resilience.Retries, wait)
 	}

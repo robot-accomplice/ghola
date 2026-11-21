@@ -25,7 +25,8 @@ func runMirror(ctx context.Context, opts *config.Options, do client.Doer, stream
 	for _, u := range opts.URLs {
 		one := *opts
 		one.URL, one.URLs = u, []string{u}
-		m := &gholamirror.Mirror{Base: &one, Opts: opts.Mirror, Root: root, Do: do, Stream: stream}
+		m := &gholamirror.Mirror{Base: &one, Opts: opts.Mirror, Root: root, Do: do, Stream: stream,
+			ExitCode: func(err error) int { return exitFor(err).Int() }}
 		if log != nil {
 			m.Log = log
 		}

@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/robot-accomplice/ghola/docs/cli/output-events.schema.json",
+  "title": "ghola --output-events json line",
+  "description": "ghola --output-events json writes one of these objects on each line of stderr. A start line comes before each transfer, a retry line before each retry, and a done or error line after the transfer. With --jobs, the lines of several transfers mix; the url field tells them apart.",
+  "type": "object",
+  "required": ["event", "time", "url"],
+  "properties": {
+    "event": { "enum": ["start", "retry", "done", "error"] },
+    "time": { "type": "string", "format": "date-time", "description": "RFC 3339, UTC, with milliseconds." },
+    "url": { "type": "string", "description": "The URL as given." },
+    "attempt": { "type": "integer", "minimum": 1, "description": "retry: the number of this retry." },
+    "retries": { "type": "integer", "minimum": 1, "description": "retry: the --retry-max limit." },
+    "wait_ms": { "type": "integer", "minimum": 0, "description": "retry: the wait before this retry, in milliseconds. Absent when there is no wait." },
+    "exit_code": { "type": "integer", "description": "done and error: the exit code of the transfer (ghola explain CODE)." },
+    "status": { "type": "integer", "description": "done and error: the last HTTP status, when there was a response." },
+    "bytes": { "type": "integer", "minimum": 0, "description": "done and error: the body bytes that ghola wrote." },
+    "file": { "type": "string", "description": "done: the file that holds the body, when it is not stdout." },
+    "seconds": { "type": "number", "minimum": 0, "description": "done and error: the time of the transfer." },
+    "error": { "type": "string", "description": "error: the cause." }
+  },
+  "additionalProperties": false,
+  "allOf": [
+    { "if": { "properties": { "event": { "const": "retry" } } }, "then": { "required": ["attempt", "retries"] } },
+    { "if": { "properties": { "event": { "enum": ["done", "error"] } } }, "then": { "required": ["exit_code"] } },
+    { "if": { "properties": { "event": { "const": "error" } } }, "then": { "required": ["error"] } }
+  ]
+}

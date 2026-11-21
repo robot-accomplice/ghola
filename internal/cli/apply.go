@@ -64,7 +64,13 @@ var setters = map[string]setter{
 		o.Output.Template = t
 		return err
 	},
-	"hsts":           func(o *config.Options, v string, _ *Command) error { o.HSTS = v; return nil },
+	"hsts": func(o *config.Options, v string, _ *Command) error { o.HSTS = v; return nil },
+	"output-events": func(o *config.Options, v string, _ *Command) error {
+		if v == "json" {
+			o.Output.Events = config.NewEventLog(os.Stderr)
+		}
+		return nil
+	},
 	"auth-aws-sigv4": func(*config.Options, string, *Command) error { return nil }, // read in Apply
 	"trace":          func(o *config.Options, v string, _ *Command) error { o.Output.Trace = v; return nil },
 	"trace-format":   func(o *config.Options, v string, _ *Command) error { o.Output.TraceASCII = v == "ascii"; return nil },

@@ -32,6 +32,9 @@ type Mirror struct {
 	Do     client.Doer
 	Stream client.Streamer
 	Log    io.Writer // one line for each saved file and each failure; nil is quiet
+	// ExitCode maps a failure to its exit code, for the error events of
+	// --output-events.
+	ExitCode func(error) int
 
 	scope  *scope
 	queue  []item
@@ -100,11 +103,19 @@ func (m *Mirror) visit(ctx context.Context, it item) {
 	}
 	local := localPath(m.Root, it.url, m.Opts.Layout, m.Opts.CutDirs, m.Opts.FileNames)
 	opts := m.requestOptions(it.url, local)
-	if err := client.Download(ctx, opts, m.Stream); err != nil {
+	opts.Output.Events.Start(opts.URL)
+	began := time.Now()
+	err := client.Download(ctx, opts, m.Stream)
+	info := opts.Output.Info
+	info.Time = time.Since(began)
+	if err != nil {
+		info.ExitCode, info.ErrorMsg = m.exitCode(err), err.Error()
+		opts.Output.Events.End(*info)
 		m.fail(it.url, err)
 		return
 	}
-	info := opts.Output.Info
+	info.File = local
+	opts.Output.Events.End(*info)
 	m.total += info.Size
 	if m.Opts.AdjustExt {
 		if adjusted := withExtension(local, info.ContentType); adjusted != local {
@@ -233,6 +244,15 @@ func (m *Mirror) pause(ctx context.Context) {
 		}
 	}
 	m.sent++
+}
+
+// exitCode is the exit code of a failure; 55 (another cause) without
+// ExitCode.
+func (m *Mirror) exitCode(err error) int {
+	if m.ExitCode == nil {
+		return config.SendFailed.Int()
+	}
+	return m.ExitCode(err)
 }
 
 func (m *Mirror) fail(u *url.URL, err error) {
