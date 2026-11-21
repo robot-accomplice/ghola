@@ -25,6 +25,17 @@ const curlTable = `
 --compressed                   => --compressed
 -I --head                      => --head
 -i --include --show-headers    => --show-headers
+-D --dump-header                => --save-headers %s
+--trace                        => --trace %s
+--trace-ascii                  => --trace %s --trace-format ascii
+--trace-time                   => --trace-time
+-w --write-out                  => --output-template %s
+-z --time-cond                  => --cond-time %s
+--hsts                         => --hsts %s
+--etag-save                    => --cond-etag-save %s
+--etag-compare                 => --cond-etag-compare %s
+--path-as-is                   => --url-path-as-is
+--request-target               => --request-target %s
 -v --verbose                   => -v
 -R --remote-time               => --output-remote-time
 -O --remote-name               => -o ./
@@ -42,8 +53,21 @@ const curlTable = `
 -F --form                      => --form %s
 -X --request                   => -m %s
 -u --user                      => -u %s
+--basic                        => --auth basic
+--digest                       => --auth digest
+--anyauth                      => --auth any
+--aws-sigv4                    => --auth-aws-sigv4 %s
+--ntlm                         => --auth ntlm
+--negotiate                    => --auth negotiate
 -x --proxy                     => --proxy %s
 -U --proxy-user                => --proxy-user %s
+--proxy-cacert                 => --proxy-tls-ca %s
+--proxy-capath                 => --proxy-tls-ca-dir %s
+--proxy-insecure               => --no-proxy-tls-verify
+--proxy-cert                   => --proxy-tls-cert %s
+--proxy-key                    => --proxy-tls-key %s
+--proxy-pinnedpubkey           => --proxy-tls-pin %s
+--noproxy                      => --proxy-bypass %s
 --cacert                       => --tls-ca %s
 -E --cert                      => --tls-cert %s
 --key                          => --tls-key %s
@@ -57,8 +81,33 @@ const curlTable = `
 --limit-rate                   => --rate-max %s
 --retry                        => -r %s
 --retry-delay                  => --retry-delay %s
+--retry-max-time               => --retry-max-time %s
 --max-redirs                   => --follow-max %s
 -T --upload-file               => --upload %s
+--json                         => --json %s
+--oauth2-bearer                => --auth-bearer %s
+--url-query                    => --query %s
+-n --netrc                     => --auth-netrc
+--netrc-file                   => --auth-netrc-file %s
+--pinnedpubkey                 => --tls-pin %s
+--capath                       => --tls-ca-dir %s
+--tlsv1.2                      => --tls-min 1.2
+--tlsv1.3                      => --tls-min 1.3
+--tls-max                      => --tls-max %s
+--ciphers                      => --tls-ciphers %s
+--crlfile                      => --tls-crl %s
+--cert-status                  => --tls-ocsp
+--cert-type                    => --tls-cert-type %s
+--resolve                      => --resolve %s
+--connect-to                   => --connect-to %s
+-4 --ipv4                      => --ip 4
+-6 --ipv6                      => --ip 6
+--interface                    => --interface %s
+--local-port                   => --local-port %s
+--unix-socket                  => --unix-socket %s
+--doh-url                      => --doh %s
+--create-dirs                  => --output-create-dirs
+--max-filesize                 => --max-size %s
 `
 
 // wget saves under the remote name (ghola download), follows up to 20
@@ -80,9 +129,19 @@ const wgetTable = `
 --ca-certificate               => --tls-ca %s
 --certificate                  => --tls-cert %s
 --private-key                  => --tls-key %s
+--ca-directory                 => --tls-ca-dir %s
+-i --input-file                => --input %s
+-F --force-html                => --input-format html
+--hsts-file                    => --hsts %s
+--ciphers                      => --tls-ciphers %s
+--crl-file                     => --tls-crl %s
+--certificate-type             => --tls-cert-type %s
 --limit-rate                   => --rate-max %s
 --max-redirect                 => --follow-max %s
 --load-cookies --save-cookies  => --cookie-jar %s
+-4 --inet4-only                => --ip 4
+-6 --inet6-only                => --ip 6
+--bind-address                 => --interface %s
 `
 
 // aria2c saves under the remote name, follows redirects, and tries 5
@@ -96,13 +155,26 @@ const aria2Table = `
 -U --user-agent                => --user-agent %s
 --referer                      => --referer %s
 --all-proxy                    => --proxy %s
+--no-proxy                     => --proxy-bypass %s
+--checksum                     => --checksum %s
+--file-allocation              => --file-allocation %s
+--on-download-complete         => --on-complete %s
+--on-download-error            => --on-error %s
+-i --input-file                => --input %s
+-j --max-concurrent-downloads  => --jobs %s
+--max-overall-download-limit   => --rate-max-total %s
 --ca-certificate               => --tls-ca %s
 --certificate                  => --tls-cert %s
 --private-key                  => --tls-key %s
+--min-tls-version              => --tls-min %s
 --connect-timeout              => --timeout-connect %s
 -t --timeout                   => --stall-time %s
 --retry-wait                   => --retry-delay %s
 --max-download-limit           => --rate-max %s
+--disable-ipv6                 => --ip 4
+--interface                    => --interface %s
+-n --no-netrc                  => --no-auth-netrc
+--netrc-path                   => --auth-netrc-file %s
 --load-cookies --save-cookies  => --cookie-jar %s
 `
 
@@ -168,8 +240,8 @@ func curlSpecial(t *translation, name, value string, _ bool) (bool, error) {
 
 var wgetSpec = &toolSpec{
 	name:         JobWget,
-	defaults:     strings.Fields("-r 0 --no-compressed"),
-	valueLetters: "aABDeiIloOPQRtTUwX", // the wget and Wget2 manuals
+	defaults:     strings.Fields("-r 0 --no-compressed --no-url-glob --auth-netrc"), // wget reads ~/.netrc by default
+	valueLetters: "aABDeiIloOPQRtTUwX",                                              // the wget and Wget2 manuals
 	equals:       true,
 	// With -O, wget writes one URL to a file or stdout: a fetch, which also
 	// takes a body. Without it, wget saves under the remote name.
@@ -187,6 +259,7 @@ func wgetSpecial(t *translation, name, value string, _ bool) (bool, error) {
 		t.file = value // - is stdout, as in ghola
 	case "-P", "--directory-prefix":
 		t.dir = value
+		t.out = append(t.out, "--output-create-dirs") // wget creates the prefix folder
 	case "-t", "--tries":
 		return true, t.tries(value)
 	case "-T", "--timeout":
@@ -206,8 +279,8 @@ func wgetSpecial(t *translation, name, value string, _ bool) (bool, error) {
 
 var aria2Spec = &toolSpec{
 	name:         JobAria2c,
-	defaults:     strings.Fields("download -r 4 --retry-delay 0 --no-compressed"),
-	valueLetters: "MOTUdijklmostux", // aria2c 1.37.0 --help=#all
+	defaults:     strings.Fields("download -r 4 --retry-delay 0 --no-compressed --no-url-glob --auth-netrc"), // aria2c reads ~/.netrc by default
+	valueLetters: "MOTUdijklmostux",                                                                          // aria2c 1.37.0 --help=#all
 	equals:       true,
 	flags:        parseToolTable(aria2Table),
 	ignored: words("--no-conf -k --min-split-size --console-log-level " +
@@ -235,10 +308,8 @@ func aria2Special(t *translation, name, value string, _ bool) (bool, error) {
 			t.out = append(t.out, "--no-tls-verify")
 		}
 	case "--allow-overwrite":
-		// ghola writes over an existing -o file today; the switch for the
-		// download job (--output-overwrite) is phase 2.
-		if value != "true" {
-			return true, usagef("ghola aria2c: --allow-overwrite=%s maps to --output-overwrite, which ghola aria2c does not run yet", value)
+		if value == "true" {
+			t.out = append(t.out, "--output-overwrite")
 		}
 	default:
 		return false, nil

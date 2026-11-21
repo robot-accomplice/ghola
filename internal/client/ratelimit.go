@@ -26,6 +26,31 @@ type rateLimiter struct {
 	bytesPerSec int64
 	allowance   float64
 	last        time.Time
+	total       config.RateShare // --rate-max-total, which every transfer shares
+}
+
+// NewSharedLimiter returns the --rate-max-total limiter for a command.
+func NewSharedLimiter(bytesPerSec int64) config.RateShare {
+	return newRateLimiter(bytesPerSec)
+}
+
+// Wait is wait for the transfers that share the limiter.
+func (rl *rateLimiter) Wait(n int) { rl.wait(n) }
+
+// limiterFor returns the limiter of one transfer: --limit-rate (bps, 0
+// for none), joined to --rate-max-total. nil without either.
+func limiterFor(bps int64, total config.RateShare) *rateLimiter {
+	switch {
+	case bps > 0:
+		rl := newRateLimiter(bps)
+		rl.total = total
+		return rl
+	case total != nil:
+		rl := newRateLimiter(1 << 62) // no limit of its own
+		rl.total = total
+		return rl
+	}
+	return nil
 }
 
 func newRateLimiter(bytesPerSec int64) *rateLimiter {
@@ -36,8 +61,12 @@ func newRateLimiter(bytesPerSec int64) *rateLimiter {
 	}
 }
 
-// wait blocks until n bytes may be sent under the token bucket.
+// wait blocks until n bytes may be sent under the token bucket, and
+// under --rate-max-total.
 func (rl *rateLimiter) wait(n int) {
+	if rl.total != nil {
+		defer rl.total.Wait(n)
+	}
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 	for {
@@ -70,14 +99,26 @@ func (rl *rateLimiter) chunk() int {
 // set. The stdout path uses it, so the limit applies there as it does to a
 // download to a file (audit finding M3).
 func LimitReader(r io.Reader, opts *config.Options) (io.Reader, error) {
+	bps, err := limitRate(opts)
+	if err != nil {
+		return nil, err
+	}
+	if rl := limiterFor(bps, opts.Output.RateTotal); rl != nil {
+		return &rateLimitedReader{r: r, rl: rl}, nil
+	}
+	return r, nil
+}
+
+// limitRate reads --limit-rate: 0 when it is not set.
+func limitRate(opts *config.Options) (int64, error) {
 	if opts.Output.LimitRate == "" {
-		return r, nil
+		return 0, nil
 	}
 	bps, err := config.ParseRate(opts.Output.LimitRate)
 	if err != nil {
-		return nil, fmt.Errorf("parse --limit-rate: %w", err)
+		return 0, fmt.Errorf("parse --limit-rate: %w", err)
 	}
-	return &rateLimitedReader{r: r, rl: newRateLimiter(bps)}, nil
+	return bps, nil
 }
 
 // rateLimitedReader throttles reads through a rateLimiter.

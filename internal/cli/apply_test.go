@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -83,7 +84,7 @@ func TestApply_Units(t *testing.T) {
 // An option of a phase that is not built is refused with its phase, so no
 // option is accepted and then ignored.
 func TestApply_UnbuiltOptionIsRefused(t *testing.T) {
-	for _, args := range [][]string{{"--json", "{}", "u"}, {"--resolve", "h:443:1.2.3.4", "u"}, {"--http", "2", "u"}, {"--proxy-tls-ca", "x", "u"}} {
+	for _, args := range [][]string{{"--alt-svc", "cache.txt", "u"}, {"--variable", "a=b", "u"}, {"--http", "2", "u"}, {"--output-events", "json", "u"}} {
 		if _, err := Apply(apply(t, args...)); err == nil || !strings.Contains(err.Error(), "not built yet") {
 			t.Errorf("%q: err = %v", args, err)
 		}
@@ -133,5 +134,83 @@ func TestApply_NegativeCountIsRefused(t *testing.T) {
 		if _, err := Apply(apply(t, args...)); err == nil {
 			t.Errorf("%q was accepted", args)
 		}
+	}
+}
+
+// --json sets the JSON media types unless -H gives them; --auth-bearer
+// is a credential header; --query adds URL-encoded parameters.
+func TestApply_RequestShaping(t *testing.T) {
+	o, err := Apply(apply(t, "--json", `{"a":1}`, "--auth-bearer", "tok", "--query", "q=a b", "--query", "x=1", "https://h/p?k=v"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.Data != `{"a":1}` || o.Method != "POST" {
+		t.Errorf("data %q, method %s", o.Data, o.Method)
+	}
+	for _, want := range []string{"Content-Type: application/json", "Accept: application/json", "Authorization: Bearer tok"} {
+		if !contains(o.Headers, want) {
+			t.Errorf("headers %q lack %q", o.Headers, want)
+		}
+	}
+	if o.URL != "https://h/p?k=v&q=a+b&x=1" {
+		t.Errorf("URL = %q", o.URL)
+	}
+	o, _ = Apply(apply(t, "-H", "Content-Type: application/vnd.x+json", "--json", "{}", "u"))
+	if contains(o.Headers, "Content-Type: application/json") {
+		t.Errorf("--json overrode the -H Content-Type: %q", o.Headers)
+	}
+}
+
+func contains(list []string, s string) bool {
+	for _, x := range list {
+		if x == s {
+			return true
+		}
+	}
+	return false
+}
+
+// URL globs expand by default, as in curl; --no-url-glob keeps them.
+func TestApply_URLGlob(t *testing.T) {
+	o, err := Apply(apply(t, "https://h/{a,b}/f[1-2]"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"https://h/a/f1", "https://h/a/f2", "https://h/b/f1", "https://h/b/f2"}; strings.Join(o.URLs, " ") != strings.Join(want, " ") {
+		t.Errorf("URLs = %q", o.URLs)
+	}
+	if o, _ := Apply(apply(t, "--no-url-glob", "https://h/{a,b}")); len(o.URLs) != 1 {
+		t.Errorf("--no-url-glob expanded: %q", o.URLs)
+	}
+	if _, err := Apply(apply(t, "https://h/[3-1]")); err == nil || !strings.Contains(err.Error(), "bad range") {
+		t.Errorf("bad glob: err = %v", err)
+	}
+}
+
+// --auth-netrc-file gives the credentials of the URL's host; -u wins.
+func TestApply_Netrc(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "netrc")
+	os.WriteFile(path, []byte("machine h login alice password s3cret\n"), 0o600) //nolint:errcheck
+	o, err := Apply(apply(t, "--auth-netrc-file", path, "https://h/f"))
+	if err != nil || o.User != "alice:s3cret" {
+		t.Fatalf("user %q, err %v", o.User, err)
+	}
+	if o, _ := Apply(apply(t, "--auth-netrc-file", path, "-u", "bob:x", "https://h/f")); o.User != "bob:x" {
+		t.Errorf("-u did not win: %q", o.User)
+	}
+	if o, _ := Apply(apply(t, "--auth-netrc-file", path, "https://other/f")); o.User != "" {
+		t.Errorf("another host got %q", o.User)
+	}
+}
+
+// Each --proxy-tls-* option sets the proxy's TLS through the --tls-*
+// setter, and leaves the server's TLS as it is.
+func TestApply_ProxyTLS(t *testing.T) {
+	o, err := Apply(apply(t, "--proxy-tls-ca", "p.pem", "--no-proxy-tls-verify", "--tls-ca", "s.pem", "--proxy", "https://p:3128", "u"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.ProxyCfg.TLS.CACert != "p.pem" || !o.ProxyCfg.TLS.Insecure || o.Stealth.CACert != "s.pem" || o.Stealth.Insecure {
+		t.Errorf("proxy TLS %+v, server CA %q, insecure %v", o.ProxyCfg.TLS, o.Stealth.CACert, o.Stealth.Insecure)
 	}
 }

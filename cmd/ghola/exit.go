@@ -24,6 +24,10 @@ func exitFor(err error) config.ExitCode {
 	switch {
 	case errors.Is(err, config.ErrHTTPStatus):
 		return config.HTTPError
+	case errors.Is(err, config.ErrChecksum):
+		return config.ChecksumFailed
+	case errors.Is(err, config.ErrTooLarge):
+		return config.FileSizeExceeded
 	case errors.Is(err, config.ErrWrite):
 		return config.WriteFileFailed
 	case errors.Is(err, client.ErrTooManyRedirects):
@@ -44,8 +48,14 @@ func exitFor(err error) config.ExitCode {
 		return config.TimedOut
 	case errors.Is(err, gholatransport.ErrRecv):
 		return config.RecvFailed
-	case errors.As(err, &dnsErr):
+	case errors.As(err, &dnsErr), errors.Is(err, gholatransport.ErrNoAddress):
 		return config.CouldntResolveHost
+	case errors.Is(err, gholatransport.ErrCertStatus):
+		return config.InvalidCertStatus
+	case errors.Is(err, gholatransport.ErrCertRevoked):
+		return config.PeerFailedVerification
+	case errors.Is(err, gholatransport.ErrPinMismatch):
+		return config.PinnedKeyMismatch
 	case isCertError(err), errors.Is(err, gholatransport.ErrSSHHostKey):
 		return config.PeerFailedVerification
 	case isTLSError(err):

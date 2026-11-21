@@ -34,6 +34,22 @@ type protocolTransport struct {
 	network Transport
 	opts    *config.Options
 	proxy   string // the --proxy URL, "" for the environment
+	// direct serves the hosts in --proxy-bypass when --proxy is set. nil
+	// without both.
+	direct Transport
+	// hsts is the --hsts cache, nil without it.
+	hsts *hstsCache
+	// trace writes --trace, nil without it.
+	trace *tracer
+}
+
+// networkFor returns the network transport for u: direct for a host in
+// --proxy-bypass, else the one with the proxy.
+func (t protocolTransport) networkFor(u *fasthttp.URI) Transport {
+	if t.direct != nil && bypassed(&url.URL{Host: string(u.Host())}, t.opts.ProxyCfg.Bypass) {
+		return t.direct
+	}
+	return t.network
 }
 
 // serve answers req when its protocol is not HTTP. ok is false for HTTP.
@@ -60,22 +76,75 @@ func (t protocolTransport) serve(ctx context.Context, req *fasthttp.Request) (a 
 
 func (t protocolTransport) Name() string { return t.network.Name() }
 
+// prepare applies --url-path-as-is to req, and puts --request-target in
+// the context, where both stacks read it.
+func (t protocolTransport) prepare(ctx context.Context, req *fasthttp.Request) context.Context {
+	req.URI().DisablePathNormalizing = t.opts.PathAsIs
+	if t.hsts != nil {
+		t.hsts.upgrade(req.URI()) // before the scheme picks the protocol
+	}
+	if t.opts.RequestTarget != "" {
+		ctx = context.WithValue(ctx, requestTargetKey{}, t.opts.RequestTarget)
+	}
+	if t.trace != nil {
+		ctx = context.WithValue(ctx, tracerKey{}, t.trace)
+	}
+	return ctx
+}
+
+type requestTargetKey struct{}
+
+// recordHSTS keeps the Strict-Transport-Security of an answer in --hsts.
+func (t protocolTransport) recordHSTS(req *fasthttp.Request, header string) error {
+	if t.hsts == nil {
+		return nil
+	}
+	return t.hsts.record(req.URI(), header)
+}
+
+// applyRequestTarget sets the --request-target of ctx on u: Go writes
+// u.Opaque as the request target.
+func applyRequestTarget(ctx context.Context, u *url.URL) {
+	if target, ok := ctx.Value(requestTargetKey{}).(string); ok {
+		u.Opaque, u.RawQuery = target, ""
+	}
+}
+
 func (t protocolTransport) Do(ctx context.Context, req *fasthttp.Request, rsp *fasthttp.Response) error {
+	ctx = t.prepare(ctx, req)
 	a, ok, err := t.serve(ctx, req)
 	if !ok {
-		return t.network.Do(ctx, req, rsp)
+		if t.trace != nil {
+			t.trace.request(req)
+		}
+		if err := t.networkFor(req.URI()).Do(ctx, req, rsp); err != nil {
+			return err
+		}
+		if t.trace != nil {
+			t.trace.block("<= Recv header", rsp.Header.Header()) // the body: fillResponse
+		}
+		return t.recordHSTS(req, string(rsp.Header.Peek("Strict-Transport-Security")))
 	}
 	if err != nil {
 		return err
 	}
-	fillResponse(rsp, a.status, a.header, a.body, a.length)
+	fillResponse(ctx, rsp, a.status, a.header, a.body, a.length)
 	return nil
 }
 
 func (t protocolTransport) Stream(ctx context.Context, req *fasthttp.Request, sink io.Writer) (StreamMeta, error) {
+	ctx = t.prepare(ctx, req)
 	a, ok, err := t.serve(ctx, req)
 	if !ok {
-		return t.network.Stream(ctx, req, sink)
+		if t.trace != nil {
+			t.trace.request(req)
+			sink = traceSink{sink, t.trace}
+		}
+		meta, err := t.networkFor(req.URI()).Stream(ctx, req, sink)
+		if err == nil {
+			err = t.recordHSTS(req, meta.Header.Get("Strict-Transport-Security"))
+		}
+		return meta, err
 	}
 	if err != nil {
 		return StreamMeta{}, err

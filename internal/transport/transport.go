@@ -6,14 +6,13 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/tls"
-	"crypto/x509"
+	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptrace"
 	"net/url"
-	"os"
+	"sort"
 	"strings"
 
 	fhttp "github.com/bogdanfinn/fhttp"
@@ -42,6 +41,35 @@ type StreamMeta struct {
 	ContentEncoding string
 	// SetCookies holds each Set-Cookie header, for the cookie jar.
 	SetCookies []string
+	// StatusLine and Header are the whole response head, for
+	// --save-headers. The network stacks set them.
+	StatusLine string
+	Header     http.Header
+}
+
+// HeaderBlock returns the response head as curl -D writes it: the status
+// line, the headers, and an empty line. The stacks do not keep the order
+// of the headers, so they are sorted.
+func (m StreamMeta) HeaderBlock() []byte {
+	var b strings.Builder
+	b.WriteString(m.StatusLine + "\r\n")
+	names := make([]string, 0, len(m.Header))
+	for name := range m.Header {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		for _, v := range m.Header[name] {
+			b.WriteString(name + ": " + v + "\r\n")
+		}
+	}
+	b.WriteString("\r\n")
+	return []byte(b.String())
+}
+
+// statusLine is "HTTP/1.1 200 OK", or "HTTP/2 200 OK" as curl writes it.
+func statusLine(proto, status string) string {
+	return strings.TrimSuffix(proto, ".0") + " " + status
 }
 
 // NewStreamMeta builds the StreamMeta of a response. Both stacks call it
@@ -112,34 +140,40 @@ type tlsClientTransport struct {
 	// tls-client takes a proxy URL or a dial function, not both, so the
 	// shared SOCKS dialer needs a client of its own. nil without envProxy.
 	socksClient tlsclient.HttpClient
+	// rulesDirect: --resolve, --connect-to or --ip are set without --proxy.
+	// The main client then dials with the rules (and SOCKS from the
+	// environment), and an HTTP proxy from the environment is refused.
+	rulesDirect bool
+	bypass      *string // --proxy-bypass; nil reads no_proxy
 }
 
 // buildTLSConfig assembles a *tls.Config from the TLS-related options, or
 // returns nil when none are set (use the transport default). -k disables
 // verification; --cacert pins a custom CA; --cert/--key add a client cert.
 func buildTLSConfig(opts *config.Options) (*tls.Config, error) {
-	if !opts.Stealth.Insecure && opts.Stealth.CACert == "" && opts.Stealth.ClientCert == "" {
+	st := opts.Stealth
+	if !st.Insecure && st.CACert == "" && st.ClientCert == "" && !hasTLSOptions(st) {
 		return nil, nil
 	}
-	cfg := &tls.Config{InsecureSkipVerify: opts.Stealth.Insecure} //nolint:gosec // opt-in via -k
-	if opts.Stealth.CACert != "" {
-		pem, err := os.ReadFile(opts.Stealth.CACert)
-		if err != nil {
-			return nil, fmt.Errorf("read --cacert: %w", err)
-		}
-		pool := x509.NewCertPool()
-		if !pool.AppendCertsFromPEM(pem) {
-			return nil, fmt.Errorf("--cacert %q contains no valid certificates", opts.Stealth.CACert)
-		}
-		cfg.RootCAs = pool
+	cfg := &tls.Config{InsecureSkipVerify: st.Insecure} //nolint:gosec // opt-in via -k
+	if err := setTLSVersions(cfg, st.TLSMin, st.TLSMax); err != nil {
+		return nil, err
 	}
-	if opts.Stealth.ClientCert != "" {
-		if opts.Stealth.ClientKey == "" {
-			return nil, fmt.Errorf("--cert requires --key")
-		}
-		cert, err := tls.LoadX509KeyPair(opts.Stealth.ClientCert, opts.Stealth.ClientKey)
+	pool, err := caPool(st.CACert, st.CADir)
+	if err != nil {
+		return nil, err
+	}
+	cfg.RootCAs = pool
+	if cfg.VerifyConnection, err = connectionChecks(st); err != nil {
+		return nil, err
+	}
+	if cfg.CipherSuites, err = cipherSuites(st.Ciphers); err != nil {
+		return nil, err
+	}
+	if st.ClientCert != "" {
+		cert, err := loadClientCert(st)
 		if err != nil {
-			return nil, fmt.Errorf("load client cert/key: %w", err)
+			return nil, err
 		}
 		cfg.Certificates = []tls.Certificate{cert}
 	}
@@ -152,7 +186,22 @@ func New(opts *config.Options, selectedProxy string) (Transport, error) {
 	if err != nil {
 		return nil, err
 	}
-	return protocolTransport{network: tr, opts: opts, proxy: selectedProxy}, nil
+	t := protocolTransport{network: tr, opts: opts, proxy: selectedProxy}
+	if opts.HSTS != "" {
+		if t.hsts, err = loadHSTS(opts.HSTS); err != nil {
+			return nil, err
+		}
+	}
+	if out := opts.Output.TraceOut; out != nil {
+		t.trace = &tracer{w: out, ascii: opts.Output.TraceASCII, times: opts.Output.TraceTime}
+	}
+	if selectedProxy != "" && opts.ProxyCfg.Bypass != nil {
+		// A host in --proxy-bypass goes direct, also after a redirect.
+		if t.direct, err = newNetwork(opts, ""); err != nil {
+			return nil, err
+		}
+	}
+	return t, nil
 }
 
 // newNetwork builds the network transport: tls-client with --impersonate,
@@ -173,29 +222,32 @@ func newNetwork(opts *config.Options, selectedProxy string) (Transport, error) {
 	// net/http streams resp.Body whatever the Content-Length. fasthttp's
 	// client read a body with a known length into memory, which caused the
 	// v0.6.0 large-download OOM, and it was removed for decision D3.
+	rules, err := newNetRules(opts.Net)
+	if err != nil {
+		return nil, err
+	}
+	local, err := localDial(opts.Net, true) // --interface, --local-port, --unix-socket
+	if err != nil {
+		return nil, err
+	}
+	base := rules.dial(local) // --connect-to, --resolve, --ip
 	httpTransport := &http.Transport{
 		TLSClientConfig:   tlsCfg,
 		ForceAttemptHTTP2: true,
 		// Never auto-negotiate/transparently decompress: downloads must be
 		// byte-exact, and --compressed is handled explicitly by the caller.
 		DisableCompression: true,
-		Proxy:              httpProxyFromEnv,
+		Proxy:              httpProxyFromEnv(opts.ProxyCfg.Bypass),
 		// With no --proxy, a SOCKS proxy from the environment goes through
 		// the shared SOCKS dialer. --proxy replaces both below.
-		DialContext:            envDialer((&net.Dialer{}).DialContext),
+		DialContext:            envDialer(base, opts.ProxyCfg.Bypass),
 		MaxResponseHeaderBytes: maxHeaderBytes(opts.Resilience.BufferSize),
 	}
-	if selectedProxy != "" {
-		proxyURL, err := url.Parse(selectedProxy)
-		if err != nil {
-			return nil, fmt.Errorf("parse proxy url: %w", err)
-		}
-		httpTransport.Proxy = http.ProxyURL(proxyURL)
-		httpTransport.DialContext = (&net.Dialer{}).DialContext // the environment does not apply
-		if isSOCKS(proxyURL) {
-			httpTransport.Proxy = nil
-			httpTransport.DialContext = socksDialer(proxyURL, (&net.Dialer{}).DialContext)
-		}
+	if err := useFixedProxy(httpTransport, selectedProxy, opts.ProxyCfg.TLS, base); err != nil {
+		return nil, err
+	}
+	if err := useECH(httpTransport, opts, base); err != nil {
+		return nil, err
 	}
 	httpClient := &http.Client{
 		Transport: httpTransport,
@@ -209,6 +261,37 @@ func newNetwork(opts *config.Options, selectedProxy string) (Transport, error) {
 		name:       "net/http",
 		limits:     newLimits(opts.Resilience),
 	}, nil
+}
+
+// useFixedProxy sets --proxy on the net/http transport: SOCKS through the
+// shared dialer, and an https proxy with the --proxy-tls-* options
+// through proxyTLSDial. The environment then does not apply.
+func useFixedProxy(tr *http.Transport, selectedProxy string, proxyTLS config.StealthOptions, base dialFunc) error {
+	if selectedProxy == "" {
+		if hasProxyTLS(proxyTLS) {
+			return fmt.Errorf("the --proxy-tls-* options need an https:// --proxy")
+		}
+		return nil
+	}
+	proxyURL, err := url.Parse(selectedProxy)
+	if err != nil {
+		return fmt.Errorf("parse proxy url: %w", err)
+	}
+	tr.Proxy, tr.DialContext = http.ProxyURL(proxyURL), base
+	switch {
+	case isSOCKS(proxyURL):
+		tr.Proxy, tr.DialContext = nil, socksDialer(proxyURL, base)
+	case hasProxyTLS(proxyTLS) && strings.EqualFold(proxyURL.Scheme, "https"):
+		if tr.DialContext, err = proxyTLSDial(proxyURL, proxyTLS, base); err != nil {
+			return err
+		}
+		plain := *proxyURL
+		plain.Scheme = "http" // the dial function adds the TLS
+		tr.Proxy = http.ProxyURL(&plain)
+	case hasProxyTLS(proxyTLS):
+		return fmt.Errorf("the --proxy-tls-* options need an https:// --proxy, not %s://", proxyURL.Scheme)
+	}
+	return nil
 }
 
 // maxHeaderBytes is the response header limit. --buffer-size can raise
@@ -235,11 +318,12 @@ func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transpor
 		return nil, fmt.Errorf("no tls-client profile mapping for %q", activeProfile.Name)
 	}
 
-	// Client certs and a custom CA are not supported on the impersonation
-	// backend (tls-client exposes no client-cert/CA-pool API in the vendored
-	// version); fail loud rather than silently ignoring them.
-	if opts.Stealth.ClientCert != "" || opts.Stealth.CACert != "" {
-		return nil, fmt.Errorf("--cert/--key/--cacert are not supported with --impersonate; use the default transport")
+	// The browser profile sets the TLS handshake, and ghola does not yet
+	// pass a CA pool or a client certificate to tls-client; fail loud
+	// rather than ignore the options. A pin would be per host on
+	// tls-client, and --tls-pin covers every host of the transfer.
+	if opts.Stealth.ClientCert != "" || opts.Stealth.CACert != "" || hasTLSOptions(opts.Stealth) || hasProxyTLS(opts.ProxyCfg.TLS) {
+		return nil, fmt.Errorf("the --tls-* options other than --no-tls-verify do not work with --impersonate yet: the browser profile sets the TLS handshake")
 	}
 
 	options := []tlsclient.HttpClientOption{
@@ -253,18 +337,23 @@ func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transpor
 	if opts.Resilience.Timeout > 0 {
 		options = append(options, tlsclient.WithTimeoutMilliseconds(opts.Resilience.Timeout))
 	}
-	if selectedProxy != "" {
-		proxyURL, err := url.Parse(selectedProxy)
-		if err != nil {
-			return nil, fmt.Errorf("parse proxy url: %w", err)
-		}
-		if isSOCKS(proxyURL) {
-			// tls-client has no local-DNS socks5 and runs its own SOCKS4; the
-			// shared dialer gives both stacks the same SOCKS behaviour.
-			options = append(options, tlsclient.WithDialContext(socksDialer(proxyURL, (&net.Dialer{}).DialContext)))
-		} else {
-			options = append(options, tlsclient.WithProxyUrl(selectedProxy))
-		}
+	rules, err := newNetRules(opts.Net)
+	if err != nil {
+		return nil, err
+	}
+	local, err := localDial(opts.Net, true) // --interface, --local-port, --unix-socket
+	if err != nil {
+		return nil, err
+	}
+	base := rules.dial(local) // --connect-to, --resolve, --ip
+	// The rules and the local options need ghola's dial function.
+	custom := rules != nil || hasLocalOptions(opts.Net)
+	dialOpt, err := tlsClientDial(selectedProxy, base, custom, opts.ProxyCfg.Bypass)
+	if err != nil {
+		return nil, err
+	}
+	if dialOpt != nil {
+		options = append(options, dialOpt)
 	}
 	if !opts.Stealth.HTTP3 {
 		options = append(options, tlsclient.WithDisableHttp3())
@@ -275,13 +364,15 @@ func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transpor
 		return nil, err
 	}
 	t := &tlsClientTransport{
-		client:   client,
-		name:     "tls-client",
-		limits:   newLimits(opts.Resilience),
-		envProxy: selectedProxy == "",
+		client:      client,
+		name:        "tls-client",
+		limits:      newLimits(opts.Resilience),
+		envProxy:    selectedProxy == "",
+		bypass:      opts.ProxyCfg.Bypass,
+		rulesDirect: selectedProxy == "" && custom,
 	}
-	if t.envProxy {
-		socksOptions := append(options[:len(options):len(options)], tlsclient.WithDialContext(envDialer((&net.Dialer{}).DialContext)))
+	if t.envProxy && !t.rulesDirect {
+		socksOptions := append(options[:len(options):len(options)], tlsclient.WithDialContext(envDialer(base, opts.ProxyCfg.Bypass)))
 		if t.socksClient, err = tlsclient.NewHttpClient(tlsclient.NewNoopLogger(), socksOptions...); err != nil {
 			return nil, err
 		}
@@ -289,12 +380,39 @@ func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transpor
 	return t, nil
 }
 
+// tlsClientDial returns the tls-client option for the proxy and the dial
+// function, or nil for tls-client's own dialer.
+func tlsClientDial(selectedProxy string, base dialFunc, custom bool, bypass *string) (tlsclient.HttpClientOption, error) {
+	if selectedProxy == "" {
+		if !custom {
+			return nil, nil
+		}
+		// The rules need ghola's dial function, so this client cannot take
+		// an HTTP proxy from the environment: clientFor refuses one.
+		return tlsclient.WithDialContext(envDialer(base, bypass)), nil
+	}
+	proxyURL, err := url.Parse(selectedProxy)
+	if err != nil {
+		return nil, fmt.Errorf("parse proxy url: %w", err)
+	}
+	switch {
+	case isSOCKS(proxyURL):
+		// tls-client has no local-DNS socks5 and runs its own SOCKS4; the
+		// shared dialer gives both stacks the same SOCKS behaviour.
+		return tlsclient.WithDialContext(socksDialer(proxyURL, base)), nil
+	case custom:
+		return nil, ErrRulesNeedDirect
+	default:
+		return tlsclient.WithProxyUrl(selectedProxy), nil
+	}
+}
+
 func (t *simpleTransport) Do(ctx context.Context, req *fasthttp.Request, rsp *fasthttp.Response) error {
 	resp, w, err := t.send(ctx, req)
 	if err != nil {
 		return err
 	}
-	fillResponse(rsp, resp.StatusCode, resp.Header, w.body(resp.Body), resp.ContentLength)
+	fillResponse(ctx, rsp, resp.StatusCode, resp.Header, w.body(resp.Body), resp.ContentLength)
 	return nil
 }
 
@@ -329,6 +447,7 @@ func newHTTPRequest(ctx context.Context, req *fasthttp.Request) (*http.Request, 
 	if err != nil {
 		return nil, err
 	}
+	applyRequestTarget(ctx, httpReq.URL)
 	for key, value := range req.Header.All() {
 		name := string(key)
 		val := string(value)
@@ -369,7 +488,10 @@ func noEngineUserAgent[H ~map[string][]string](h H) {
 // The stream is set before the headers: a Content-Length header from the
 // server then replaces the length. tls-client reports -1 even when the
 // server sent the header.
-func fillResponse(rsp *fasthttp.Response, status int, header map[string][]string, body io.ReadCloser, contentLength int64) {
+func fillResponse(ctx context.Context, rsp *fasthttp.Response, status int, header map[string][]string, body io.ReadCloser, contentLength int64) {
+	if tr, ok := ctx.Value(tracerKey{}).(*tracer); ok {
+		body = tracedBody{tr.reader(body), body} // --trace sees the body as ghola reads it
+	}
 	rsp.SetStatusCode(status)
 	rsp.SetBodyStream(body, int(contentLength))
 	for key, values := range header {
@@ -391,6 +513,7 @@ func (t *simpleTransport) Stream(ctx context.Context, req *fasthttp.Request, sin
 	defer body.Close()
 
 	meta := NewStreamMeta(resp.StatusCode, resp.ContentLength, resp.Header.Get, resp.Header.Values("Set-Cookie"))
+	meta.StatusLine, meta.Header = statusLine(resp.Proto, resp.Status), resp.Header
 	return meta, CopyBody(sink, meta, body)
 }
 
@@ -399,7 +522,7 @@ func (t *tlsClientTransport) Do(ctx context.Context, req *fasthttp.Request, rsp 
 	if err != nil {
 		return err
 	}
-	fillResponse(rsp, httpResp.StatusCode, httpResp.Header, w.body(httpResp.Body), httpResp.ContentLength)
+	fillResponse(ctx, rsp, httpResp.StatusCode, httpResp.Header, w.body(httpResp.Body), httpResp.ContentLength)
 	return nil
 }
 
@@ -438,6 +561,7 @@ func (t *tlsClientTransport) send(ctx context.Context, req *fasthttp.Request, se
 	if err != nil {
 		return nil, nil, w.fail(err)
 	}
+	applyRequestTarget(ctx, httpReq.URL)
 	setHeaders(httpReq, req)
 	httpReq = httpReq.WithContext(withTarget(httpReq.Context(), httpReq.URL))
 	client, err := t.clientFor(httpReq)
@@ -459,10 +583,16 @@ func (t *tlsClientTransport) clientFor(req *fhttp.Request) (tlsclient.HttpClient
 	if !t.envProxy {
 		return t.client, nil
 	}
-	if p, err := envSOCKS(req.Context()); err != nil || p != nil {
+	if t.rulesDirect {
+		if p, err := proxyFromEnv(req.URL, t.bypass); err != nil || (p != nil && !isSOCKS(p)) {
+			return nil, errors.Join(ErrRulesNeedDirect, err)
+		}
+		return t.client, nil
+	}
+	if p, err := envSOCKS(req.Context(), t.bypass); err != nil || p != nil {
 		return t.socksClient, err
 	}
-	p, err := proxyFromEnv(req.URL)
+	p, err := proxyFromEnv(req.URL, t.bypass)
 	if err != nil {
 		return nil, err
 	}
@@ -491,6 +621,7 @@ func (t *tlsClientTransport) Stream(ctx context.Context, req *fasthttp.Request, 
 	defer body.Close()
 
 	meta := NewStreamMeta(httpResp.StatusCode, httpResp.ContentLength, httpResp.Header.Get, httpResp.Header.Values("Set-Cookie"))
+	meta.StatusLine, meta.Header = statusLine(httpResp.Proto, httpResp.Status), http.Header(httpResp.Header)
 	return meta, CopyBody(sink, meta, body)
 }
 

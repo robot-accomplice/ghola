@@ -4,6 +4,7 @@ package config
 
 import (
 	"fmt"
+	"io"
 	"net/url"
 	"path"
 	"path/filepath"
@@ -25,6 +26,8 @@ const (
 	// UnsupportedProtocol indicates a protocol that ghola does not follow,
 	// for example a redirect to file:// (curl 1).
 	UnsupportedProtocol ExitCode = 1
+	// URLMalformat indicates a bad URL glob (curl 3).
+	URLMalformat ExitCode = 3
 	// BadFlag indicates invalid or missing CLI arguments (curl 2).
 	BadFlag ExitCode = 2
 	// CouldntResolveHost indicates that DNS did not resolve the host (curl 6).
@@ -60,9 +63,20 @@ const (
 	// RecvFailed indicates a failure after the connection was ready, for
 	// example a reset or a TLS alert after the handshake (curl 56).
 	RecvFailed ExitCode = 56
+	// ChecksumFailed indicates a body that does not match --checksum or
+	// Content-Digest. 32 is aria2's code for it; curl does not use 32.
+	ChecksumFailed ExitCode = 32
+	// FileSizeExceeded indicates a body larger than --max-size (curl 63).
+	FileSizeExceeded ExitCode = 63
 	// PeerFailedVerification indicates that the server certificate or its
 	// host name did not verify (curl 60).
 	PeerFailedVerification ExitCode = 60
+	// PinnedKeyMismatch indicates that the server key does not match
+	// --tls-pin (curl 90).
+	PinnedKeyMismatch ExitCode = 90
+	// InvalidCertStatus indicates a missing or bad OCSP staple under
+	// --tls-ocsp (curl 91).
+	InvalidCertStatus ExitCode = 91
 	// BadContentEncoding indicates a Content-Encoding that --compressed
 	// cannot decode (curl 61).
 	BadContentEncoding ExitCode = 61
@@ -75,10 +89,53 @@ func (e ExitCode) Int() int {
 
 // OutputOptions controls how HTTP responses are rendered.
 type OutputOptions struct {
-	File         string
-	Verbose      bool
-	Fail         bool
-	Include      bool
+	File    string
+	Verbose bool
+	Fail    bool
+	Include bool
+	// Template is the parsed --output-template. Info records the transfer
+	// for it; main sets a new one for each URL.
+	Template *Template
+	Info     *TransferInfo
+	// InputArgs holds the native options of each --input URL, by the
+	// index in URLs; nil for a URL of the command line.
+	InputArgs [][]string
+	// PerURL holds one -o for each URL, in order, when several URLs have
+	// several -o. main sets each URL's target from it.
+	PerURL []string
+	// CondTime: the request has a --cond-time or --cond-etag-compare
+	// condition. A 304 then writes no file, as curl -z does.
+	CondTime bool
+	// ETagSave is the --cond-etag-save path.
+	ETagSave string
+	// Trace is the --trace path ("-" is stderr); TraceOut is that file,
+	// which ghola opens once for the command. TraceASCII is
+	// --trace-format ascii, and TraceTime is --trace-time.
+	Trace      string
+	TraceOut   io.Writer
+	TraceASCII bool
+	TraceTime  bool
+	// RateTotal is the --rate-max-total limiter, which every transfer of
+	// the command shares. main makes it; nil without the option.
+	RateTotal RateShare
+	// RateTotalValue is the --rate-max-total value.
+	RateTotalValue string
+	// NoSession is --no-session: no state file, and no entry in the job
+	// list. SessionArgs are the native options of the run, as
+	// --name=value, which "ghola jobs resume" runs again.
+	NoSession   bool
+	SessionArgs []string
+	// OnComplete and OnError run after a download (--on-complete,
+	// --on-error).
+	OnComplete, OnError string
+	// FileAllocation is --file-allocation: none, prealloc, falloc or trunc.
+	FileAllocation string
+	// Checksum is the --checksum digest that the body must match.
+	Checksum *Digest
+	// SaveHeaders is the --save-headers path ("-" is stdout). HeaderOut is
+	// that file, which ghola opens once for the whole command.
+	SaveHeaders  string
+	HeaderOut    io.Writer
 	Silent       bool
 	Snoop        bool
 	JQ           string
@@ -98,6 +155,13 @@ type OutputOptions struct {
 	// HideErrors drops the error message on stderr. Only ghola curl -s
 	// (without -S) sets it, as curl does; native -q keeps the errors.
 	HideErrors bool
+	// CreateDirs creates the missing folders of the output file.
+	CreateDirs bool
+	// NoOverwrite refuses to replace an existing output file (the default
+	// of ghola download; --output-overwrite turns it off).
+	NoOverwrite bool
+	// MaxSize stops a body larger than this many bytes (--max-size).
+	MaxSize int64
 	// Dir is the folder of -o DIR/: the remote file name goes inside it.
 	Dir string
 	// FailFrom400 is the v1 rule for Fail: status 400 and above fails, as
@@ -123,6 +187,23 @@ type StealthOptions struct {
 	CACert         string
 	ClientCert     string
 	ClientKey      string
+	// TLSMin and TLSMax are "1.2" or "1.3" (--tls-min, --tls-max).
+	TLSMin, TLSMax string
+	// CADir is a folder of CA certificates (--tls-ca-dir).
+	CADir string
+	// Pins are sha256//BASE64 hashes of the server's public key
+	// (--tls-pin), as curl --pinnedpubkey takes them.
+	Pins []string
+	// Ciphers are the --tls-ciphers names; CRL is the --tls-crl file;
+	// OCSP requires a good staple (--tls-ocsp); CertType is the format of
+	// --tls-cert (--tls-cert-type).
+	Ciphers  []string
+	CRL      string
+	OCSP     bool
+	CertType string
+	// ECH sends Encrypted Client Hello when the host's HTTPS record offers
+	// it (--tls-ech). It needs --doh.
+	ECH bool
 }
 
 // ResilienceOptions controls retry, timeout, redirect, and buffer behavior.
@@ -132,6 +213,9 @@ type ResilienceOptions struct {
 	Backoff   int
 	RetryHTTP bool
 	Location  bool
+	// RetryMaxTime stops retries once this time has passed since the
+	// first attempt (--retry-max-time). 0 is no limit.
+	RetryMaxTime time.Duration
 	// ConnectTimeout limits the connection phase (--connect-timeout).
 	ConnectTimeout time.Duration
 	// SpeedLimit and SpeedTime stop a transfer that is slower than
@@ -155,6 +239,13 @@ type ProxyOptions struct {
 	File        string
 	Strategy    string
 	HealthCheck bool
+	// TLS holds the --proxy-tls-* options, in the fields of the --tls-*
+	// options, for an https proxy.
+	TLS StealthOptions
+	// Bypass is the --proxy-bypass list of hosts that go direct, in
+	// no_proxy's format. nil reads no_proxy; it then applies only to a
+	// proxy from the environment, as before.
+	Bypass *string
 }
 
 // Options holds every user-configurable setting parsed from CLI flags.
@@ -172,13 +263,54 @@ type Options struct {
 	// file name (--data-literal).
 	DataLiteral bool
 	User        string
+	// SigV4 signs each request with User (--auth-aws-sigv4).
+	SigV4 *SigV4
+	// Auth is the --auth method for User: "basic" (or ""), "digest" or
+	// "any".
+	Auth        string
 	Concurrency int
-	Chain       string
+	// Jobs runs up to this many transfers at the same time (--jobs).
+	Jobs int
+	// Sources are other mirrors of the same file (--source). The
+	// segments of a download go to all of them.
+	Sources []string
+	Chain   string
+	// PathAsIs sends the URL path without removing ./ and ../
+	// (--url-path-as-is).
+	PathAsIs bool
+	// HSTS is the --hsts cache file.
+	HSTS string
+	// RequestTarget replaces the path and query in the request line
+	// (--request-target), such as * for OPTIONS.
+	RequestTarget string
 
 	Output     OutputOptions
 	Stealth    StealthOptions
 	Resilience ResilienceOptions
 	ProxyCfg   ProxyOptions
+	Net        NetOptions
+}
+
+// NetOptions change where a TCP connection goes (--ip, --resolve,
+// --connect-to). The host name of the URL stays for TLS and Host.
+type NetOptions struct {
+	IPVersion string   // "4", "6", or "" for both
+	Resolve   []string // host:port:address
+	ConnectTo []string // host:port:host2:port2
+	// Interface is the local address or interface name (--interface).
+	Interface string
+	// LocalPort is the local port, or a range N-M (--local-port).
+	LocalPort string
+	// UnixSocket connects HTTP through this socket (--unix-socket).
+	UnixSocket string
+	// DoH resolves names with DNS over HTTPS at this URL (--doh).
+	DoH string
+}
+
+// RateShare is a speed limit that several transfers share
+// (--rate-max-total). Wait blocks until n bytes may pass.
+type RateShare interface {
+	Wait(n int)
 }
 
 // Version is set at build time via -ldflags.
@@ -302,6 +434,13 @@ func applyChainShortcuts(opts *Options) {
 		opts.URL = info.DefaultRPC
 		opts.URLs = []string{opts.URL}
 	}
+}
+
+// TakeRemoteName sets the file to the remote name of opts.URL, inside
+// -o DIR/, for each URL of a run with several.
+func TakeRemoteName(opts *Options) {
+	opts.Output.File = ""
+	inferWgetFilename(opts)
 }
 
 func inferWgetFilename(opts *Options) {

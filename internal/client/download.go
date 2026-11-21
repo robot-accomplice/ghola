@@ -92,14 +92,11 @@ func Download(ctx context.Context, opts *config.Options, stream Streamer) error 
 	}
 
 	// Build shared limiter (aggregate cap across all segments).
-	var limiter *rateLimiter
-	if opts.Output.LimitRate != "" {
-		bps, perr := config.ParseRate(opts.Output.LimitRate)
-		if perr != nil {
-			return fmt.Errorf("parse --limit-rate: %w", perr)
-		}
-		limiter = newRateLimiter(bps)
+	bps, err := limitRate(opts)
+	if err != nil {
+		return err
 	}
+	limiter := limiterFor(bps, opts.Output.RateTotal) // --limit-rate and --rate-max-total
 
 	// Build shared progress writer (suppressed under --silent, and when
 	// stderr is not a terminal). The total comes from the response.
@@ -108,13 +105,27 @@ func Download(ctx context.Context, opts *config.Options, stream Streamer) error 
 		progress = newProgressWriter(io.Discard, out, -1)
 	}
 
-	stream, err := withCookieJar(stream, opts)
+	stream, err = withCookieJar(withHeaderSave(withInfo(stream, opts), opts), opts)
 	if err != nil {
 		return err
 	}
+	stream = withAuthStream(stream) // outside, so the jar and --save-headers see the 401 too
 	meta, err := fetchToFile(ctx, opts, stream, limiter, progress)
+	if errors.Is(err, errNotModified) {
+		return nil // the condition is not met: the file stays as it is
+	}
 	if err != nil {
 		return err // the state file stays, so a resume can check the version
+	}
+	if d := opts.Output.DigestFor(meta.StatusCode, meta.Header.Get("Content-Digest"), meta.ContentEncoding); d != nil && opts.Output.Range == "" {
+		// The file stays: the digest may be the wrong one, and the bytes
+		// are what the server sent.
+		if err := d.CheckFile(opts.Output.File); err != nil {
+			return err
+		}
+	}
+	if err := opts.Output.SaveETag(meta.StatusCode, meta.ETag); err != nil {
+		return err
 	}
 	if err := removeState(opts.Output.File); err != nil {
 		return err
@@ -156,6 +167,10 @@ func fetchToFile(ctx context.Context, opts *config.Options, stream Streamer, lim
 	}
 	return downloadSingle(ctx, opts, stream, url, limiter, progress)
 }
+
+// errNotModified stops a download at a 304 to a --cond-time request,
+// before the file opens.
+var errNotModified = errors.New("not modified")
 
 // errRedirect stops a request at a redirect answer, before a body byte is
 // written. followRedirects then sends the next request.
@@ -255,7 +270,7 @@ func canSegment(opts *config.Options, meta gholatransport.StreamMeta) bool {
 // mightSegment reports whether the options allow a segmented download. Only
 // then is the URL probed first.
 func mightSegment(opts *config.Options) bool {
-	return opts.Concurrency > 1 &&
+	return (opts.Concurrency > 1 || len(opts.Sources) > 0) &&
 		opts.Data == "" &&
 		opts.Output.File != "" &&
 		!opts.Stealth.Compressed && // wired in Task 9; field exists by then
@@ -266,9 +281,12 @@ func mightSegment(opts *config.Options) bool {
 // removes the output file, so that a preallocated file of the full size
 // never looks like a finished download.
 func downloadSegmented(ctx context.Context, opts *config.Options, stream Streamer, url string, size int64, limiter *rateLimiter, progress *progressWriter) (err error) {
-	f, err := os.OpenFile(opts.Output.File, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0644)
+	if opts.Output.TooLarge(size) {
+		return config.ErrTooLarge
+	}
+	f, err := config.OpenOutput(opts.Output, opts.Output.File, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, false)
 	if err != nil {
-		return fmt.Errorf("create output file: %w", config.WriteError(err))
+		return fmt.Errorf("create output file: %w", err)
 	}
 	defer func() {
 		f.Close()
@@ -276,27 +294,42 @@ func downloadSegmented(ctx context.Context, opts *config.Options, stream Streame
 			os.Remove(opts.Output.File)
 		}
 	}()
-	if err := f.Truncate(size); err != nil {
-		return fmt.Errorf("preallocate output file: %w", config.WriteError(err))
+	if err := reserve(f, size, opts.Output.FileAllocation); err != nil {
+		return err
 	}
 
-	ranges := splitRanges(size, opts.Concurrency)
+	// With --source, each worker reads from one mirror and takes the next
+	// piece from one queue, so a faster mirror takes more pieces.
+	mirrors := append([]string{url}, opts.Sources...)
+	workers := max(opts.Concurrency, len(mirrors))
+	parts := workers
+	if len(mirrors) > 1 {
+		parts *= piecesPerWorker
+	}
+	ranges := splitRanges(size, parts)
+	queue := make(chan byteRange, len(ranges))
+	for _, r := range ranges {
+		queue <- r
+	}
+	close(queue)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	errs := make(chan error, len(ranges))
+	errs := make(chan error, workers)
 	var wg sync.WaitGroup
-	for _, r := range ranges {
+	for w := range workers {
 		wg.Add(1)
-		go func(r byteRange) {
+		go func(home int) {
 			defer wg.Done()
-			if err := fetchSegment(ctx, opts, stream, url, f, r, limiter, progress); err != nil {
-				cancel()
-				errs <- err
-				return
+			for r := range queue {
+				if err := fetchFromMirrors(ctx, opts, stream, mirrors, home, f, r, limiter, progress); err != nil {
+					cancel()
+					errs <- err
+					return
+				}
 			}
 			errs <- nil
-		}(r)
+		}(w % len(mirrors))
 	}
 	wg.Wait()
 	close(errs)
@@ -314,6 +347,23 @@ func downloadSegmented(ctx context.Context, opts *config.Options, stream Streame
 	}
 	if first != nil {
 		return fmt.Errorf("download segment: %w", first)
+	}
+	return nil
+}
+
+// piecesPerWorker splits a download with mirrors into more pieces than
+// workers, so a fast mirror can take more of them.
+const piecesPerWorker = 4
+
+// fetchFromMirrors fetches one piece from the worker's own mirror, and
+// once from the next mirror when that fails.
+func fetchFromMirrors(ctx context.Context, opts *config.Options, stream Streamer, mirrors []string, home int, f *os.File, r byteRange, limiter *rateLimiter, progress *progressWriter) error {
+	err := fetchSegment(ctx, opts, stream, mirrors[home], f, r, limiter, progress)
+	if err == nil || len(mirrors) == 1 || ctx.Err() != nil {
+		return err
+	}
+	if err2 := fetchSegment(ctx, opts, stream, mirrors[(home+1)%len(mirrors)], f, r, limiter, progress); err2 != nil {
+		return errors.Join(err, err2)
 	}
 	return nil
 }
@@ -361,6 +411,11 @@ func singlePlan(opts *config.Options) (flags int, offset int64, rangeHeader stri
 }
 
 func downloadSingle(ctx context.Context, opts *config.Options, stream Streamer, url string, limiter *rateLimiter, progress *progressWriter) (gholatransport.StreamMeta, error) {
+	if opts.Output.FileAllocation != "" && opts.Output.FileAllocation != "none" && !opts.Output.Silent {
+		// A reserved file has its full size before the end, so a resume
+		// after a failure would take it as done.
+		fmt.Fprintln(os.Stderr, "Note: --file-allocation applies to a segmented download (-n or --source); a single stream writes in order")
+	}
 	flags, offset, rangeHeader, err := singlePlan(opts)
 	if err != nil {
 		return gholatransport.StreamMeta{}, err
@@ -387,11 +442,15 @@ var errRetryStatus = errors.New("retryable HTTP status")
 // with --retry-http, a retryable status. It does not retry after the file
 // opened: a body that broke off is not written twice.
 func (g singleGet) getWithRetry(ctx context.Context, opts *config.Options, stream Streamer, url string) (gholatransport.StreamMeta, error) {
+	start := time.Now() // --retry-max-time counts from the first attempt
 	for attempt := 0; ; attempt++ {
-		g.retryStatus = opts.Resilience.RetryHTTP && attempt < opts.Resilience.Retries
+		allow := attempt < opts.Resilience.Retries && retryTimeLeft(opts, start)
+		// A refused status is retried whatever the time: its body is gone.
+		g.retryStatus = opts.Resilience.RetryHTTP && allow
 		meta, opened, err := g.get(ctx, opts, stream, url)
-		retry := errors.Is(err, errRetryStatus) || (err != nil && meta.StatusCode == 0 && !opened)
-		if !retry || attempt >= opts.Resilience.Retries {
+		retry := errors.Is(err, errRetryStatus) ||
+			(allow && err != nil && meta.StatusCode == 0 && !opened && retryTimeLeft(opts, start))
+		if !retry {
 			return meta, err
 		}
 		wait := backoffWait(opts, attempt+1)
@@ -420,7 +479,7 @@ type singleGet struct {
 // redirect answer gives errRedirect and writes nothing. opened reports that
 // the file opened.
 func (g singleGet) get(ctx context.Context, opts *config.Options, stream Streamer, url string) (meta gholatransport.StreamMeta, opened bool, err error) {
-	f := &lazyFile{name: opts.Output.File, flags: g.flags}
+	f := &lazyFile{name: opts.Output.File, flags: g.flags, out: opts.Output, own: g.offset > 0}
 	defer f.Close()
 
 	req := fasthttp.AcquireRequest()
@@ -438,7 +497,7 @@ func (g singleGet) get(ctx context.Context, opts *config.Options, stream Streame
 	// When --compressed, decodeSink wraps the whole chain so that the bytes
 	// from the network are decoded before they reach the file (and rate
 	// limiting / progress count plain bytes on disk).
-	var sink io.Writer = f
+	sink := opts.Output.LimitSize(f, g.offset)
 	if g.limiter != nil {
 		sink = newRateLimitedWriter(sink, g.limiter)
 	}
@@ -480,17 +539,14 @@ func (g singleGet) get(ctx context.Context, opts *config.Options, stream Streame
 // writes no file and leaves an existing file unchanged.
 func (g singleGet) check(opts *config.Options, f *lazyFile) func(gholatransport.StreamMeta) error {
 	return func(meta gholatransport.StreamMeta) error {
-		if isRedirect(meta) {
-			return errRedirect
-		}
-		if g.retryStatus && isRetryableHTTPStatus(opts, meta.StatusCode) {
-			return fmt.Errorf("%w %d", errRetryStatus, meta.StatusCode)
-		}
-		if opts.Output.FailsOn(meta.StatusCode) {
-			return fmt.Errorf("%w: %d", config.ErrHTTPStatus, meta.StatusCode)
+		if err := g.checkStatus(opts, meta); err != nil {
+			return err
 		}
 		if err := g.checkResume(opts, f, meta); err != nil {
 			return err
+		}
+		if meta.ContentLength >= 0 && opts.Output.TooLarge(g.offset+meta.ContentLength) {
+			return config.ErrTooLarge // before the file opens, as curl checks it
 		}
 		applyRemoteName(opts, meta)
 		f.name = opts.Output.File
@@ -503,8 +559,30 @@ func (g singleGet) check(opts *config.Options, f *lazyFile) func(gholatransport.
 		if g.rangeHeader != "" && g.offset == 0 {
 			return nil // a --range part is not a whole file: there is nothing to resume
 		}
+		if opts.Output.NoSession {
+			return nil // --no-session keeps no state file
+		}
 		return saveState(f.name, opts.URL, meta)
 	}
+}
+
+// checkStatus stops a response that writes no file: a redirect, a status
+// that a retry follows, a 304 to a condition, and a status that --fail
+// refuses.
+func (g singleGet) checkStatus(opts *config.Options, meta gholatransport.StreamMeta) error {
+	switch {
+	case isRedirect(meta):
+		return errRedirect
+	case g.retryStatus && isRetryableHTTPStatus(opts, meta.StatusCode):
+		return fmt.Errorf("%w %d", errRetryStatus, meta.StatusCode)
+	case opts.Output.CondTime && meta.StatusCode == fasthttp.StatusNotModified:
+		return errNotModified
+	case answersChallenge(opts, meta.StatusCode):
+		return errAuthChallenge
+	case opts.Output.FailsOn(meta.StatusCode):
+		return fmt.Errorf("%w: %d", config.ErrHTTPStatus, meta.StatusCode)
+	}
+	return nil
 }
 
 // checkResume accepts a resume answer. A 206 must start at the offset. A 200
@@ -541,13 +619,15 @@ func meterTotal(opts *config.Options, meta gholatransport.StreamMeta) int64 {
 type lazyFile struct {
 	name  string
 	flags int
+	out   config.OutputOptions
+	own   bool // a resume: the file is ghola's own partial file
 	f     *os.File
 }
 
 func (l *lazyFile) open() error {
-	f, err := os.OpenFile(l.name, l.flags, 0644)
+	f, err := config.OpenOutput(l.out, l.name, l.flags, l.own)
 	if err != nil {
-		return fmt.Errorf("open output file: %w", config.WriteError(err))
+		return fmt.Errorf("open output file: %w", err)
 	}
 	l.f = f
 	return nil

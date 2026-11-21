@@ -94,6 +94,7 @@ func newFetchState(opts *config.Options, do Doer) (*fetchState, error) {
 			return transport.Do(ctx, req, resp)
 		}
 	}
+	s.do = withAuthAnswer(s.do) // --auth digest and any
 
 	return s, nil
 }
@@ -187,6 +188,7 @@ func FetchURL(ctx context.Context, opts *config.Options, do Doer) (*fasthttp.Req
 	effectiveMethod := opts.Method
 	effectiveData := opts.Data
 	redirectsFollowed := 0
+	start := time.Now() // --retry-max-time counts from the first attempt
 
 redirectLoop:
 	for {
@@ -226,17 +228,30 @@ redirectLoop:
 
 			lastErr = state.do(ctx, &state.effectiveOpts, req, rsp)
 			if lastErr != nil {
+				if !retryTimeLeft(opts, start) {
+					break
+				}
 				continue
 			}
 			state.jar.AbsorbResponse(effectiveURL, rsp)
+			if out := opts.Output.HeaderOut; out != nil {
+				if _, err := out.Write(rsp.Header.Header()); err != nil {
+					lastErr = fmt.Errorf("--save-headers: %w", config.WriteError(err))
+					break
+				}
+			}
 			if err := state.jar.Save(); err != nil {
 				lastErr = err
 				break
 			}
 
 			status := rsp.StatusCode()
+			if info := opts.Output.Info; info != nil {
+				info.EffectiveURL, info.Status, info.Redirects = effectiveURL, status, redirectsFollowed
+				info.ContentType = string(rsp.Header.ContentType())
+			}
 
-			if opts.Resilience.RetryHTTP && attempt < opts.Resilience.Retries && isRetryableHTTPStatus(opts, status) {
+			if opts.Resilience.RetryHTTP && attempt < opts.Resilience.Retries && isRetryableHTTPStatus(opts, status) && retryTimeLeft(opts, start) {
 				if d, ok := parseRetryAfter(rsp); ok {
 					nextWait = d
 					haveNextWait = true
@@ -372,6 +387,13 @@ func resolveLocation(baseURL, location string) (string, bool) {
 // retry): --backoff milliseconds, doubled for each retry after the first.
 func backoffWait(opts *config.Options, attempt int) time.Duration {
 	return time.Duration(opts.Resilience.Backoff<<uint(attempt-1)) * time.Millisecond
+}
+
+// retryTimeLeft reports whether --retry-max-time still allows a retry. As
+// in curl, no retry starts after the limit, counted from the first attempt.
+func retryTimeLeft(opts *config.Options, start time.Time) bool {
+	limit := opts.Resilience.RetryMaxTime
+	return limit <= 0 || time.Since(start) < limit
 }
 
 // waitToRetry announces retry number attempt on stderr and waits.

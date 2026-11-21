@@ -60,7 +60,28 @@ func FromCurl(args []string) (*Compat, error) {
 	if len(args) > 0 && (args[0] == "-q" || args[0] == "--disable") {
 		args = args[1:] // curl: do not read .curlrc; ghola curl never reads it
 	}
-	return translate(curlSpec, args)
+	// curl -: / --next starts the options of the next URL. Each group
+	// translates on its own, with curl's defaults, and the native groups
+	// join with --next.
+	var out *Compat
+	start := 0
+	for i := 0; i <= len(args); i++ {
+		if i < len(args) && args[i] != "-:" && args[i] != "--next" {
+			continue
+		}
+		c, err := translate(curlSpec, args[start:i])
+		if err != nil {
+			return nil, err
+		}
+		if out == nil {
+			out = c
+		} else {
+			out.Args = append(append(out.Args, "--next"), c.Args...)
+			out.ShowNative = out.ShowNative || c.ShowNative
+		}
+		start = i + 1
+	}
+	return out, nil
 }
 
 // FromWget translates wget (and Wget2) arguments.
