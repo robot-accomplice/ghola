@@ -97,6 +97,11 @@ func (s *pageScan) tag(tag string, attrs map[string]string) {
 		}
 		s.add(attrs[la.attr], la.requisite, false)
 	}
+	s.requisites(attrs)
+}
+
+// requisites adds the images of srcset and the url() links of style.
+func (s *pageScan) requisites(attrs map[string]string) {
 	for _, src := range strings.Split(attrs["srcset"], ",") {
 		if f := strings.Fields(src); len(f) > 0 {
 			s.add(f[0], true, false)
