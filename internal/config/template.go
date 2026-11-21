@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -90,12 +91,16 @@ func ParseTemplate(s string) (*Template, error) {
 	return t, nil
 }
 
-// AddSize counts body bytes that ghola wrote, for %{size_download}.
+// AddSize counts body bytes that ghola wrote, for %{size_download}. It is
+// atomic: the RPC reads the count (LoadSize) while the download runs.
 func (i *TransferInfo) AddSize(n int64) {
 	if i != nil {
-		i.Size += n
+		atomic.AddInt64(&i.Size, n)
 	}
 }
+
+// LoadSize reads the count while the download may still add to it.
+func (i *TransferInfo) LoadSize() int64 { return atomic.LoadInt64(&i.Size) }
 
 // Write renders the template for info to stdout, or to stderr after
 // %{stderr}.

@@ -304,7 +304,7 @@ func (s *rpcServer) list() []rpcJob {
 	for _, j := range s.jobs {
 		cp := *j
 		if j.info != nil {
-			cp.Bytes = j.info.Size
+			cp.Bytes = j.info.LoadSize()
 		}
 		out = append(out, cp)
 	}
