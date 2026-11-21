@@ -104,8 +104,8 @@ func TestFromCurl_Config(t *testing.T) {
 // what it maps to, so nothing runs with a dropped option.
 func TestFromCurl_Unsupported(t *testing.T) {
 	for args, want := range map[string]string{
-		"--http2":     "maps to --http",
-		"--libcurl x": "is not supported",
+		"--tls13-ciphers x": "maps to --tls-ciphers",
+		"--libcurl x":       "is not supported",
 	} {
 		_, err := FromCurl(strings.Fields(args))
 		if err == nil || !strings.Contains(err.Error(), want) {

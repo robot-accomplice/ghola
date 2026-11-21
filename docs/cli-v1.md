@@ -146,7 +146,7 @@ The phase column says where each option is built. 0B is the parser build (step 7
 
 | Option | Type | Default | curl | wget | aria2 | Phase | Description |
 |---|---|---|---|---|---|---|---|
-| `--http` | auto\|1.0\|1.1\|2\|2-prior\|3\|3-only | auto | --http1.0 / --http1.1 / --http2 / --http2-prior-knowledge / --http3 / --http3-only | --no-http2 (Wget2) |  | 2 | The HTTP version. |
+| `--http` | auto\|1.0\|1.1\|2\|2-prior\|3\|3-only | auto | --http1.0 / --http1.1 / --http2 / --http2-prior-knowledge / --http3 / --http3-only | --no-http2 (Wget2) |  | 2 | The HTTP version. 3 and 3-only need --impersonate with a profile that has HTTP/3; 3-only fails when the answer is not HTTP/3. 1.0 is refused: ghola's HTTP clients write only HTTP/1.1 request lines. |
 | `--compressed` | bool | true | --compressed | --compression (Wget2) | --http-accept-gzip | 0B | Ask for gzip, br and zstd and decode the body. A segment of a download asks for identity. |
 | `--follow` | bool | true | -L | (default) | (default) | 0B | Follow redirects. |
 | `--follow-max` | int | 20 | --max-redirs | --max-redirect |  | 0B | Stop with exit 47 after this many redirects. |

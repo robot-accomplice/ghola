@@ -191,14 +191,17 @@ type StealthOptions struct {
 	Referer        string
 	AcceptLanguage string
 	HTTP3          bool
-	CookieJar      string
-	Cookies        []string
-	ProfileList    bool
-	Compressed     bool // wired in Task 9; true disables segmentation
-	Insecure       bool
-	CACert         string
-	ClientCert     string
-	ClientKey      string
+	// HTTPVersion is the --http value: "" (auto), "1.1", "2", "2-prior",
+	// "3" or "3-only".
+	HTTPVersion string
+	CookieJar   string
+	Cookies     []string
+	ProfileList bool
+	Compressed  bool // wired in Task 9; true disables segmentation
+	Insecure    bool
+	CACert      string
+	ClientCert  string
+	ClientKey   string
 	// TLSMin and TLSMax are "1.2" or "1.3" (--tls-min, --tls-max).
 	TLSMin, TLSMax string
 	// CADir is a folder of CA certificates (--tls-ca-dir).

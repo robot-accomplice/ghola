@@ -775,9 +775,13 @@ func setHTTP(o *config.Options, v string, _ *Command) error {
 	switch v {
 	case "auto":
 		return nil
-	case "3":
+	case "1.0":
+		// Go's HTTP clients (net/http and tls-client) write only HTTP/1.1
+		// request lines. No command of the corpus uses --http1.0.
+		return fmt.Errorf("--http 1.0: ghola cannot send HTTP/1.0 (its HTTP clients write only HTTP/1.1 request lines); use --http 1.1")
+	case "3", "3-only":
 		o.Stealth.HTTP3 = true
-		return nil
 	}
-	return fmt.Errorf("--http %s is in the v1 spec but not built yet (phase 2)", v)
+	o.Stealth.HTTPVersion = v
+	return nil
 }
