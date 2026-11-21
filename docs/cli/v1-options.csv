@@ -36,7 +36,7 @@ chain,,request,fetch,eth|base|solana,,,,,0B,JSON-RPC shortcut: POST with the RPC
 url-glob,,request,all,bool,true,-g (inverse),,-Z,2,"Expand {a,b} and [1-9] in URLs."
 url-path-as-is,,request,all,bool,false,--path-as-is,,,2,Send the path without removing ./ and ../.
 request-target,,request,fetch,string,,--request-target,,,2,Send this request target in place of the URL path.
-variable,,request,fetch,name=value (repeat),,--variable,,,2,Set a variable for {{name}} expansion in other option values.
+variable,,request,fetch,name=value (repeat),,--variable,,,2,"Set a variable: NAME=VALUE, NAME@FILE or %NAME (from the environment). Only the --expand-NAME form of an option expands {{name}} in its value, as in curl."
 next,,request,fetch,(separator),,-: / --next,,,2,Start the options for the next URL.
 input,-i,request,all,path,,-K (partly),-i,-i,3,"Read URLs from PATH (- for stdin): one for each line, with options for each URL in aria2's format."
 input-format,,request,all,lines|html|sitemap|metalink,lines,,-F / --force-html,(detected),3,The format of --input.
@@ -110,7 +110,6 @@ checksum,,download,all,algo=hex,,,,--checksum,3,Check the file against this dige
 session,,download,download,bool,true,,,--save-session,3,"Keep a state file next to each partial download, so ghola jobs resume can restart it."
 on-complete,,download,download,command,,,,--on-download-complete,3,Run this command when a job finishes.
 on-error,,download,download,command,,,,--on-download-error,3,Run this command when a job fails.
-seed-ratio,,download,download,float,1.0,,,--seed-ratio,3,BitTorrent: stop seeding at this upload ratio (D5).
 background,,download,all,bool,false,,-b,(daemon),4,Run in the background and write messages to --log.
 log,,download,all,path,ghola.log with --background,--stderr,-o / -a,-l,4,Write messages to PATH.
 depth,,mirror,mirror,int,5,,-l,,4,Follow links this many levels deep (0 = no limit).

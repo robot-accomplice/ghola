@@ -167,6 +167,8 @@ var setters = map[string]setter{
 	"url-glob":           func(*config.Options, string, *Command) error { return nil }, // read in Apply
 	"auth-netrc":         func(*config.Options, string, *Command) error { return nil }, // read in Apply
 	"auth-netrc-file":    func(*config.Options, string, *Command) error { return nil }, // read in Apply
+	"proxy-tls-*":        func(*config.Options, string, *Command) error { return nil }, // the family row; applyProxyTLS sets each member
+	"variable":           func(*config.Options, string, *Command) error { return nil }, // the parser expands --expand-NAME values
 	"ip": func(o *config.Options, v string, _ *Command) error {
 		o.Net.IPVersion = strings.TrimPrefix(v, "any")
 		return nil

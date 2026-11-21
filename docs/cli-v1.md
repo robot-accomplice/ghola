@@ -137,7 +137,7 @@ The phase column says where each option is built. 0B is the parser build (step 7
 | `--url-glob` | bool | true | -g (inverse) |  | -Z | 2 | Expand {a,b} and [1-9] in URLs. |
 | `--url-path-as-is` | bool | false | --path-as-is |  |  | 2 | Send the path without removing ./ and ../. |
 | `--request-target` (fetch) | string |  | --request-target |  |  | 2 | Send this request target in place of the URL path. |
-| `--variable` (fetch) | name=value (repeat) |  | --variable |  |  | 2 | Set a variable for {{name}} expansion in other option values. |
+| `--variable` (fetch) | name=value (repeat) |  | --variable |  |  | 2 | Set a variable: NAME=VALUE, NAME@FILE or %NAME (from the environment). Only the --expand-NAME form of an option expands {{name}} in its value, as in curl. |
 | `--next` (fetch) | (separator) |  | -: / --next |  |  | 2 | Start the options for the next URL. |
 | `--input`, `-i` | path |  | -K (partly) | -i | -i | 3 | Read URLs from PATH (- for stdin): one for each line, with options for each URL in aria2's format. |
 | `--input-format` | lines\|html\|sitemap\|metalink | lines |  | -F / --force-html | (detected) | 3 | The format of --input. |
@@ -261,7 +261,6 @@ The phase column says where each option is built. 0B is the parser build (step 7
 | `--session` (download) | bool | true |  |  | --save-session | 3 | Keep a state file next to each partial download, so ghola jobs resume can restart it. |
 | `--on-complete` (download) | command |  |  |  | --on-download-complete | 3 | Run this command when a job finishes. |
 | `--on-error` (download) | command |  |  |  | --on-download-error | 3 | Run this command when a job fails. |
-| `--seed-ratio` (download) | float | 1.0 |  |  | --seed-ratio | 3 | BitTorrent: stop seeding at this upload ratio (D5). |
 | `--background` | bool | false |  | -b | (daemon) | 4 | Run in the background and write messages to --log. |
 | `--log` | path | ghola.log with --background | --stderr | -o / -a | -l | 4 | Write messages to PATH. |
 

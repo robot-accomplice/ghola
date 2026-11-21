@@ -87,6 +87,7 @@ const curlTable = `
 --json                         => --json %s
 --oauth2-bearer                => --auth-bearer %s
 --url-query                    => --query %s
+--variable                     => --variable %s
 -n --netrc                     => --auth-netrc
 --netrc-file                   => --auth-netrc-file %s
 --pinnedpubkey                 => --tls-pin %s

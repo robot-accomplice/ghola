@@ -76,7 +76,7 @@ func Parse(args []string) (*Command, error) {
 		c.Args = args
 		return c, nil
 	}
-	p := parser{c: c, args: args}
+	p := parser{c: c, args: args, vars: variables{}}
 	for p.i < len(p.args) {
 		if err := p.next(); err != nil {
 			return nil, err
@@ -90,6 +90,7 @@ type parser struct {
 	args []string
 	i    int
 	done bool // after "--", everything is an operand
+	vars variables
 }
 
 func (p *parser) next() error {
@@ -112,6 +113,12 @@ func (p *parser) next() error {
 // long reads --name, --name=value, --name value and --no-name.
 func (p *parser) long(a string) error {
 	name, value, hasValue := strings.Cut(a[2:], "=")
+	expand := false
+	if rest, ok := strings.CutPrefix(name, expandPrefix); ok && byName[name] == nil {
+		if o, negated := lookupLong(rest); o != nil && !negated && o.Type != typeBool && o.Type != typeTopic {
+			name, expand = rest, true
+		}
+	}
 	o, negated := lookupLong(name)
 	if o == nil {
 		return unknown(a)
@@ -138,6 +145,12 @@ func (p *parser) long(a string) error {
 		}
 		value = p.args[p.i]
 		p.i++
+	}
+	if expand {
+		var err error
+		if value, err = p.vars.expand(value); err != nil {
+			return usagef("--%s%s: %v", expandPrefix, o.Name, err)
+		}
 	}
 	return p.set(o, value)
 }
@@ -189,6 +202,11 @@ func (p *parser) shorts(a string) error {
 func (p *parser) set(o *Option, value string) error {
 	if err := checkValue(o, value); err != nil {
 		return &UsageError{Msg: err.Error()}
+	}
+	if o.Name == "variable" {
+		if err := p.vars.set(value); err != nil {
+			return &UsageError{Msg: err.Error()}
+		}
 	}
 	p.c.Values[o.Name] = append(p.c.Values[o.Name], value)
 	return nil

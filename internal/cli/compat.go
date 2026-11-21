@@ -178,6 +178,10 @@ func (t *translation) long(a string, args []string, i int) (int, error) {
 	if hasValue && !t.spec.equals {
 		name, value, hasValue = a, "", false // curl has no --name=value
 	}
+	expand := false
+	if rest, ok := strings.CutPrefix(name, "--"+expandPrefix); ok && t.needsValue("--"+rest) {
+		name, expand = "--"+rest, true // curl's --expand-NAME
+	}
 	if !hasValue && t.needsValue(name) {
 		if i+1 >= len(args) {
 			return i, usagef("ghola %s: %s needs a value", t.spec.name, name)
@@ -185,7 +189,45 @@ func (t *translation) long(a string, args []string, i int) (int, error) {
 		i++
 		value, hasValue = args[i], true
 	}
+	if expand {
+		return i, t.expandOption(name, value)
+	}
 	return i, t.option(name, value, hasValue)
+}
+
+// expandOption translates curl's --expand-NAME VALUE to the --expand- form
+// of the native option, so the native parser expands the variables.
+func (t *translation) expandOption(name, value string) error {
+	f, ok := t.spec.flags[name]
+	if !ok {
+		return t.notMapped(name)
+	}
+	out := make([]string, len(f.args))
+	expanded := false
+	for k, a := range f.args {
+		out[k] = strings.ReplaceAll(a, "%s", value)
+		if long := nativeLong(f.args[max(k-1, 0)]); a == "%s" && k > 0 && long != "" {
+			out[k-1], expanded = "--"+expandPrefix+long, true
+		}
+	}
+	if !expanded {
+		return usagef("ghola %s: --%s%s is not supported", t.spec.name, expandPrefix, strings.TrimPrefix(name, "--"))
+	}
+	t.out = append(t.out, out...)
+	return nil
+}
+
+// nativeLong is the long name of a native flag such as -H or --json.
+func nativeLong(flag string) string {
+	if long, ok := strings.CutPrefix(flag, "--"); ok {
+		return long
+	}
+	if len(flag) == 2 && flag[0] == '-' {
+		if o := lookupShort(flag[1]); o != nil {
+			return o.Name
+		}
+	}
+	return ""
 }
 
 // shorts handles a letter group such as -sSL, -qO- or -x16.
