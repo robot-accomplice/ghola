@@ -91,3 +91,43 @@ func TestRPC_WebSocketChecks(t *testing.T) {
 		t.Error("a foreign Host opened the connection")
 	}
 }
+
+// The answer to ghola.add comes before the notification of its job, also
+// when the download ends at once: a client cannot match a notification
+// to a job before it knows the job's ID. CI saw the notification first
+// (PR 83: the test read {ID:0 Result:[]} as the answer).
+func TestRPC_WebSocketAnswerComesFirst(t *testing.T) {
+	files := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	defer files.Close()
+	addr, token := startGuardedBridge(t)
+	conn, _, err := websocket.DefaultDialer.Dial("ws://"+addr+RPCPath, http.Header{"Authorization": {"Bearer " + token}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	conn.SetReadDeadline(time.Now().Add(30 * time.Second)) //nolint:errcheck
+	dir := t.TempDir() + "/"
+	for i := range 100 {
+		add := map[string]any{"jsonrpc": "2.0", "id": i + 1, "method": "ghola.add",
+			"params": map[string]any{"urls": []string{fmt.Sprintf("%s/f%d", files.URL, i)}, "args": []string{"-o", dir}}}
+		if err := conn.WriteJSON(add); err != nil {
+			t.Fatal(err)
+		}
+		var first struct {
+			ID     int    `json:"id"`
+			Method string `json:"method"`
+		}
+		if err := conn.ReadJSON(&first); err != nil {
+			t.Fatal(err)
+		}
+		if first.ID != i+1 {
+			t.Fatalf("add %d: the first message is %+v, not the answer", i+1, first)
+		}
+		var note struct {
+			Method string `json:"method"`
+		}
+		if err := conn.ReadJSON(&note); err != nil || note.Method != rpcOnComplete {
+			t.Fatalf("add %d: notification %+v, %v", i+1, note, err)
+		}
+	}
+}
