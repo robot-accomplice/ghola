@@ -8,6 +8,7 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/fasthttp/websocket"
 	"github.com/valyala/fasthttp"
 
 	"github.com/robot-accomplice/ghola/internal/cli"
@@ -18,8 +19,25 @@ import (
 // RPCPath is the JSON-RPC 2.0 endpoint of the bridge (plan phase 3, item
 // 9): it adds, lists, pauses, resumes and stops download jobs, as aria2's
 // RPC does. It sits behind the same Host, token and Content-Type checks as
-// the bridge, on the same listener.
+// the bridge, on the same listener. It takes HTTP POST and WebSocket
+// (spec decision M). A WebSocket client also gets the notifications
+// ghola.onComplete and ghola.onError, with params [{"gid": ...}], as
+// aria2's onDownloadComplete and onDownloadError.
 const RPCPath = "/jsonrpc"
+
+// maxRPCMessage is the largest WebSocket message that the RPC reads.
+const maxRPCMessage = 1 << 20
+
+// The notification methods.
+const (
+	rpcOnComplete = "ghola.onComplete"
+	rpcOnError    = "ghola.onError"
+)
+
+// upgrader keeps the default origin check: a request with an Origin of
+// another host is refused. Guard checks the token first, which a browser
+// cannot send on a WebSocket.
+var upgrader = websocket.FastHTTPUpgrader{}
 
 // rpcOptions are the options that an RPC job may set. A client with the
 // token may send requests already, but not run a command (--on-complete),
@@ -42,18 +60,35 @@ type rpcJob struct {
 
 	args   []string
 	cancel context.CancelFunc
-	info   *config.TransferInfo
+	// run counts the starts. Only the newest run may set the status: a
+	// paused run can end after its resume has started.
+	run  int
+	info *config.TransferInfo
 }
 
 // rpcServer holds the jobs of one bridge.
 type rpcServer struct {
-	mu     sync.Mutex
-	jobs   map[string]*rpcJob
-	stream client.Streamer
+	mu      sync.Mutex
+	jobs    map[string]*rpcJob
+	stream  client.Streamer
+	clients map[*wsClient]bool // the WebSocket clients, for notifications
 }
 
 func newRPC(stream client.Streamer) *rpcServer {
-	return &rpcServer{jobs: map[string]*rpcJob{}, stream: stream}
+	return &rpcServer{jobs: map[string]*rpcJob{}, stream: stream, clients: map[*wsClient]bool{}}
+}
+
+// wsClient is one WebSocket connection. A connection takes one writer at
+// a time, so the answers and the notifications share a lock.
+type wsClient struct {
+	mu   sync.Mutex
+	conn *websocket.Conn
+}
+
+func (c *wsClient) send(b []byte) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.conn.WriteMessage(websocket.TextMessage, b)
 }
 
 type rpcRequest struct {
@@ -76,23 +111,71 @@ const (
 	rpcInvalidParams  = -32602
 )
 
-// serve answers one JSON-RPC request.
+// serve answers one JSON-RPC request: a WebSocket upgrade or a POST.
 func (s *rpcServer) serve(ctx *fasthttp.RequestCtx) {
+	if websocket.FastHTTPIsWebSocketUpgrade(ctx) {
+		s.serveWS(ctx)
+		return
+	}
 	ctx.SetContentType("application/json")
-	var req rpcRequest
-	if err := json.Unmarshal(ctx.PostBody(), &req); err != nil {
-		writeRPC(ctx, nil, nil, &rpcError{rpcParseError, "parse error: " + err.Error()})
-		return
-	}
-	if req.JSONRPC != "2.0" || req.Method == "" {
-		writeRPC(ctx, req.ID, nil, &rpcError{rpcInvalidRequest, `send {"jsonrpc":"2.0","method":...}`})
-		return
-	}
-	result, rerr := s.call(req.Method, req.Params)
-	writeRPC(ctx, req.ID, result, rerr)
+	ctx.SetBody(s.answer(ctx.PostBody()))
 }
 
-func writeRPC(ctx *fasthttp.RequestCtx, id json.RawMessage, result any, rerr *rpcError) {
+// serveWS reads one JSON-RPC request from each message and writes the
+// answer, until the client closes the connection.
+func (s *rpcServer) serveWS(ctx *fasthttp.RequestCtx) {
+	err := upgrader.Upgrade(ctx, func(conn *websocket.Conn) {
+		conn.SetReadLimit(maxRPCMessage)
+		c := &wsClient{conn: conn}
+		s.mu.Lock()
+		s.clients[c] = true
+		s.mu.Unlock()
+		defer func() {
+			s.mu.Lock()
+			delete(s.clients, c)
+			s.mu.Unlock()
+		}()
+		for {
+			_, msg, err := conn.ReadMessage()
+			if err != nil || c.send(s.answer(msg)) != nil {
+				return
+			}
+		}
+	})
+	if err != nil {
+		reject(ctx, fasthttp.StatusBadRequest, "websocket: "+err.Error())
+	}
+}
+
+// answer is the JSON-RPC answer to one request body.
+func (s *rpcServer) answer(body []byte) []byte {
+	var req rpcRequest
+	if err := json.Unmarshal(body, &req); err != nil {
+		return rpcReply(nil, nil, &rpcError{rpcParseError, "parse error: " + err.Error()})
+	}
+	if req.JSONRPC != "2.0" || req.Method == "" {
+		return rpcReply(req.ID, nil, &rpcError{rpcInvalidRequest, `send {"jsonrpc":"2.0","method":...}`})
+	}
+	result, rerr := s.call(req.Method, req.Params)
+	return rpcReply(req.ID, result, rerr)
+}
+
+// notify sends a notification to each WebSocket client. A client that
+// cannot take it ends on its next read.
+func (s *rpcServer) notify(method, gid string) {
+	b, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "method": method, "params": []any{map[string]string{"gid": gid}}}) //nolint:errchkjson // plain values
+	s.mu.Lock()
+	clients := make([]*wsClient, 0, len(s.clients))
+	for c := range s.clients {
+		clients = append(clients, c)
+	}
+	s.mu.Unlock()
+	for _, c := range clients {
+		c.send(b) //nolint:errcheck // see above
+	}
+}
+
+func rpcReply(id json.RawMessage, result any, rerr *rpcError) []byte {
 	if id == nil {
 		id = json.RawMessage("null")
 	}
@@ -103,7 +186,7 @@ func writeRPC(ctx *fasthttp.RequestCtx, id json.RawMessage, result any, rerr *rp
 		out["result"] = result
 	}
 	b, _ := json.Marshal(out) //nolint:errchkjson // the values are plain
-	ctx.SetBody(b)
+	return b
 }
 
 func (s *rpcServer) call(method string, params json.RawMessage) (any, *rpcError) {
@@ -187,19 +270,28 @@ func (s *rpcServer) start(j *rpcJob, resume bool) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	s.mu.Lock()
 	j.Status, j.Error, j.cancel, j.info, j.File = "active", "", cancel, opts.Output.Info, opts.Output.File
+	j.run++
+	run := j.run
 	s.jobs[j.GID] = j
 	s.mu.Unlock()
 	go func() {
 		err := client.Download(ctx, opts, s.stream)
 		s.mu.Lock()
-		defer s.mu.Unlock()
-		j.File = opts.Output.File
+		event := ""
+		if j.run == run {
+			j.File = opts.Output.File
+		}
 		switch {
+		case j.run != run: // a newer run owns the job
 		case j.Status != "active": // paused or removed while it ran
 		case err != nil:
-			j.Status, j.Error = "error", err.Error()
+			j.Status, j.Error, event = "error", err.Error(), rpcOnError
 		default:
-			j.Status = "complete"
+			j.Status, event = "complete", rpcOnComplete
+		}
+		s.mu.Unlock()
+		if event != "" {
+			s.notify(event, j.GID)
 		}
 	}()
 	return nil

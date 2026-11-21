@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/fasthttp/websocket"
 	"github.com/robot-accomplice/ghola/internal/client"
 	"github.com/robot-accomplice/ghola/internal/config"
 	gholatransport "github.com/robot-accomplice/ghola/internal/transport"
@@ -70,12 +71,12 @@ func Handler(do client.Doer) fasthttp.RequestHandler {
 			return
 		}
 
-		if !ctx.IsPost() {
-			ctx.SetStatusCode(fasthttp.StatusMethodNotAllowed)
+		if string(ctx.Path()) == RPCPath && (ctx.IsPost() || websocket.FastHTTPIsWebSocketUpgrade(ctx)) {
+			rpc.serve(ctx)
 			return
 		}
-		if string(ctx.Path()) == RPCPath {
-			rpc.serve(ctx)
+		if !ctx.IsPost() {
+			ctx.SetStatusCode(fasthttp.StatusMethodNotAllowed)
 			return
 		}
 

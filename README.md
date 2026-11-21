@@ -25,7 +25,7 @@ ghola v1 has one command line for three jobs: fetch (as curl), download (as aria
 | `ghola URL...` | Fetch each URL. The body goes to stdout, or to `-o`. |
 | `ghola download URL...` | Save each URL under its remote name; `-n N` splits a file into N ranges. |
 | `ghola inspect URL` | Check the headers and the security posture (Cloudflare and other WAFs). |
-| `ghola serve` | Run the local bridge on 127.0.0.1:18789 (for scope and scope-bca). Its JSON-RPC 2.0 endpoint `/jsonrpc` adds, lists, pauses, resumes and stops download jobs (`ghola.add`, `ghola.list`, `ghola.pause`, `ghola.resume`, `ghola.stop`, `ghola.purge`), behind the same token. |
+| `ghola serve` | Run the local bridge on 127.0.0.1:18789 (for scope and scope-bca). Its JSON-RPC 2.0 endpoint `/jsonrpc` adds, lists, pauses, resumes and stops download jobs (`ghola.add`, `ghola.list`, `ghola.pause`, `ghola.resume`, `ghola.stop`, `ghola.purge`), behind the same token. It takes HTTP POST and WebSocket; a WebSocket client also gets `ghola.onComplete` and `ghola.onError`. |
 | `ghola profiles` | List the browser profiles of `--impersonate`. |
 | `ghola explain CODE` | Explain an exit code. |
 | `ghola completion SHELL` | Write the completion script for bash, zsh, fish or PowerShell. |
