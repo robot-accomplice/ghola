@@ -46,11 +46,10 @@
 
 ## 4. Release steps (not done)
 
-1. A person checks the `--jobs` board on a Linux, a macOS and a Windows terminal. The tests check the bytes, not how a terminal draws them.
-2. Merge PR 65 (spec), PR 80 (parser), PR 81 (phases 2 and 3) and PR 82 (phase 4) into `develop`, in that order, each with green checks.
-3. Merge `develop` into `main` with a `--no-ff` commit.
-4. Push the annotated tag `v1.0.0` with these notes; GitHub releases in this repository cannot be changed after that.
-5. Dispatch the Homebrew workflow by hand: `gh workflow run homebrew.yml -f tag=v1.0.0`.
+1. Merge PR 65 (spec), PR 80 (parser), PR 81 (phases 2 and 3) and PR 82 (phase 4) into `develop`, in that order, each with green checks.
+2. Merge `develop` into `main` with a `--no-ff` commit.
+3. Push the annotated tag `v1.0.0` with these notes; GitHub releases in this repository cannot be changed after that.
+4. Dispatch the Homebrew workflow by hand: `gh workflow run homebrew.yml -f tag=v1.0.0`.
 
 ## 5. Not in v1.0.0
 
