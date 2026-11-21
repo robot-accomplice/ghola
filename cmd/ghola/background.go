@@ -54,7 +54,9 @@ func startBackground(opts *config.Options, args []string, w *os.File) (code int,
 // returns the function that puts stderr back.
 func openLog(opts *config.Options) (func(), error) {
 	if opts.Output.Log == "" {
-		return func() {}, nil
+		return func() {
+			// no --log: there is no file to close
+		}, nil
 	}
 	f, err := os.OpenFile(opts.Output.Log, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {

@@ -39,7 +39,7 @@ func TestLocalPath(t *testing.T) {
 			t.Errorf("%s (%s, cut %d, %s): %s, want %s", tc.url, tc.layout, tc.cut, tc.names, got, tc.want)
 		}
 	}
-	if got := safeName("..", "unix"); got == ".." {
+	if safeName("..", "unix") == ".." {
 		t.Error(`".." stays a name that climbs out of the copy`)
 	}
 }

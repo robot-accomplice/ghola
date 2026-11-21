@@ -113,12 +113,7 @@ func (p *parser) next() error {
 // long reads --name, --name=value, --name value and --no-name.
 func (p *parser) long(a string) error {
 	name, value, hasValue := strings.Cut(a[2:], "=")
-	expand := false
-	if rest, ok := strings.CutPrefix(name, expandPrefix); ok && byName[name] == nil {
-		if o, negated := lookupLong(rest); o != nil && !negated && o.Type != typeBool && o.Type != typeTopic {
-			name, expand = rest, true
-		}
-	}
+	name, expand := expandForm(name)
 	o, negated := lookupLong(name)
 	if o == nil {
 		return unknown(a)
@@ -153,6 +148,19 @@ func (p *parser) long(a string) error {
 		}
 	}
 	return p.set(o, value)
+}
+
+// expandForm reads --expand-NAME: it returns NAME and true when NAME is
+// an option that takes a value, else the name as it is.
+func expandForm(name string) (string, bool) {
+	rest, ok := strings.CutPrefix(name, expandPrefix)
+	if !ok || byName[name] != nil {
+		return name, false
+	}
+	if o, negated := lookupLong(rest); o != nil && !negated && o.Type != typeBool && o.Type != typeTopic {
+		return rest, true
+	}
+	return name, false
 }
 
 func (p *parser) setBool(o *Option, negated bool, value string, hasValue bool) error {

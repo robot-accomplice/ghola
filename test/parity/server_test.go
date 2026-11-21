@@ -202,17 +202,9 @@ func parseSize(s string) int {
 	return n * mult
 }
 
-func (s *server) routes() {
-	m := http.NewServeMux()
-	s.mux = m
-	size := func(r *http.Request) []byte { return s.content(parseSize(r.PathValue("size"))) }
-
-	// A normal file with Range support, ETag and Last-Modified.
-	m.HandleFunc("/file/{size}", func(w http.ResponseWriter, r *http.Request) {
-		b := size(r)
-		w.Header().Set("ETag", fmt.Sprintf(`"%x"`, sha256.Sum256(b)))
-		http.ServeContent(w, r, "file.bin", modTime, bytes.NewReader(b))
-	})
+// bodyRoutes are the answers whose body is special: a Content-Digest, a
+// slow body, and a chunked body.
+func bodyRoutes(m *http.ServeMux, size func(*http.Request) []byte) {
 	// A file with a Content-Digest (RFC 9530) that is right, or wrong as
 	// a cache or a proxy could make it.
 	m.HandleFunc("/digest/{kind}/{size}", func(w http.ResponseWriter, r *http.Request) {
@@ -239,6 +231,20 @@ func (s *server) routes() {
 			w.(http.Flusher).Flush()
 		}
 	})
+}
+
+func (s *server) routes() {
+	m := http.NewServeMux()
+	s.mux = m
+	size := func(r *http.Request) []byte { return s.content(parseSize(r.PathValue("size"))) }
+
+	// A normal file with Range support, ETag and Last-Modified.
+	m.HandleFunc("/file/{size}", func(w http.ResponseWriter, r *http.Request) {
+		b := size(r)
+		w.Header().Set("ETag", fmt.Sprintf(`"%x"`, sha256.Sum256(b)))
+		http.ServeContent(w, r, "file.bin", modTime, bytes.NewReader(b))
+	})
+	bodyRoutes(m, size)
 	// No Range support: always 200 and the full body.
 	m.HandleFunc("/norange/{size}", func(w http.ResponseWriter, r *http.Request) {
 		b := size(r)

@@ -91,26 +91,33 @@ func (m *Mirror) convertHTML(base *url.URL, local string, body []byte) []byte {
 			continue
 		}
 		tok := z.Token()
-		changed := false
-		for i, a := range tok.Attr {
-			want := ""
-			if la, ok := linkAttrs[tok.Data]; ok {
-				want = la.attr
-			} else if tok.Data == "link" {
-				want = "href"
-			}
-			if a.Key == want {
-				if t := m.target(base, local, a.Val); t != a.Val {
-					tok.Attr[i].Val, changed = t, true
-				}
-			}
-		}
-		if changed {
+		if m.convertTag(&tok, base, local) {
 			out.WriteString(tok.String())
 		} else {
 			out.Write(raw)
 		}
 	}
+}
+
+// convertTag rewrites the link attribute of one tag. It reports whether
+// the tag changed.
+func (m *Mirror) convertTag(tok *html.Token, base *url.URL, local string) bool {
+	want := "href" // <link>
+	if la, ok := linkAttrs[tok.Data]; ok {
+		want = la.attr
+	} else if tok.Data != "link" {
+		return false
+	}
+	changed := false
+	for i, a := range tok.Attr {
+		if a.Key != want {
+			continue
+		}
+		if t := m.target(base, local, a.Val); t != a.Val {
+			tok.Attr[i].Val, changed = t, true
+		}
+	}
+	return changed
 }
 
 // convertCSS rewrites url() and @import.

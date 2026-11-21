@@ -356,28 +356,54 @@ func maxHeaderBytes(bufferSize int) int64 {
 	return http.DefaultMaxHeaderBytes
 }
 
-func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transport, error) {
+// tlsClientProfile returns the tls-client profile of --impersonate, and
+// refuses the options that the profile cannot take.
+func tlsClientProfile(opts *config.Options) (tlsprofiles.ClientProfile, error) {
 	activeProfile, err := profile.Resolve(opts.Stealth.Impersonate)
 	if err != nil {
-		return nil, err
+		return tlsprofiles.ClientProfile{}, err
 	}
 	if opts.Stealth.HTTP3 && !activeProfile.SupportsHTTP3 {
-		return nil, fmt.Errorf("profile %q does not support http3 in the pure-Go backend", activeProfile.Name)
+		return tlsprofiles.ClientProfile{}, fmt.Errorf("profile %q does not support http3 in the pure-Go backend", activeProfile.Name)
 	}
-
 	mappedProfile, ok := tlsprofiles.MappedTLSClients[activeProfile.TLSClientProfileName()]
 	if !ok {
-		return nil, fmt.Errorf("no tls-client profile mapping for %q", activeProfile.Name)
+		return tlsprofiles.ClientProfile{}, fmt.Errorf("no tls-client profile mapping for %q", activeProfile.Name)
 	}
-
 	// The browser profile sets the TLS handshake, and ghola does not yet
 	// pass a CA pool or a client certificate to tls-client; fail loud
 	// rather than ignore the options. A pin would be per host on
 	// tls-client, and --tls-pin covers every host of the transfer.
 	if opts.Stealth.ClientCert != "" || opts.Stealth.CACert != "" || hasTLSOptions(opts.Stealth) || hasProxyTLS(opts.ProxyCfg.TLS) {
-		return nil, fmt.Errorf("the --tls-* options other than --no-tls-verify do not work with --impersonate yet: the browser profile sets the TLS handshake")
+		return tlsprofiles.ClientProfile{}, fmt.Errorf("the --tls-* options other than --no-tls-verify do not work with --impersonate yet: the browser profile sets the TLS handshake")
 	}
+	return mappedProfile, nil
+}
 
+// tlsClientProtocols are the tls-client options of --http.
+func tlsClientProtocols(opts *config.Options) ([]tlsclient.HttpClientOption, error) {
+	var options []tlsclient.HttpClientOption
+	if opts.Stealth.HTTP3 {
+		// Without racing, tls-client takes the protocol from the ALPN of
+		// the TCP handshake, which is never h3: the race opens QUIC too.
+		options = append(options, tlsclient.WithProtocolRacing())
+	} else {
+		options = append(options, tlsclient.WithDisableHttp3())
+	}
+	switch opts.Stealth.HTTPVersion {
+	case "1.1":
+		options = append(options, tlsclient.WithForceHttp1())
+	case "2-prior":
+		return nil, fmt.Errorf("--http 2-prior does not work with --impersonate: a browser does not send HTTP/2 without TLS")
+	}
+	return options, nil
+}
+
+func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transport, error) {
+	mappedProfile, err := tlsClientProfile(opts)
+	if err != nil {
+		return nil, err
+	}
 	options := []tlsclient.HttpClientOption{
 		tlsclient.WithClientProfile(mappedProfile),
 		tlsclient.WithNotFollowRedirects(),
@@ -411,19 +437,11 @@ func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transpor
 	if dialOpt != nil {
 		options = append(options, dialOpt)
 	}
-	if opts.Stealth.HTTP3 {
-		// Without racing, tls-client takes the protocol from the ALPN of
-		// the TCP handshake, which is never h3: the race opens QUIC too.
-		options = append(options, tlsclient.WithProtocolRacing())
-	} else {
-		options = append(options, tlsclient.WithDisableHttp3())
+	protocols, err := tlsClientProtocols(opts)
+	if err != nil {
+		return nil, err
 	}
-	switch opts.Stealth.HTTPVersion {
-	case "1.1":
-		options = append(options, tlsclient.WithForceHttp1())
-	case "2-prior":
-		return nil, fmt.Errorf("--http 2-prior does not work with --impersonate: a browser does not send HTTP/2 without TLS")
-	}
+	options = append(options, protocols...)
 
 	client, err := tlsclient.NewHttpClient(tlsclient.NewNoopLogger(), options...)
 	if err != nil {

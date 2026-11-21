@@ -21,25 +21,30 @@ func TestExecute_ETagCache(t *testing.T) {
 	}))
 	defer srv.Close()
 	for _, job := range []string{"stdout", "fetch", "download"} {
-		t.Run(job, func(t *testing.T) {
-			dir := t.TempDir()
-			etag := filepath.Join(dir, "etag")
-			if code := runGhola(t, etagArgs(job, etag, dir, "first", srv.URL)...); code != 0 {
-				t.Fatalf("first run: exit %d", code)
-			}
-			if b, _ := os.ReadFile(etag); string(b) != "\"v1\"\n" {
-				t.Fatalf("saved ETag %q", b)
-			}
-			if code := runGhola(t, etagArgs(job, etag, dir, "second", srv.URL)...); code != 0 {
-				t.Fatalf("second run: exit %d", code)
-			}
-			if _, err := os.Stat(filepath.Join(dir, "second")); job != "stdout" && err == nil {
-				t.Error("the 304 wrote the file")
-			}
-			if b, _ := os.ReadFile(etag); string(b) != "\"v1\"\n" {
-				t.Errorf("after the 304: saved ETag %q", b)
-			}
-		})
+		t.Run(job, func(t *testing.T) { checkETagCache(t, job, srv.URL) })
+	}
+}
+
+// checkETagCache runs the job twice on one ETag file: the first run
+// saves the ETag, and the 304 of the second run writes no file.
+func checkETagCache(t *testing.T, job, url string) {
+	t.Helper()
+	dir := t.TempDir()
+	etag := filepath.Join(dir, "etag")
+	if code := runGhola(t, etagArgs(job, etag, dir, "first", url)...); code != 0 {
+		t.Fatalf("first run: exit %d", code)
+	}
+	if b, _ := os.ReadFile(etag); string(b) != "\"v1\"\n" {
+		t.Fatalf("saved ETag %q", b)
+	}
+	if code := runGhola(t, etagArgs(job, etag, dir, "second", url)...); code != 0 {
+		t.Fatalf("second run: exit %d", code)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "second")); job != "stdout" && err == nil {
+		t.Error("the 304 wrote the file")
+	}
+	if b, _ := os.ReadFile(etag); string(b) != "\"v1\"\n" {
+		t.Errorf("after the 304: saved ETag %q", b)
 	}
 }
 

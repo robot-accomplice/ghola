@@ -8,16 +8,8 @@ package cli
 // syntax.
 func SplitNext(args []string) ([][]string, error) {
 	if len(args) > 0 && jobs[args[0]] {
-		if compatJobs[args[0]] {
-			return [][]string{args}, nil
-		}
-		for _, a := range args[1:] {
-			if a == "--" {
-				break
-			}
-			if a == "--next" {
-				return nil, usagef("--next is for fetch only, not ghola %s", args[0])
-			}
+		if !compatJobs[args[0]] && hasNext(args[1:]) {
+			return nil, usagef("--next is for fetch only, not ghola %s", args[0])
 		}
 		return [][]string{args}, nil
 	}
@@ -36,4 +28,17 @@ func SplitNext(args []string) ([][]string, error) {
 		cur = append(cur, a)
 	}
 	return append(groups, cur), nil
+}
+
+// hasNext reports a --next before "--".
+func hasNext(args []string) bool {
+	for _, a := range args {
+		if a == "--" {
+			return false
+		}
+		if a == "--next" {
+			return true
+		}
+	}
+	return false
 }

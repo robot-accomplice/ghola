@@ -74,11 +74,11 @@ func TestDigestFor(t *testing.T) {
 			t.Errorf("%d %q: %+v, want none", c.status, c.encoding, d)
 		}
 	}
-	if d := o.DigestFor(200, header, "identity"); d == nil {
+	if o.DigestFor(200, header, "identity") == nil {
 		t.Error("identity is not a coding")
 	}
 	o.Checksum = &Digest{Algo: "md5"}
-	if d := o.DigestFor(206, header, "gzip"); d != o.Checksum {
+	if o.DigestFor(206, header, "gzip") != o.Checksum {
 		t.Error("--checksum must win")
 	}
 	if ContentDigest("sha-256=:not base64!:") != nil {
@@ -115,7 +115,7 @@ func TestWriteErrors(t *testing.T) {
 	if !errors.Is(err, ErrWrite) || !strings.Contains(err.Error(), "disk full") {
 		t.Errorf("%v", err)
 	}
-	if again := WriteError(err); again != err {
+	if WriteError(err) != err {
 		t.Error("a marked error was marked again")
 	}
 }

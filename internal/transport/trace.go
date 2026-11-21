@@ -37,34 +37,46 @@ func (t *tracer) block(what string, data []byte) {
 	}
 	fmt.Fprintf(&b, "%s, %d bytes (0x%x)\n", what, len(data), len(data))
 	if t.ascii {
-		off := 0
-		for _, line := range strings.SplitAfter(string(data), "\n") {
-			if line != "" {
-				fmt.Fprintf(&b, "%04x: %s\n", off, strings.TrimRight(line, "\r\n"))
-			}
-			off += len(line)
-		}
+		dumpASCII(&b, data)
 	} else {
-		for off := 0; off < len(data); off += traceBytesPerLine {
-			chunk := data[off:min(off+traceBytesPerLine, len(data))]
-			fmt.Fprintf(&b, "%04x: ", off)
-			for i := range traceBytesPerLine {
-				if i < len(chunk) {
-					fmt.Fprintf(&b, "%02x ", chunk[i])
-				} else {
-					b.WriteString("   ")
-				}
-			}
-			for _, c := range chunk {
-				if c < 0x20 || c > 0x7e {
-					c = '.'
-				}
-				b.WriteByte(c)
-			}
-			b.WriteByte('\n')
-		}
+		dumpHex(&b, data)
 	}
 	io.WriteString(t.w, b.String()) //nolint:errcheck // a trace that cannot be written must not stop the transfer
+}
+
+// dumpASCII writes each line of data with its offset, as curl
+// --trace-ascii does.
+func dumpASCII(b *strings.Builder, data []byte) {
+	off := 0
+	for _, line := range strings.SplitAfter(string(data), "\n") {
+		if line != "" {
+			fmt.Fprintf(b, "%04x: %s\n", off, strings.TrimRight(line, "\r\n"))
+		}
+		off += len(line)
+	}
+}
+
+// dumpHex writes data as hex and text, traceBytesPerLine bytes on each
+// line, as curl --trace does.
+func dumpHex(b *strings.Builder, data []byte) {
+	for off := 0; off < len(data); off += traceBytesPerLine {
+		chunk := data[off:min(off+traceBytesPerLine, len(data))]
+		fmt.Fprintf(b, "%04x: ", off)
+		for i := range traceBytesPerLine {
+			if i < len(chunk) {
+				fmt.Fprintf(b, "%02x ", chunk[i])
+			} else {
+				b.WriteString("   ")
+			}
+		}
+		for _, c := range chunk {
+			if c < 0x20 || c > 0x7e {
+				c = '.'
+			}
+			b.WriteByte(c)
+		}
+		b.WriteByte('\n')
+	}
 }
 
 // request traces the request head as it goes on the wire: the request

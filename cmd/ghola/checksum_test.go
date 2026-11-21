@@ -36,31 +36,27 @@ func TestExecute_Checksum(t *testing.T) {
 	defer srv.Close()
 	dir := t.TempDir()
 	for i, tc := range []struct {
-		name string
-		args []string
-		want int
+		name     string
+		download bool
+		path     string
+		args     []string
+		want     int
 	}{
-		{"download, right", []string{"download", "--checksum", "sha-256=" + good}, 0},
-		{"download, wrong", []string{"download", "--checksum", "sha-256=" + bad}, 32},
-		{"stdout, wrong", []string{"--checksum", "sha-256=" + bad}, 32},
-		{"Content-Digest right", []string{"download", "--path", "/good-digest"}, 0},
-		{"Content-Digest wrong", []string{"download", "--path", "/bad-digest"}, 32},
-		{"Content-Digest wrong, stdout", []string{"--path", "/bad-digest"}, 32},
-		{"Content-Digest of an encoded body", []string{"--no-compressed", "--path", "/encoded"}, 0},
+		{"download, right", true, "/f", []string{"--checksum", "sha-256=" + good}, 0},
+		{"download, wrong", true, "/f", []string{"--checksum", "sha-256=" + bad}, 32},
+		{"stdout, wrong", false, "/f", []string{"--checksum", "sha-256=" + bad}, 32},
+		{"Content-Digest right", true, "/good-digest", nil, 0},
+		{"Content-Digest wrong", true, "/bad-digest", nil, 32},
+		{"Content-Digest wrong, stdout", false, "/bad-digest", nil, 32},
+		{"Content-Digest of an encoded body", false, "/encoded", []string{"--no-compressed"}, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			url, args := srv.URL+"/f", []string{"-q"}
-			for j := 0; j < len(tc.args); j++ {
-				if tc.args[j] == "--path" {
-					url, j = srv.URL+tc.args[j+1], j+1
-					continue
-				}
-				args = append(args, tc.args[j])
+			args := []string{"-q"}
+			if tc.download {
+				args = []string{"download", "-q", "-o", filepath.Join(dir, fmt.Sprint(i))}
 			}
-			if len(args) > 1 && args[1] == "download" {
-				args = append([]string{"download", "-q", "-o", filepath.Join(dir, fmt.Sprint(i))}, args[2:]...)
-			}
-			if code := runGhola(t, append(args, url)...); code != tc.want {
+			args = append(append(args, tc.args...), srv.URL+tc.path)
+			if code := runGhola(t, args...); code != tc.want {
 				t.Errorf("exit %d, want %d", code, tc.want)
 			}
 		})

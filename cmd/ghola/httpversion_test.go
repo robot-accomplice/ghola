@@ -64,7 +64,7 @@ func TestExecute_HTTPVersion(t *testing.T) {
 	}
 	// 3-only fails when the answer does not come over HTTP/3, so a user
 	// who asks for HTTP/3 never gets HTTP/2 without a sign.
-	if code := runGhola(t, "-q", "-k", "--impersonate", "chrome", "--http", "3-only", "--timeout", "5s", "-r", "0", tlsTS.URL); code == 0 {
+	if runGhola(t, "-q", "-k", "--impersonate", "chrome", "--http", "3-only", "--timeout", "5s", "-r", "0", tlsTS.URL) == 0 {
 		t.Error("--http 3-only against a server without HTTP/3: exit 0")
 	}
 	// QUIC dials past ghola's dial function, so --resolve would be

@@ -124,21 +124,30 @@ func inputHTML(r io.Reader) ([]inputEntry, error) {
 			}
 			return nil, fmt.Errorf("--input: %w", z.Err())
 		case html.StartTagToken, html.SelfClosingTagToken:
-			name, _ := z.TagName()
-			want := map[string]string{"a": "href", "img": "src"}[string(name)]
-			for want != "" {
-				k, v, more := z.TagAttr()
-				if string(k) == want {
-					if u, err := url.Parse(string(v)); err == nil && u.IsAbs() {
-						entries = append(entries, inputEntry{url: u.String()})
-					}
-				}
-				if !more {
-					break
-				}
+			if u := tagLink(z); u != "" {
+				entries = append(entries, inputEntry{url: u})
 			}
 		}
 	}
+}
+
+// tagLink is the absolute href of an <a> or src of an <img> at the
+// tokenizer's tag, or "".
+func tagLink(z *html.Tokenizer) string {
+	name, hasAttr := z.TagName()
+	want := map[string]string{"a": "href", "img": "src"}[string(name)]
+	for link := ""; want != "" && hasAttr; {
+		var k, v []byte
+		k, v, hasAttr = z.TagAttr()
+		if string(k) != want {
+			continue
+		}
+		if u, err := url.Parse(string(v)); err == nil && u.IsAbs() {
+			link = u.String()
+		}
+		return link
+	}
+	return ""
 }
 
 // inputSitemap takes each <loc> of a sitemap (sitemaps.org).

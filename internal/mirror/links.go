@@ -36,63 +36,74 @@ var cssURL = regexp.MustCompile(`url\(\s*['"]?([^'")\s]+)['"]?\s*\)|@import\s+['
 // followed, but its requisites are, as in wget.
 func pageLinks(base *url.URL, body []byte) (links []link, nofollow bool) {
 	z := html.NewTokenizer(bytes.NewReader(body))
-	add := func(raw string, requisite bool) {
-		if u, err := base.Parse(strings.TrimSpace(raw)); err == nil && raw != "" && !strings.HasPrefix(raw, "#") {
-			u.Fragment = ""
-			links = append(links, link{url: u, requisite: requisite})
-		}
-	}
-	addNofollow := func(raw string) {
-		before := len(links)
-		add(raw, false)
-		if len(links) > before {
-			links[before].nofollow = true
-		}
-	}
+	s := &pageScan{base: base}
 	for {
 		tt := z.Next()
 		if tt == html.ErrorToken {
-			return links, nofollow
+			return s.links, s.nofollow
 		}
-		if tt != html.StartTagToken && tt != html.SelfClosingTagToken {
-			continue
+		if tt == html.StartTagToken || tt == html.SelfClosingTagToken {
+			name, _ := z.TagName()
+			s.tag(string(name), tagAttrs(z))
 		}
-		name, _ := z.TagName()
-		attrs := map[string]string{}
-		for more := true; more; {
-			var k, v []byte
-			k, v, more = z.TagAttr()
-			attrs[string(k)] = string(v)
+	}
+}
+
+// tagAttrs reads the attributes of the tokenizer's tag.
+func tagAttrs(z *html.Tokenizer) map[string]string {
+	attrs := map[string]string{}
+	for more := true; more; {
+		var k, v []byte
+		k, v, more = z.TagAttr()
+		attrs[string(k)] = string(v)
+	}
+	return attrs
+}
+
+// pageScan collects the links of one page.
+type pageScan struct {
+	base     *url.URL
+	links    []link
+	nofollow bool
+}
+
+func (s *pageScan) add(raw string, requisite, nofollow bool) {
+	if u, err := s.base.Parse(strings.TrimSpace(raw)); err == nil && raw != "" && !strings.HasPrefix(raw, "#") {
+		u.Fragment = ""
+		s.links = append(s.links, link{url: u, requisite: requisite, nofollow: nofollow})
+	}
+}
+
+// tag takes the links of one tag: <base> and the robots <meta> change
+// the page, the link attributes, srcset and style add links.
+func (s *pageScan) tag(tag string, attrs map[string]string) {
+	switch tag {
+	case "base":
+		if u, err := s.base.Parse(attrs["href"]); err == nil && attrs["href"] != "" {
+			s.base = u
 		}
-		tag := string(name)
-		switch tag {
-		case "base":
-			if u, err := base.Parse(attrs["href"]); err == nil && attrs["href"] != "" {
-				base = u
-			}
-		case "meta":
-			if strings.EqualFold(attrs["name"], "robots") && strings.Contains(strings.ToLower(attrs["content"]), "nofollow") {
-				nofollow = true
-			}
-		case "link":
-			rel := strings.ToLower(attrs["rel"])
-			add(attrs["href"], strings.Contains(rel, "stylesheet") || strings.Contains(rel, "icon"))
+	case "meta":
+		if strings.EqualFold(attrs["name"], "robots") && strings.Contains(strings.ToLower(attrs["content"]), "nofollow") {
+			s.nofollow = true
 		}
-		if la, ok := linkAttrs[tag]; ok {
-			if tag == "a" && strings.Contains(strings.ToLower(attrs["rel"]), "nofollow") {
-				addNofollow(attrs[la.attr])
-				continue
-			}
-			add(attrs[la.attr], la.requisite)
+	case "link":
+		rel := strings.ToLower(attrs["rel"])
+		s.add(attrs["href"], strings.Contains(rel, "stylesheet") || strings.Contains(rel, "icon"), false)
+	}
+	if la, ok := linkAttrs[tag]; ok {
+		if tag == "a" && strings.Contains(strings.ToLower(attrs["rel"]), "nofollow") {
+			s.add(attrs[la.attr], false, true)
+			return
 		}
-		for _, src := range strings.Split(attrs["srcset"], ",") {
-			if f := strings.Fields(src); len(f) > 0 {
-				add(f[0], true)
-			}
+		s.add(attrs[la.attr], la.requisite, false)
+	}
+	for _, src := range strings.Split(attrs["srcset"], ",") {
+		if f := strings.Fields(src); len(f) > 0 {
+			s.add(f[0], true, false)
 		}
-		if style := attrs["style"]; style != "" {
-			links = append(links, cssLinks(base, []byte(style))...)
-		}
+	}
+	if style := attrs["style"]; style != "" {
+		s.links = append(s.links, cssLinks(s.base, []byte(style))...)
 	}
 }
 
@@ -122,6 +133,18 @@ type robotsRules struct {
 	allow, disallow []string
 }
 
+// addRobotsRule adds an Allow or a Disallow line to the groups of the
+// current agents. An empty Disallow allows all, so it adds nothing.
+func addRobotsRule(groups map[string]*robotsRules, agents []string, allow bool, path string) {
+	for _, a := range agents {
+		if allow {
+			groups[a].allow = append(groups[a].allow, path)
+		} else if path != "" {
+			groups[a].disallow = append(groups[a].disallow, path)
+		}
+	}
+}
+
 // parseRobots reads robots.txt (RFC 9309) for the agent "ghola".
 func parseRobots(r io.Reader) robotsRules {
 	b, _ := io.ReadAll(io.LimitReader(r, 500<<10)) // RFC 9309 asks to read at least 500 KiB
@@ -147,13 +170,7 @@ func parseRobots(r io.Reader) robotsRules {
 			}
 		case "allow", "disallow":
 			inRules = true
-			for _, a := range current {
-				if k == "allow" {
-					groups[a].allow = append(groups[a].allow, v)
-				} else if v != "" {
-					groups[a].disallow = append(groups[a].disallow, v)
-				}
-			}
+			addRobotsRule(groups, current, k == "allow", v)
 		}
 	}
 	if g := groups["ghola"]; g != nil {

@@ -42,7 +42,7 @@ func TestExecute_JobsCommand(t *testing.T) {
 	dir := t.TempDir()
 	file := filepath.Join(dir, "f")
 	broken.Store(true)
-	if code := runGhola(t, "download", "-q", "-r", "0", "-H", "X-Job: kept", "-o", file, srv.URL+"/f"); code == 0 {
+	if runGhola(t, "download", "-q", "-r", "0", "-H", "X-Job: kept", "-o", file, srv.URL+"/f") == 0 {
 		t.Fatal("the broken download exited 0")
 	}
 	code, list := gholaStdout(t, "jobs", "list")

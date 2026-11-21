@@ -312,41 +312,51 @@ func locked(w io.Writer) io.Writer {
 	return &lockedWriter{w: w}
 }
 
-// transferAll reads the request body sources and fetches each URL.
-func transferAll(ctx context.Context, opts *config.Options, do client.Doer, stream client.Streamer, w *os.File) int {
+// readBodySources reads the request body from its source: --upload, -d -
+// (stdin), -d @file, --form, --data-binary @file or --field. A source that
+// cannot be read exits 26.
+func readBodySources(opts *config.Options) error {
 	if opts.Transfer != "" {
 		b, err := os.ReadFile(opts.Transfer)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "read upload file: %v\n", err)
-			return config.ReadFileFailed.Int()
+			return fmt.Errorf("read upload file: %w", err)
 		}
 		opts.Data = string(b)
 	}
+	if err := readDataArg(opts); err != nil {
+		return err
+	}
+	return readFormOrBinary(opts)
+}
 
+// readDataArg reads -d: - is stdin, @file is the file, and
+// --data-literal takes the value as it is.
+func readDataArg(opts *config.Options) error {
 	// Stdin/file substitution: -d - reads stdin, -d @file reads from file.
 	if opts.DataLiteral {
 		// --data-literal: the value is the body, also when it starts with @.
 	} else if opts.Data == "-" || opts.Data == "@-" {
 		b, err := io.ReadAll(os.Stdin)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "read stdin: %v\n", err)
-			return config.ReadFileFailed.Int()
+			return fmt.Errorf("read stdin: %w", err)
 		}
 		opts.Data = string(b)
 	} else if len(opts.Data) > 1 && opts.Data[0] == '@' {
 		b, err := os.ReadFile(opts.Data[1:])
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "read data file: %v\n", err)
-			return config.ReadFileFailed.Int()
+			return fmt.Errorf("read data file: %w", err)
 		}
 		opts.Data = string(b)
 	}
+	return nil
+}
 
+// readFormOrBinary builds the body of --form, --data-binary or --field.
+func readFormOrBinary(opts *config.Options) error {
 	if len(opts.Form) > 0 {
 		ct, body, err := config.BuildFormBody(opts.Form)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "form: %v\n", err)
-			return config.ReadFileFailed.Int()
+			return fmt.Errorf("form: %w", err)
 		}
 		// Strip any existing Content-Type header (default is application/json)
 		// so the multipart boundary header is the only one.
@@ -360,14 +370,22 @@ func transferAll(ctx context.Context, opts *config.Options, do client.Doer, stre
 		if strings.HasPrefix(data, "@") {
 			b, err := os.ReadFile(data[1:])
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "read --data-binary file: %v\n", err)
-				return config.ReadFileFailed.Int()
+				return fmt.Errorf("read --data-binary file: %w", err)
 			}
 			data = string(b)
 		}
 		opts.Data = data
 	} else if len(opts.DataURLEncode) > 0 {
 		opts.Data = config.URLEncodeData(opts.DataURLEncode)
+	}
+	return nil
+}
+
+// transferAll reads the request body sources and fetches each URL.
+func transferAll(ctx context.Context, opts *config.Options, do client.Doer, stream client.Streamer, w *os.File) int {
+	if err := readBodySources(opts); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return config.ReadFileFailed.Int()
 	}
 
 	// Several URLs go one after the other, as in curl (audit finding M9).

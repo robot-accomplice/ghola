@@ -28,8 +28,10 @@ func gholaStdout(t *testing.T, args ...string) (int, string) {
 // --output-template writes curl's -w variables after each transfer, also
 // after a failure: a script reads the status, the final URL and the size
 // without parsing stderr.
-func TestExecute_OutputTemplate(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// redirectServer redirects /r to /f, which answers "hello"; any other
+// path is a 404.
+func redirectServer() *httptest.Server {
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/r":
 			http.Redirect(w, r, "/f", http.StatusFound)
@@ -40,6 +42,10 @@ func TestExecute_OutputTemplate(t *testing.T) {
 			http.NotFound(w, r)
 		}
 	}))
+}
+
+func TestExecute_OutputTemplate(t *testing.T) {
+	srv := redirectServer()
 	defer srv.Close()
 	const tmpl = `%{http_code} %{num_redirects} %{size_download} %{content_type} %{url_effective} %{exitcode}\n`
 	want := "200 1 5 text/plain " + srv.URL + "/f 0\n"
@@ -49,18 +55,12 @@ func TestExecute_OutputTemplate(t *testing.T) {
 		args []string
 		want string
 	}{
-		{"fetch -o", []string{"-q", "-w", tmpl, "-o", filepath.Join(dir, "a"), srv.URL + "/r"}, want},
-		{"download", []string{"download", "-q", "-w", tmpl, "-o", filepath.Join(dir, "b"), srv.URL + "/r"}, want},
-		{"stdout", []string{"-q", "-w", tmpl, srv.URL + "/r"}, "hello" + want},
+		{"fetch -o", []string{"-q", "--output-template", tmpl, "-o", filepath.Join(dir, "a"), srv.URL + "/r"}, want},
+		{"download", []string{"download", "-q", "--output-template", tmpl, "-o", filepath.Join(dir, "b"), srv.URL + "/r"}, want},
+		{"stdout", []string{"-q", "--output-template", tmpl, srv.URL + "/r"}, "hello" + want},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			args := append([]string{}, tc.args...)
-			for i, a := range args {
-				if a == "-w" {
-					args[i] = "--output-template"
-				}
-			}
-			code, got := gholaStdout(t, args...)
+			code, got := gholaStdout(t, tc.args...)
 			if code != 0 || got != tc.want {
 				t.Errorf("exit %d, stdout %q, want %q", code, got, tc.want)
 			}

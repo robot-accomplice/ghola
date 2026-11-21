@@ -324,7 +324,7 @@ func downloadSegmented(ctx context.Context, opts *config.Options, stream Streame
 		go func(home int) {
 			defer wg.Done()
 			for r := range queue {
-				if err := fetchFromMirrors(ctx, opts, stream, mirrors, home, f, r, limiter, progress); err != nil {
+				if err := fetchFromMirrors(ctx, opts, stream, mirrors, home, r, segmentOut{f, limiter, progress}); err != nil {
 					cancel()
 					errs <- err
 					return
@@ -357,21 +357,29 @@ func downloadSegmented(ctx context.Context, opts *config.Options, stream Streame
 // workers, so a fast mirror can take more of them.
 const piecesPerWorker = 4
 
+// segmentOut is where the pieces of a segmented download go: the file,
+// and the rate limiter and the meter that the pieces share (nil when off).
+type segmentOut struct {
+	f        *os.File
+	limiter  *rateLimiter
+	progress *progressWriter
+}
+
 // fetchFromMirrors fetches one piece from the worker's own mirror, and
 // once from the next mirror when that fails.
-func fetchFromMirrors(ctx context.Context, opts *config.Options, stream Streamer, mirrors []string, home int, f *os.File, r byteRange, limiter *rateLimiter, progress *progressWriter) error {
-	err := fetchSegment(ctx, opts, stream, mirrors[home], f, r, limiter, progress)
+func fetchFromMirrors(ctx context.Context, opts *config.Options, stream Streamer, mirrors []string, home int, r byteRange, out segmentOut) error {
+	err := fetchSegment(ctx, opts, stream, mirrors[home], r, out)
 	if err == nil || len(mirrors) == 1 || ctx.Err() != nil {
 		return err
 	}
-	if err2 := fetchSegment(ctx, opts, stream, mirrors[(home+1)%len(mirrors)], f, r, limiter, progress); err2 != nil {
+	if err2 := fetchSegment(ctx, opts, stream, mirrors[(home+1)%len(mirrors)], r, out); err2 != nil {
 		return errors.Join(err, err2)
 	}
 	return nil
 }
 
 // fetchSegment fetches one byte range and writes it at its offset in f.
-func fetchSegment(ctx context.Context, opts *config.Options, stream Streamer, url string, f *os.File, r byteRange, limiter *rateLimiter, progress *progressWriter) error {
+func fetchSegment(ctx context.Context, opts *config.Options, stream Streamer, url string, r byteRange, out segmentOut) error {
 	req := fasthttp.AcquireRequest()
 	defer fasthttp.ReleaseRequest(req)
 	buildDownloadRequest(req, opts, url, fasthttp.MethodGet, "")
@@ -381,14 +389,14 @@ func fetchSegment(ctx context.Context, opts *config.Options, stream Streamer, ur
 	// Each segment uses its own offset writer; limiter and progress are shared
 	// across goroutines (both are mutex-guarded). The segment progress tap
 	// forwards bytes to its local sink while counting into the shared progress.
-	w := config.MarkWrites(io.NewOffsetWriter(f, r.start))
-	if limiter != nil {
-		w = newRateLimitedWriter(w, limiter)
+	w := config.MarkWrites(io.NewOffsetWriter(out.f, r.start))
+	if out.limiter != nil {
+		w = newRateLimitedWriter(w, out.limiter)
 	}
-	if progress != nil {
+	if out.progress != nil {
 		// Wrap with a per-segment tap that forwards to this segment's sink and
 		// also counts into the aggregate progress (mutex-guarded in Write).
-		w = newProgressTap(w, progress)
+		w = newProgressTap(w, out.progress)
 	}
 	// Outermost: no byte reaches the file unless the server sent exactly r.
 	_, err := stream(ctx, opts, req, newCheckedSink(w, expectRange(r.start, r.end)))

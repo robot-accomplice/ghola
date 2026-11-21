@@ -141,7 +141,7 @@ func TestExecute_ImpersonateInEveryMode(t *testing.T) {
 	if browser < 3 || plain != 0 {
 		t.Errorf("Client Hellos: %d with GREASE, %d without; every mode must send the browser's", browser, plain)
 	}
-	if code := runGhola(t, "-q", "-k", ts.URL+"/"); code != 0 {
+	if runGhola(t, "-q", "-k", ts.URL+"/") != 0 {
 		t.Fatal("plain fetch failed")
 	}
 	mu.Lock()
