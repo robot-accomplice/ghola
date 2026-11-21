@@ -84,9 +84,19 @@ func TestApply_Units(t *testing.T) {
 // An option of a phase that is not built is refused with its phase, so no
 // option is accepted and then ignored.
 func TestApply_UnbuiltOptionIsRefused(t *testing.T) {
-	for _, args := range [][]string{{"--alt-svc", "cache.txt", "u"}, {"--http", "2", "u"}} {
+	for _, args := range [][]string{{"--http", "2", "u"}} {
 		if _, err := Apply(apply(t, args...)); err == nil || !strings.Contains(err.Error(), "not built yet") {
 			t.Errorf("%q: err = %v", args, err)
+		}
+	}
+}
+
+// v1.0.0 builds every option of the spec: an option that --help lists
+// must work, so no option is listed and then refused.
+func TestApply_EveryOptionIsBuilt(t *testing.T) {
+	for i := range table {
+		if _, ok := setters[table[i].Name]; !ok && !callerOptions[table[i].Name] {
+			t.Errorf("--%s (phase %s) has no setter", table[i].Name, table[i].Phase)
 		}
 	}
 }

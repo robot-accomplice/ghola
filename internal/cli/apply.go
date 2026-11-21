@@ -64,7 +64,8 @@ var setters = map[string]setter{
 		o.Output.Template = t
 		return err
 	},
-	"hsts": func(o *config.Options, v string, _ *Command) error { o.HSTS = v; return nil },
+	"hsts":    func(o *config.Options, v string, _ *Command) error { o.HSTS = v; return nil },
+	"alt-svc": func(o *config.Options, v string, _ *Command) error { o.AltSvc = v; return nil },
 	"output-events": func(o *config.Options, v string, _ *Command) error {
 		if v == "json" {
 			o.Output.Events = config.NewEventLog(os.Stderr)

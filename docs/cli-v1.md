@@ -153,7 +153,7 @@ The phase column says where each option is built. 0B is the parser build (step 7
 | `--follow-trusted` | bool | false | --location-trusted |  |  | 0B | Send -u and the Authorization and Cookie headers to other hosts after a redirect too. |
 | `--fail` | bool | true | --fail-with-body | (default) | (default) | 0B | Exit 22 on status 400 and above. stdout keeps the body. -o writes no file. |
 | `--hsts` | path |  | --hsts | --hsts-file |  | 2 | Read and write the HSTS cache at PATH. |
-| `--alt-svc` | path |  | --alt-svc |  |  | 2 | Read and write the Alt-Svc cache at PATH. |
+| `--alt-svc` | path |  | --alt-svc |  |  | 2 | Read and write the Alt-Svc cache at PATH, in curl's format. An h3 entry turns on HTTP/3 for that origin only with --impersonate and a profile that has HTTP/3. |
 | `--cond-time` | [-]date \| file |  | -z | -N | --conditional-get | 2 | Send If-Modified-Since (or If-Unmodified-Since with -) for the date or the file time. |
 | `--cond-etag-save` | path |  | --etag-save |  |  | 2 | Write the ETag of the response to PATH. |
 | `--cond-etag-compare` | path |  | --etag-compare |  |  | 2 | Send If-None-Match with the ETag in PATH. |

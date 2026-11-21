@@ -192,6 +192,14 @@ func New(opts *config.Options, selectedProxy string) (Transport, error) {
 			return nil, err
 		}
 	}
+	if opts.AltSvc != "" {
+		if t.altsvc, err = loadAltSvc(opts.AltSvc); err != nil {
+			return nil, err
+		}
+		if t.h3, err = newH3Network(opts, selectedProxy); err != nil {
+			return nil, err
+		}
+	}
 	if out := opts.Output.WARCOut; out != nil {
 		t.warc = &warcWriter{w: out, version: config.Version}
 	}
@@ -205,6 +213,24 @@ func New(opts *config.Options, selectedProxy string) (Transport, error) {
 		}
 	}
 	return t, nil
+}
+
+// newH3Network builds the HTTP/3 stack that --alt-svc sends an origin to
+// when the cache holds an h3 entry for it: the --impersonate stack with
+// HTTP/3, for a profile that has it. It is nil when there is no such
+// stack: the default stack has no HTTP/3, HTTP/3 does not go through a
+// proxy, and with --http3 every request uses HTTP/3 already.
+func newH3Network(opts *config.Options, selectedProxy string) (Transport, error) {
+	name := strings.TrimSpace(opts.Stealth.Impersonate)
+	if name == "" || selectedProxy != "" || opts.Stealth.HTTP3 {
+		return nil, nil
+	}
+	if p, err := profile.Resolve(name); err != nil || !p.SupportsHTTP3 {
+		return nil, nil //nolint:nilerr // newNetwork reports a bad profile
+	}
+	h3 := *opts
+	h3.Stealth.HTTP3 = true
+	return newTLSClientTransport(&h3, "")
 }
 
 // newNetwork builds the network transport: tls-client with --impersonate,

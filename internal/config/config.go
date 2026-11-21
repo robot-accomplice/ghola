@@ -294,6 +294,8 @@ type Options struct {
 	PathAsIs bool
 	// HSTS is the --hsts cache file.
 	HSTS string
+	// AltSvc is the --alt-svc cache file.
+	AltSvc string
 	// RequestTarget replaces the path and query in the request line
 	// (--request-target), such as * for OPTIONS.
 	RequestTarget string

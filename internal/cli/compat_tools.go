@@ -32,6 +32,7 @@ const curlTable = `
 -w --write-out                  => --output-template %s
 -z --time-cond                  => --cond-time %s
 --hsts                         => --hsts %s
+--alt-svc                      => --alt-svc %s
 --etag-save                    => --cond-etag-save %s
 --etag-compare                 => --cond-etag-compare %s
 --path-as-is                   => --url-path-as-is
