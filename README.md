@@ -185,6 +185,7 @@ ghola uses curl's exit codes for the same causes, so a script written for curl r
 | 0 | Success |
 | 1 | A redirect went to a protocol that ghola does not follow (for example `file://`) |
 | 2 | Invalid or missing argument |
+| 3 | A URL glob (`{a,b}` or `[1-9]`) is not valid (`--no-url-glob` turns globs off) |
 | 6 | The host name did not resolve |
 | 7 | The connection failed (for example, refused) |
 | 22 | The server answered with status 400 or above (`--no-fail` turns it off) |
