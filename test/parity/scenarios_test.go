@@ -2,6 +2,8 @@
 
 package parity
 
+import "time"
+
 // Each scenario runs the same job on each tool that can do it, and checks the
 // result against one rule for all tools. The rule states the correct result,
 // not the behaviour of one tool, so a reference tool can fail it too. The
@@ -28,9 +30,6 @@ func seeded(size string, mk func(e *Env) Spec) func(e *Env) Spec {
 		return s
 	}
 }
-
-// e2 names the first command of a killed run.
-func e2(f func(e *Env) []string) func(e *Env) []string { return f }
 
 // killed runs first, kills it after one second, and runs rerun.
 func killed(first, rerun func(e *Env) []string) func(e *Env) Spec {
@@ -181,10 +180,10 @@ var scenarios = []scenario{
 	{
 		ID: "kill_resume", Finding: "ux", What: "a download stopped in the middle finishes on the next run",
 		Runs: map[string]func(e *Env) Spec{
-			"ghola": killed(e2(func(e *Env) []string { return []string{"download", "-o", "f", e.URL("/slow/1m")} }), func(e *Env) []string { return []string{"download", "-c", "-o", "f", e.URL("/slow/1m")} }),
-			"curl":  killed(e2(func(e *Env) []string { return []string{"-sS", "-o", "f", e.URL("/slow/1m")} }), func(e *Env) []string { return []string{"-sS", "-C", "-", "-o", "f", e.URL("/slow/1m")} }),
-			"wget":  killed(e2(func(e *Env) []string { return []string{"-q", "-O", "f", e.URL("/slow/1m")} }), func(e *Env) []string { return []string{"-q", "-c", "-O", "f", e.URL("/slow/1m")} }),
-			"aria2": killed(e2(func(e *Env) []string { return []string{"-o", "f", e.URL("/slow/1m")} }), func(e *Env) []string { return []string{"-c", "-o", "f", e.URL("/slow/1m")} }),
+			"ghola": killed(func(e *Env) []string { return []string{"download", "-o", "f", e.URL("/slow/1m")} }, func(e *Env) []string { return []string{"download", "-c", "-o", "f", e.URL("/slow/1m")} }),
+			"curl":  killed(func(e *Env) []string { return []string{"-sS", "-o", "f", e.URL("/slow/1m")} }, func(e *Env) []string { return []string{"-sS", "-C", "-", "-o", "f", e.URL("/slow/1m")} }),
+			"wget":  killed(func(e *Env) []string { return []string{"-q", "-O", "f", e.URL("/slow/1m")} }, func(e *Env) []string { return []string{"-q", "-c", "-O", "f", e.URL("/slow/1m")} }),
+			"aria2": killed(func(e *Env) []string { return []string{"-o", "f", e.URL("/slow/1m")} }, func(e *Env) []string { return []string{"-c", "-o", "f", e.URL("/slow/1m")} }),
 		},
 		Check: all(exitZero, fileIs("f", ref("1m"))),
 	},
