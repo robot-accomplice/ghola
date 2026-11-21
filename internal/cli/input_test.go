@@ -244,3 +244,19 @@ func TestApply_ETagCompare(t *testing.T) {
 		t.Error("a folder as the ETag file was accepted")
 	}
 }
+
+// One -o - serves several URLs: stdout takes the bodies in order, as curl
+// and wget -O - write them. ghola wget maps --retry-on-http-error.
+func TestApply_StdoutServesEveryURL(t *testing.T) {
+	o, err := Apply(apply(t, "-o", "-", "http://h/a", "http://h/b"))
+	if err != nil || !o.Output.Stdout {
+		t.Errorf("-o - with two URLs: %v", err)
+	}
+	if _, err := Apply(apply(t, "-o", "f", "http://h/a", "http://h/b")); err == nil {
+		t.Error("one -o FILE for two URLs must still be refused: the second would replace the first")
+	}
+	cp, err := FromWget([]string{"--retry-on-http-error=503,504", "http://h/"})
+	if err != nil || !strings.Contains(strings.Join(cp.Args, " "), "--retry-status 503,504") {
+		t.Errorf("%v %v", cp, err)
+	}
+}

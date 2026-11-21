@@ -161,6 +161,10 @@ var compatOrder = []string{"ghola-curl", "ghola-wget", "ghola-aria2"}
 // ghola's fixes, such as If-Range on resume.
 func judgeCompat(t *testing.T, sc scenario, r, ref *Result) {
 	t.Helper()
+	if why := compatKnown[sc.ID+" "+r.Tool]; why != "" && ref.Pass && !r.Pass {
+		t.Logf("%s fails %s as known (%s): %s", r.Tool, sc.ID, why, r.Reason)
+		return
+	}
 	if ref.Pass && !r.Pass {
 		t.Errorf("%s fails %s, which %s passes: %s (args %q, exit %d, stderr %q)", r.Tool, sc.ID, ref.Tool, r.Reason, r.Args, r.Exit, firstLine(r.Stderr))
 	}

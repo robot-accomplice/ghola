@@ -146,6 +146,7 @@ const wgetTable = `
 --certificate-type             => --tls-cert-type %s
 --limit-rate                   => --rate-max %s
 --max-redirect                 => --follow-max %s
+--retry-on-http-error          => --retry-status %s
 --load-cookies --save-cookies  => --cookie-jar %s
 -4 --inet4-only                => --ip 4
 -6 --inet6-only                => --ip 6

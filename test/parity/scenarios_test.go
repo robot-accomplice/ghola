@@ -102,7 +102,7 @@ func resumeFrom(path string) map[string]func(e *Env) Spec {
 func resumeChanged(path string) map[string]func(e *Env) Spec {
 	runs := resumeFrom(path)
 	runs["ghola"] = func(e *Env) Spec {
-		s := args("-C", "-", "-o", "f", e.URL(path))
+		s := args("-c", "-o", "f", e.URL(path)) // ghola's own -c; -C - is curl's
 		s.Seed = changingVersion(e.s, parseSize("1m"), 0)[:seedLen]
 		s.SeedFiles = map[string][]byte{"f.ghola": []byte(`{"url":"` + e.URL(path) + `","etag":"\"v0\""}`)}
 		return s

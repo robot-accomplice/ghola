@@ -392,7 +392,9 @@ func pairOutputs(o *config.Options, outputs []string) error {
 	if len(o.URLs) < 2 || len(outputs) == 0 {
 		return nil
 	}
-	if len(outputs) == 1 && o.Output.Dir != "" {
+	// One -o DIR/ serves all URLs, and so does one -o -: stdout takes the
+	// bodies in order, as curl and wget -O - write them.
+	if len(outputs) == 1 && (o.Output.Dir != "" || o.Output.Stdout) {
 		return nil
 	}
 	if len(outputs) != len(o.URLs) {
