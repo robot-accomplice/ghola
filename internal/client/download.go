@@ -40,6 +40,8 @@ func meterFor(opts *config.Options) io.Writer {
 	switch {
 	case opts.Output.Progress == "off" || opts.Output.Silent:
 		return nil
+	case opts.Output.MeterOut != nil:
+		return opts.Output.MeterOut // a line of the --jobs board
 	case opts.Output.Progress == "on":
 		return os.Stderr
 	default:

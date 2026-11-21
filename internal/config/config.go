@@ -129,6 +129,9 @@ type OutputOptions struct {
 	// once for the command.
 	WARC    string
 	WARCOut io.Writer
+	// MeterOut is where the meter of one job of --jobs goes: its line of
+	// the board. nil is the default meter.
+	MeterOut io.Writer
 	// Background is --background; Log is --log, where the messages go.
 	Background bool
 	Log        string

@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -23,6 +24,7 @@ import (
 	"github.com/robot-accomplice/ghola/internal/profile"
 	gholatransport "github.com/robot-accomplice/ghola/internal/transport"
 	"github.com/valyala/fasthttp"
+	"golang.org/x/term"
 )
 
 func main() {
@@ -404,6 +406,28 @@ func transferAll(ctx context.Context, opts *config.Options, do client.Doer, stre
 	return last
 }
 
+// jobsBoard returns the board that shows one line for each job, when
+// stderr is a terminal (or --progress forces it) and the jobs fit on it;
+// else nil, and the meters of the jobs stay off.
+func jobsBoard(runs []config.Options) *client.Board {
+	o := runs[0].Output
+	if o.Progress == "off" || o.Silent || len(runs) > client.MaxBoardLines {
+		return nil
+	}
+	if o.Progress != "on" && !term.IsTerminal(int(os.Stderr.Fd())) {
+		return nil
+	}
+	return client.NewBoard(os.Stderr, len(runs))
+}
+
+// jobName is the short name of a job on the board: its file, else its URL.
+func jobName(o config.Options) string {
+	if o.Output.File != "" {
+		return filepath.Base(o.Output.File)
+	}
+	return o.URL
+}
+
 // templateMu keeps the --output-template lines of parallel jobs apart.
 var templateMu sync.Mutex
 
@@ -415,11 +439,15 @@ func runAll(ctx context.Context, runs []config.Options, do client.Doer, stream c
 	codes := make([]int, len(runs))
 	jobs := max(1, min(runs[0].Jobs, len(runs)))
 	if jobs > 1 {
+		board := jobsBoard(runs)
 		for i := range runs {
 			if runs[i].Output.File == "" && !runs[i].Output.RemoteName {
 				return nil, fmt.Errorf("--jobs %d writes several bodies at once, so it needs a file for each URL: use -o DIR/, one -o for each URL, or ghola download", runs[0].Jobs)
 			}
-			if runs[i].Output.Progress == "" {
+			switch {
+			case board != nil:
+				runs[i].Output.MeterOut = board.Line(i, jobName(runs[i]))
+			case runs[i].Output.Progress == "":
 				runs[i].Output.Progress = "off"
 			}
 		}
