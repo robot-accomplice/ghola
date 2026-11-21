@@ -2,6 +2,8 @@
 
 package parity
 
+import "time"
+
 // Each scenario runs the same job on each tool that can do it, and checks the
 // result against one rule for all tools. The rule states the correct result,
 // not the behaviour of one tool, so a reference tool can fail it too. The
@@ -26,6 +28,13 @@ func seeded(size string, mk func(e *Env) Spec) func(e *Env) Spec {
 		s := mk(e)
 		s.Seed = e.Ref(size)[:seedLen]
 		return s
+	}
+}
+
+// killed runs first, kills it after one second, and runs rerun.
+func killed(first, rerun func(e *Env) []string) func(e *Env) Spec {
+	return func(e *Env) Spec {
+		return Spec{Args: first(e), KillAfter: time.Second, Rerun: rerun(e)}
 	}
 }
 
@@ -153,6 +162,30 @@ var scenarios = []scenario{
 			"curl":  func(e *Env) Spec { return args("--compressed", "-o", "f", e.URL("/gzip")) },
 		},
 		Check: all(exitZero, percentAtMost100),
+	},
+
+	// ---- Integrity (plan section 6: no reference tool checks Content-Digest) ----
+	{
+		ID: "digest_good", Finding: "ux", What: "a body that matches its Content-Digest is saved",
+		Runs:  downloadTo("/digest/good/64k", nil),
+		Check: all(exitZero, fileIs("f", ref("64k"))),
+	},
+	{
+		ID: "digest_bad", Finding: "ux", What: "a body that does not match its Content-Digest is an error",
+		Runs:  downloadTo("/digest/bad/64k", nil),
+		Check: exitNonzero,
+	},
+
+	// ---- A stopped job restarts (plan section 6) ----
+	{
+		ID: "kill_resume", Finding: "ux", What: "a download stopped in the middle finishes on the next run",
+		Runs: map[string]func(e *Env) Spec{
+			"ghola": killed(func(e *Env) []string { return []string{"download", "-o", "f", e.URL("/slow/1m")} }, func(e *Env) []string { return []string{"download", "-c", "-o", "f", e.URL("/slow/1m")} }),
+			"curl":  killed(func(e *Env) []string { return []string{"-sS", "-o", "f", e.URL("/slow/1m")} }, func(e *Env) []string { return []string{"-sS", "-C", "-", "-o", "f", e.URL("/slow/1m")} }),
+			"wget":  killed(func(e *Env) []string { return []string{"-q", "-O", "f", e.URL("/slow/1m")} }, func(e *Env) []string { return []string{"-q", "-c", "-O", "f", e.URL("/slow/1m")} }),
+			"aria2": killed(func(e *Env) []string { return []string{"-o", "f", e.URL("/slow/1m")} }, func(e *Env) []string { return []string{"-c", "-o", "f", e.URL("/slow/1m")} }),
+		},
+		Check: all(exitZero, fileIs("f", ref("1m"))),
 	},
 
 	// ---- Byte-exact stdout ----

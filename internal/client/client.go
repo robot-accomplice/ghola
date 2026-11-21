@@ -292,6 +292,12 @@ redirectLoop:
 	}
 }
 
+// Release gives the request and the answer of FetchURL back.
+func Release(req *fasthttp.Request, rsp *fasthttp.Response) {
+	fasthttp.ReleaseRequest(req)
+	fasthttp.ReleaseResponse(rsp)
+}
+
 // selectProxy returns the proxy from --proxy or --proxy-file, or "" when
 // neither is set. Then the transport takes the proxy from the environment.
 // FetchURL and the download path both call it, so a proxy cannot reach one
@@ -398,6 +404,7 @@ func retryTimeLeft(opts *config.Options, start time.Time) bool {
 
 // waitToRetry announces retry number attempt on stderr and waits.
 func waitToRetry(ctx context.Context, opts *config.Options, attempt int, wait time.Duration) error {
+	opts.Output.Events.Retry(opts.URL, attempt, opts.Resilience.Retries, wait)
 	if !opts.Output.Silent {
 		fmt.Fprintf(os.Stderr, "Retry %d/%d in %v...\n", attempt, opts.Resilience.Retries, wait)
 	}

@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -23,6 +24,7 @@ import (
 	"github.com/robot-accomplice/ghola/internal/profile"
 	gholatransport "github.com/robot-accomplice/ghola/internal/transport"
 	"github.com/valyala/fasthttp"
+	"golang.org/x/term"
 )
 
 func main() {
@@ -100,6 +102,14 @@ func executeOne(ctx context.Context, args []string, hideErrors bool, do client.D
 		return argErrorOrGlob(err)
 	}
 	opts.Output.HideErrors = hideErrors
+	if code, done := startBackground(opts, args, w); done {
+		return code
+	}
+	restore, err := openLog(opts)
+	if err != nil {
+		return argError(err)
+	}
+	defer restore()
 	if c.Job == cli.JobInspect {
 		opts.Output.Snoop = true
 	}
@@ -148,6 +158,25 @@ func openTraceFile(opts *config.Options) (int, bool) {
 	return 0, true
 }
 
+// openWARC opens the --warc file once for the command. The stdout path
+// reads the body outside the transport, where the WARC records are
+// written, so --warc needs a file: -o, ghola download or ghola mirror.
+func openWARC(opts *config.Options) (int, bool) {
+	if opts.Output.WARC == "" {
+		return 0, true
+	}
+	if !opts.Mirror.On && !config.ShouldStream(opts) && opts.Output.Dir == "" && !opts.Output.RemoteName {
+		return argError(fmt.Errorf("--warc records the transfers to a file: use -o, ghola download or ghola mirror")), false
+	}
+	f, err := os.Create(opts.Output.WARC)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "--warc: %v\n", err)
+		return config.WriteFileFailed.Int(), false
+	}
+	opts.Output.WARCOut = f
+	return 0, true
+}
+
 // compatCommands translate the syntax of curl, wget and aria2c into native
 // arguments (v1 spec, section 6).
 var compatCommands = map[string]func([]string) (*cli.Compat, error){
@@ -188,7 +217,7 @@ func runJob(c *cli.Command, w *os.File) (code int, done bool) {
 		return config.NoError.Int(), true
 	}
 	switch c.Job {
-	case cli.JobFetch, cli.JobDownload, cli.JobInspect:
+	case cli.JobFetch, cli.JobDownload, cli.JobInspect, cli.JobMirror:
 		return 0, false
 	case cli.JobJobs:
 		return runJobsCommand(c.Args, w), true
@@ -250,9 +279,16 @@ func transfer(ctx context.Context, opts *config.Options, do client.Doer, stream 
 		}
 		opts.Output.RateTotal = client.NewSharedLimiter(bps) // one limit for every transfer
 	}
+	if code, ok := openWARC(opts); !ok {
+		return code
+	}
+	if f, ok := opts.Output.WARCOut.(*os.File); ok {
+		defer f.Close()
+	}
 	// Parallel --jobs share these files: each block is one locked write.
 	opts.Output.HeaderOut = locked(opts.Output.HeaderOut)
 	opts.Output.TraceOut = locked(opts.Output.TraceOut)
+	opts.Output.WARCOut = locked(opts.Output.WARCOut)
 	return transferAll(ctx, opts, do, stream, w)
 }
 
@@ -338,6 +374,9 @@ func transferAll(ctx context.Context, opts *config.Options, do client.Doer, stre
 	// A failure does not stop the run, and the exit code is the last
 	// failure's, as in curl (v1 defaults, item 10B, decided by Jon on
 	// 2026-11-18).
+	if opts.Mirror.On {
+		return runMirror(ctx, opts, do, stream)
+	}
 	runs := make([]config.Options, len(opts.URLs))
 	for i, u := range opts.URLs {
 		runs[i] = *opts
@@ -367,6 +406,28 @@ func transferAll(ctx context.Context, opts *config.Options, do client.Doer, stre
 	return last
 }
 
+// jobsBoard returns the board that shows one line for each job, when
+// stderr is a terminal (or --progress forces it) and the jobs fit on it;
+// else nil, and the meters of the jobs stay off.
+func jobsBoard(runs []config.Options) *client.Board {
+	o := runs[0].Output
+	if o.Progress == "off" || o.Silent || len(runs) > client.MaxBoardLines {
+		return nil
+	}
+	if o.Progress != "on" && !term.IsTerminal(int(os.Stderr.Fd())) {
+		return nil
+	}
+	return client.NewBoard(os.Stderr, len(runs))
+}
+
+// jobName is the short name of a job on the board: its file, else its URL.
+func jobName(o config.Options) string {
+	if o.Output.File != "" {
+		return filepath.Base(o.Output.File)
+	}
+	return o.URL
+}
+
 // templateMu keeps the --output-template lines of parallel jobs apart.
 var templateMu sync.Mutex
 
@@ -378,11 +439,15 @@ func runAll(ctx context.Context, runs []config.Options, do client.Doer, stream c
 	codes := make([]int, len(runs))
 	jobs := max(1, min(runs[0].Jobs, len(runs)))
 	if jobs > 1 {
+		board := jobsBoard(runs)
 		for i := range runs {
 			if runs[i].Output.File == "" && !runs[i].Output.RemoteName {
 				return nil, fmt.Errorf("--jobs %d writes several bodies at once, so it needs a file for each URL: use -o DIR/, one -o for each URL, or ghola download", runs[0].Jobs)
 			}
-			if runs[i].Output.Progress == "" {
+			switch {
+			case board != nil:
+				runs[i].Output.MeterOut = board.Line(i, jobName(runs[i]))
+			case runs[i].Output.Progress == "":
 				runs[i].Output.Progress = "off"
 			}
 		}
@@ -404,16 +469,21 @@ func runAll(ctx context.Context, runs []config.Options, do client.Doer, stream c
 // fetchWithTemplate runs fetch, and then writes --output-template for
 // the transfer, also after a failure, as curl -w does.
 func fetchWithTemplate(ctx context.Context, opts *config.Options, do client.Doer, stream client.Streamer, w *os.File) int {
-	if opts.Output.Template == nil {
+	if opts.Output.Template == nil && opts.Output.Events == nil {
 		return fetch(ctx, opts, do, stream, w)
 	}
 	info := &config.TransferInfo{URL: opts.URL}
 	opts.Output.Info = info
+	opts.Output.Events.Start(opts.URL)
 	start := time.Now()
 	code := fetch(ctx, opts, do, stream, w)
 	info.Time, info.ExitCode = time.Since(start), code
 	if code == config.NoError.Int() {
 		info.File = opts.Output.File
+	}
+	opts.Output.Events.End(*info)
+	if opts.Output.Template == nil {
+		return code
 	}
 	templateMu.Lock()
 	defer templateMu.Unlock()

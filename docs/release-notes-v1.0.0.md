@@ -1,6 +1,6 @@
 # ghola v1.0.0 release notes (draft)
 
-**Status (2026-11-20): draft.** v1.0.0 is not released. The command line follows the v1 spec draft (`docs/cli-v1.md`, PR 65), which waits for Jon's review. Phases 2 to 4 are not complete; section 5 lists what is open.
+**Status (2026-11-21): draft.** v1.0.0 is not released. The command line follows the v1 spec (`docs/cli-v1.md`, PR 65). Jon decided the spec questions A to M on 2026-11-21. Every option of the v1 table is built; section 5 lists what v1.0.0 does not do, and why.
 
 ## 1. Breaking changes
 
@@ -28,6 +28,12 @@
 4. **Resume checks the version:** a partial download keeps `<file>.ghola` with the `ETag` or `Last-Modified`, and a resume sends `If-Range`. If the file changed, ghola starts again from byte 0. curl, Wget2 and aria2 join old and new bytes.
 5. **Errors that teach:** a v0 flag, a curl, wget or aria2 flag, or a typo gets the native form.
 6. **Shell completion** for bash, zsh, fish and PowerShell.
+7. **Requests:** `--json`, `--form`, `--upload`, `--next`, `--variable` with the `--expand-NAME` form of each option, `--config`, `--auth` (basic, digest), `--auth-aws-sigv4`, conditions (`--cond-time`, `--cond-etag-*`), `--http` (1.1, 2, 2-prior, 3, 3-only).
+8. **Connections and TLS:** `--resolve`, `--connect-to`, `--ip`, `--interface`, `--local-port`, `--unix-socket`, `--doh`, `--proxy-bypass`, the `--proxy-tls-*` options, `--tls-min`, `--tls-ciphers`, `--tls-pin`, `--tls-crl`, `--tls-ocsp`, `--tls-ech`, client certificates, `--hsts` and `--alt-svc` (both in curl's file format).
+9. **Output:** `--output-template` (curl's `-w` variables and `%{json}`), `--output-events json` (one JSON line for each transfer event; `docs/cli/output-events.schema.json`), `--save-headers`, `--trace`, `--max-size`, and the `-o` rules for several URLs.
+10. **Download manager (`ghola download`):** `--jobs` with one line for each job, `--rate-max-total`, `--input` (lines, HTML, sitemap, Metalink), `--source` mirrors, `--checksum` and `Content-Digest`, `--file-allocation`, `--on-complete` and `--on-error`, and `ghola jobs` to list, resume, pause and cancel unfinished downloads.
+11. **Mirror (`ghola mirror`):** links in HTML and CSS, `robots.txt` (RFC 9309), depth 5 by default, `--convert-links`, `--spider`, `--warc`, `--background` and `--log`. `ghola wget -r` and `-m` run it.
+12. **JSON-RPC on the bridge:** `/jsonrpc` over HTTP POST and WebSocket adds, lists, pauses, resumes and stops download jobs, behind the bridge token.
 
 ## 3. Fixed (defects of v0.8.0)
 
@@ -40,14 +46,22 @@
 
 ## 4. Release steps (not done)
 
-1. Jon approves the v1 spec (PR 65) and the parser (PR 80).
+1. Merge PR 65 (spec), PR 80 (parser), PR 81 (phases 2 and 3) and PR 82 (phase 4) into `develop`, in that order, each with green checks.
 2. Merge `develop` into `main` with a `--no-ff` commit.
 3. Push the annotated tag `v1.0.0` with these notes; GitHub releases in this repository cannot be changed after that.
 4. Dispatch the Homebrew workflow by hand: `gh workflow run homebrew.yml -f tag=v1.0.0`.
 
-## 5. Open before v1.0.0
+## 5. Not in v1.0.0
 
-- Phase 2 options that the spec names and the parser refuses as "not built yet", for example `--json`, `--http`, `--resolve`, `--auth`, `--tls-min`, `--output-template`, `--cond-*`.
-- Phase 3: the job engine (`--jobs`, `ghola jobs`, mirrors, checksums, Metalink, BitTorrent, RPC).
-- Phase 4: `ghola mirror` (recursion, link conversion, robots.txt, WARC).
-- Explicit FTPS (`AUTH TLS` on `ftp://`) and active FTP.
+Each item is refused with a message, not dropped.
+
+- **BitTorrent.** It needs a large library and makes ghola a public peer that uploads to other hosts. That needs its own security review (spec decision L).
+- **`--auth ntlm` and `--auth negotiate`.** They need the system's SSPI or Kerberos. No command in the usage corpus uses them.
+- **`--http 1.0`.** Go's HTTP clients write only HTTP/1.1 request lines. No command in the corpus uses `--http1.0`.
+- **The `--tls-*` options with `--impersonate`,** other than `--no-tls-verify`. The browser profile sets the TLS handshake.
+- **HTTP/3 with `--resolve`, `--connect-to`, `--ip` or the local-address options.** QUIC dials past ghola's dial function. `--alt-svc` uses an HTTP/3 entry only on the origin's own host and port, for the same reason.
+- **Explicit FTPS (`AUTH TLS` on `ftp://`) and active FTP.** The spec has no option for them yet.
+- **P12 client certificates.** The spec has no place for the password yet. PEM and DER work.
+- **Metalink piece hashes and signatures.** ghola checks the hash of the whole file.
+- **Relative links in an HTML `--input` file.** The file has no base URL.
+- **`--file-allocation` on a single stream.** A reserved file of full size would break resume, which reads the file size.

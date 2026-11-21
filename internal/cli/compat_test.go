@@ -104,8 +104,8 @@ func TestFromCurl_Config(t *testing.T) {
 // what it maps to, so nothing runs with a dropped option.
 func TestFromCurl_Unsupported(t *testing.T) {
 	for args, want := range map[string]string{
-		"--http2":     "maps to --http",
-		"--libcurl x": "is not supported",
+		"--tls13-ciphers x": "maps to --tls-ciphers",
+		"--libcurl x":       "is not supported",
 	} {
 		_, err := FromCurl(strings.Fields(args))
 		if err == nil || !strings.Contains(err.Error(), want) {
@@ -146,8 +146,19 @@ func TestFromWget(t *testing.T) {
 			t.Errorf("%q:\n got %s\nwant %s", args, got, want)
 		}
 	}
-	if _, err := FromWget([]string{"-r", "https://h/"}); err == nil || !strings.Contains(err.Error(), "ghola mirror") {
-		t.Errorf("-r: err = %v", err)
+	// wget -r and -m run ghola mirror with wget's defaults: links above the
+	// start folder unless -np, no timestamps unless -N (-m has them), and
+	// -H without -D to every host. Two-letter options (-np, -nv) are one
+	// option, not two letters.
+	for want, args := range map[string][]string{
+		"mirror -r 0 --no-compressed --no-url-glob --auth-netrc --depth 2 --parent --no-timestamps --hosts '*' -o ./ https://h/":      {"-r", "-l", "2", "-H", "https://h/"},
+		"mirror -r 0 --no-compressed --no-url-glob --auth-netrc --depth 0 --convert-links --output-create-dirs -o site/ https://h/d/": {"-m", "-np", "-k", "-P", "site", "https://h/d/"},
+		"download -r 0 --no-compressed --no-url-glob --auth-netrc -q --layout no-host u":                                              {"-nv", "-nH", "u"},
+		"mirror -r 0 --no-compressed --no-url-glob --auth-netrc --no-robots --warc w.warc --parent --no-timestamps -o ./ u":           {"-r", "-e", "robots=off", "--warc-file=w", "u"},
+	} {
+		if got := native(t, FromWget, args...); got != want {
+			t.Errorf("%q:\n got %s\nwant %s", args, got, want)
+		}
 	}
 }
 

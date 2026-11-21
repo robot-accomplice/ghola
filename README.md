@@ -25,7 +25,7 @@ ghola v1 has one command line for three jobs: fetch (as curl), download (as aria
 | `ghola URL...` | Fetch each URL. The body goes to stdout, or to `-o`. |
 | `ghola download URL...` | Save each URL under its remote name; `-n N` splits a file into N ranges. |
 | `ghola inspect URL` | Check the headers and the security posture (Cloudflare and other WAFs). |
-| `ghola serve` | Run the local bridge on 127.0.0.1:18789 (for scope and scope-bca). |
+| `ghola serve` | Run the local bridge on 127.0.0.1:18789 (for scope and scope-bca). Its JSON-RPC 2.0 endpoint `/jsonrpc` adds, lists, pauses, resumes and stops download jobs (`ghola.add`, `ghola.list`, `ghola.pause`, `ghola.resume`, `ghola.stop`, `ghola.purge`), behind the same token. It takes HTTP POST and WebSocket; a WebSocket client also gets `ghola.onComplete` and `ghola.onError`. |
 | `ghola profiles` | List the browser profiles of `--impersonate`. |
 | `ghola explain CODE` | Explain an exit code. |
 | `ghola completion SHELL` | Write the completion script for bash, zsh, fish or PowerShell. |
@@ -185,6 +185,7 @@ ghola uses curl's exit codes for the same causes, so a script written for curl r
 | 0 | Success |
 | 1 | A redirect went to a protocol that ghola does not follow (for example `file://`) |
 | 2 | Invalid or missing argument |
+| 3 | A URL glob (`{a,b}` or `[1-9]`) is not valid (`--no-url-glob` turns globs off) |
 | 6 | The host name did not resolve |
 | 7 | The connection failed (for example, refused) |
 | 22 | The server answered with status 400 or above (`--no-fail` turns it off) |

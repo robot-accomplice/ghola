@@ -81,12 +81,27 @@ func TestApply_Units(t *testing.T) {
 	}
 }
 
-// An option of a phase that is not built is refused with its phase, so no
-// option is accepted and then ignored.
-func TestApply_UnbuiltOptionIsRefused(t *testing.T) {
-	for _, args := range [][]string{{"--alt-svc", "cache.txt", "u"}, {"--variable", "a=b", "u"}, {"--http", "2", "u"}, {"--output-events", "json", "u"}} {
-		if _, err := Apply(apply(t, args...)); err == nil || !strings.Contains(err.Error(), "not built yet") {
-			t.Errorf("%q: err = %v", args, err)
+// Each --http value reaches the transport. 1.0 is refused with the value
+// to use instead: ghola's HTTP clients cannot write an HTTP/1.0 request,
+// and a value that is accepted and then ignored would send HTTP/1.1.
+func TestApply_HTTPVersion(t *testing.T) {
+	for v, want := range map[string]string{"auto": "", "1.1": "1.1", "2": "2", "2-prior": "2-prior", "3": "3", "3-only": "3-only"} {
+		o, err := Apply(apply(t, "--http", v, "u"))
+		if err != nil || o.Stealth.HTTPVersion != want || o.Stealth.HTTP3 != strings.HasPrefix(v, "3") {
+			t.Errorf("--http %s: %q http3=%v %v", v, o.Stealth.HTTPVersion, o.Stealth.HTTP3, err)
+		}
+	}
+	if _, err := Apply(apply(t, "--http", "1.0", "u")); err == nil || !strings.Contains(err.Error(), "--http 1.1") {
+		t.Errorf("--http 1.0: %v", err)
+	}
+}
+
+// v1.0.0 builds every option of the spec: an option that --help lists
+// must work, so no option is listed and then refused.
+func TestApply_EveryOptionIsBuilt(t *testing.T) {
+	for i := range table {
+		if _, ok := setters[table[i].Name]; !ok && !callerOptions[table[i].Name] {
+			t.Errorf("--%s (phase %s) has no setter", table[i].Name, table[i].Phase)
 		}
 	}
 }

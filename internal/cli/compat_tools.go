@@ -32,6 +32,13 @@ const curlTable = `
 -w --write-out                  => --output-template %s
 -z --time-cond                  => --cond-time %s
 --hsts                         => --hsts %s
+--alt-svc                      => --alt-svc %s
+--http1.0                      => --http 1.0
+--http1.1                      => --http 1.1
+--http2                        => --http 2
+--http2-prior-knowledge        => --http 2-prior
+--http3                        => --http 3
+--http3-only                   => --http 3-only
 --etag-save                    => --cond-etag-save %s
 --etag-compare                 => --cond-etag-compare %s
 --path-as-is                   => --url-path-as-is
@@ -87,6 +94,7 @@ const curlTable = `
 --json                         => --json %s
 --oauth2-bearer                => --auth-bearer %s
 --url-query                    => --query %s
+--variable                     => --variable %s
 -n --netrc                     => --auth-netrc
 --netrc-file                   => --auth-netrc-file %s
 --pinnedpubkey                 => --tls-pin %s
@@ -142,6 +150,25 @@ const wgetTable = `
 -4 --inet4-only                => --ip 4
 -6 --inet6-only                => --ip 6
 --bind-address                 => --interface %s
+-A --accept                    => --accept %s
+-R --reject                    => --reject %s
+--accept-regex                 => --accept-regex %s
+--reject-regex                 => --reject-regex %s
+-I --include-directories       => --include-dirs %s
+-X --exclude-directories       => --exclude-dirs %s
+-nH --no-host-directories      => --layout no-host
+-nd --no-directories           => --layout flat
+--cut-dirs                     => --cut-dirs %s
+-p --page-requisites           => --requisites
+-k --convert-links             => --convert-links
+-K --backup-converted          => --backup-converted
+-E --adjust-extension --html-extension => --adjust-extension
+-Q --quota                     => --quota %s
+--spider                       => --spider
+--restrict-file-names          => --file-names %s
+-w --wait                      => --wait %s
+-b --background                => --background
+-o --output-file -a --append-output => --log %s
 `
 
 // aria2c saves under the remote name, follows redirects, and tries 5
@@ -249,8 +276,11 @@ var wgetSpec = &toolSpec{
 	flags:               parseToolTable(wgetTable),
 	ignored:             words("--no-config --keep-session-cookies --progress"),
 	takesValue: words("-T --timeout -O --output-document -P --directory-prefix -t --tries " +
-		"--user --password --http-user --http-password --post-file --body-file --progress"),
-	special: wgetSpecial,
+		"--user --password --http-user --http-password --post-file --body-file --progress " +
+		"-l --level -D --domains -e --execute --warc-file"),
+	special:     wgetSpecial,
+	finish:      wgetFinish,
+	wholeShorts: words("-nv -nc -nH -nd -np -nx"),
 }
 
 func wgetSpecial(t *translation, name, value string, _ bool) (bool, error) {
@@ -272,9 +302,75 @@ func wgetSpecial(t *translation, name, value string, _ bool) (bool, error) {
 	case "--post-file", "--body-file":
 		t.out = append(t.out, "-d", "@"+value)
 	default:
+		return wgetRecursive(t, name, value)
+	}
+	return true, nil
+}
+
+// wgetRecursive handles the options of wget -r and -m, which run ghola
+// mirror.
+func wgetRecursive(t *translation, name, value string) (bool, error) {
+	switch name {
+	case "-r", "--recursive":
+		t.job = JobMirror
+	case "-m", "--mirror":
+		// wget -m is -r -N -l inf.
+		t.job, t.timestamping = JobMirror, true
+		if !t.level {
+			t.out = append(t.out, "--depth", "0")
+		}
+	case "-l", "--level":
+		t.level = true
+		if value == "inf" {
+			value = "0" // 0 is no limit in ghola, as inf in wget
+		}
+		t.out = append(t.out, "--depth", value)
+	case "-np", "--no-parent":
+		t.noParent = true
+	case "-N", "--timestamping":
+		t.timestamping = true
+	case "-H", "--span-hosts":
+		t.spanHosts = true
+	case "-D", "--domains":
+		t.domains = true
+		t.out = append(t.out, "--hosts", value)
+	case "-e", "--execute":
+		switch strings.ToLower(strings.ReplaceAll(value, " ", "")) {
+		case "robots=off":
+			t.out = append(t.out, "--no-robots")
+		case "robots=on":
+			t.out = append(t.out, "--robots")
+		default:
+			return true, usagef("ghola wget: -e %s is not supported; only robots=off and robots=on are", value)
+		}
+	case "--warc-file":
+		// wget writes NAME.warc.gz, compressed; ghola writes NAME.warc.
+		t.out = append(t.out, "--warc", value+".warc")
+	default:
 		return false, nil
 	}
 	return true, nil
+}
+
+// wgetFinish adds what wget -r does by default and ghola mirror does not:
+// wget follows links above the start folder unless -np (spec question
+// G), uses no timestamps unless -N, and -H without -D spans every host.
+func wgetFinish(t *translation) {
+	if t.job != JobMirror {
+		return
+	}
+	if !t.noParent {
+		t.out = append(t.out, "--parent")
+	}
+	if !t.timestamping {
+		t.out = append(t.out, "--no-timestamps")
+	}
+	if t.spanHosts && !t.domains {
+		t.out = append(t.out, "--hosts", "*")
+	}
+	if t.dir == "" && t.file == "" {
+		t.dir = "." // wget -r saves under the folder, as ghola mirror does
+	}
 }
 
 var aria2Spec = &toolSpec{

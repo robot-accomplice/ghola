@@ -97,6 +97,8 @@ type OutputOptions struct {
 	// for it; main sets a new one for each URL.
 	Template *Template
 	Info     *TransferInfo
+	// Events is the --output-events json log; nil writes nothing.
+	Events *EventLog
 	// InputArgs holds the native options of each --input URL, by the
 	// index in URLs; nil for a URL of the command line.
 	InputArgs [][]string
@@ -125,6 +127,16 @@ type OutputOptions struct {
 	// --name=value, which "ghola jobs resume" runs again.
 	NoSession   bool
 	SessionArgs []string
+	// WARC is the --warc path; WARCOut is that file, which ghola opens
+	// once for the command.
+	WARC    string
+	WARCOut io.Writer
+	// MeterOut is where the meter of one job of --jobs goes: its line of
+	// the board. nil is the default meter.
+	MeterOut io.Writer
+	// Background is --background; Log is --log, where the messages go.
+	Background bool
+	Log        string
 	// OnComplete and OnError run after a download (--on-complete,
 	// --on-error).
 	OnComplete, OnError string
@@ -179,14 +191,17 @@ type StealthOptions struct {
 	Referer        string
 	AcceptLanguage string
 	HTTP3          bool
-	CookieJar      string
-	Cookies        []string
-	ProfileList    bool
-	Compressed     bool // wired in Task 9; true disables segmentation
-	Insecure       bool
-	CACert         string
-	ClientCert     string
-	ClientKey      string
+	// HTTPVersion is the --http value: "" (auto), "1.1", "2", "2-prior",
+	// "3" or "3-only".
+	HTTPVersion string
+	CookieJar   string
+	Cookies     []string
+	ProfileList bool
+	Compressed  bool // wired in Task 9; true disables segmentation
+	Insecure    bool
+	CACert      string
+	ClientCert  string
+	ClientKey   string
 	// TLSMin and TLSMax are "1.2" or "1.3" (--tls-min, --tls-max).
 	TLSMin, TLSMax string
 	// CADir is a folder of CA certificates (--tls-ca-dir).
@@ -208,9 +223,11 @@ type StealthOptions struct {
 
 // ResilienceOptions controls retry, timeout, redirect, and buffer behavior.
 type ResilienceOptions struct {
-	Timeout   int
-	Retries   int
-	Backoff   int
+	Timeout int
+	Retries int
+	Backoff int
+	// Wait is the pause between requests (--wait).
+	Wait      time.Duration
 	RetryHTTP bool
 	Location  bool
 	// RetryMaxTime stops retries once this time has passed since the
@@ -280,11 +297,14 @@ type Options struct {
 	PathAsIs bool
 	// HSTS is the --hsts cache file.
 	HSTS string
+	// AltSvc is the --alt-svc cache file.
+	AltSvc string
 	// RequestTarget replaces the path and query in the request line
 	// (--request-target), such as * for OPTIONS.
 	RequestTarget string
 
 	Output     OutputOptions
+	Mirror     MirrorOptions
 	Stealth    StealthOptions
 	Resilience ResilienceOptions
 	ProxyCfg   ProxyOptions

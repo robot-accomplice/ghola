@@ -39,8 +39,15 @@ type protocolTransport struct {
 	direct Transport
 	// hsts is the --hsts cache, nil without it.
 	hsts *hstsCache
+	// altsvc is the --alt-svc cache, nil without it. h3 is the HTTP/3
+	// stack for an origin with an h3 entry; nil when the stack has no
+	// HTTP/3 (decision K).
+	altsvc *altSvcCache
+	h3     Transport
 	// trace writes --trace, nil without it.
 	trace *tracer
+	// warc writes --warc, nil without it.
+	warc *warcWriter
 }
 
 // networkFor returns the network transport for u: direct for a host in
@@ -48,6 +55,12 @@ type protocolTransport struct {
 func (t protocolTransport) networkFor(u *fasthttp.URI) Transport {
 	if t.direct != nil && bypassed(&url.URL{Host: string(u.Host())}, t.opts.ProxyCfg.Bypass) {
 		return t.direct
+	}
+	if t.h3 != nil && t.altsvc.h3(u) {
+		if t.trace != nil {
+			t.trace.block("== Info", []byte("--alt-svc: HTTP/3 for "+string(u.Host())+"\n"))
+		}
+		return t.h3
 	}
 	return t.network
 }
@@ -94,12 +107,44 @@ func (t protocolTransport) prepare(ctx context.Context, req *fasthttp.Request) c
 
 type requestTargetKey struct{}
 
-// recordHSTS keeps the Strict-Transport-Security of an answer in --hsts.
-func (t protocolTransport) recordHSTS(req *fasthttp.Request, header string) error {
-	if t.hsts == nil {
-		return nil
+// streamWARC streams the answer, and writes the exchange to --warc.
+func (t protocolTransport) streamWARC(ctx context.Context, req *fasthttp.Request, sink io.Writer) (StreamMeta, error) {
+	tmp, err := os.CreateTemp("", "ghola-warc-")
+	if err != nil {
+		return StreamMeta{}, fmt.Errorf("--warc: %w", err)
 	}
-	return t.hsts.record(req.URI(), header)
+	defer func() { tmp.Close(); os.Remove(tmp.Name()) }()
+	meta, err := t.networkFor(req.URI()).Stream(ctx, req, warcSink{sink, tmp})
+	if err == nil {
+		err = t.recordAnswer(req, meta.StatusLine, meta.Header.Get)
+	}
+	if meta.StatusLine != "" {
+		if werr := t.warc.record(req, meta, tmp); werr != nil && err == nil {
+			err = werr
+		}
+	}
+	return meta, err
+}
+
+// recordAnswer keeps the Strict-Transport-Security of an answer in --hsts
+// and its Alt-Svc in --alt-svc. proto is the answer's protocol, such as
+// "HTTP/2.0" or a status line that starts with it.
+func (t protocolTransport) recordAnswer(req *fasthttp.Request, proto string, header func(string) string) error {
+	if t.hsts != nil {
+		if err := t.hsts.record(req.URI(), header("Strict-Transport-Security")); err != nil {
+			return err
+		}
+	}
+	if t.altsvc != nil {
+		alpn := "h1"
+		if strings.HasPrefix(proto, "HTTP/2") {
+			alpn = "h2"
+		} else if strings.HasPrefix(proto, "HTTP/3") {
+			alpn = "h3"
+		}
+		return t.altsvc.record(req.URI(), alpn, header("Alt-Svc"))
+	}
+	return nil
 }
 
 // applyRequestTarget sets the --request-target of ctx on u: Go writes
@@ -123,7 +168,7 @@ func (t protocolTransport) Do(ctx context.Context, req *fasthttp.Request, rsp *f
 		if t.trace != nil {
 			t.trace.block("<= Recv header", rsp.Header.Header()) // the body: fillResponse
 		}
-		return t.recordHSTS(req, string(rsp.Header.Peek("Strict-Transport-Security")))
+		return t.recordAnswer(req, string(rsp.Header.Protocol()), func(k string) string { return string(rsp.Header.Peek(k)) })
 	}
 	if err != nil {
 		return err
@@ -140,9 +185,12 @@ func (t protocolTransport) Stream(ctx context.Context, req *fasthttp.Request, si
 			t.trace.request(req)
 			sink = traceSink{sink, t.trace}
 		}
+		if t.warc != nil {
+			return t.streamWARC(ctx, req, sink)
+		}
 		meta, err := t.networkFor(req.URI()).Stream(ctx, req, sink)
 		if err == nil {
-			err = t.recordHSTS(req, meta.Header.Get("Strict-Transport-Security"))
+			err = t.recordAnswer(req, meta.StatusLine, meta.Header.Get)
 		}
 		return meta, err
 	}

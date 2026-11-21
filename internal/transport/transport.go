@@ -132,6 +132,8 @@ type simpleTransport struct {
 }
 
 type tlsClientTransport struct {
+	// only3 refuses an answer that is not HTTP/3 (--http 3-only).
+	only3    bool
 	client   tlsclient.HttpClient
 	name     string
 	limits   limits
@@ -192,6 +194,17 @@ func New(opts *config.Options, selectedProxy string) (Transport, error) {
 			return nil, err
 		}
 	}
+	if opts.AltSvc != "" {
+		if t.altsvc, err = loadAltSvc(opts.AltSvc); err != nil {
+			return nil, err
+		}
+		if t.h3, err = newH3Network(opts, selectedProxy); err != nil {
+			return nil, err
+		}
+	}
+	if out := opts.Output.WARCOut; out != nil {
+		t.warc = &warcWriter{w: out, version: config.Version}
+	}
 	if out := opts.Output.TraceOut; out != nil {
 		t.trace = &tracer{w: out, ascii: opts.Output.TraceASCII, times: opts.Output.TraceTime}
 	}
@@ -204,6 +217,27 @@ func New(opts *config.Options, selectedProxy string) (Transport, error) {
 	return t, nil
 }
 
+// newH3Network builds the HTTP/3 stack that --alt-svc sends an origin to
+// when the cache holds an h3 entry for it: the --impersonate stack with
+// HTTP/3, for a profile that has it. It is nil when there is no such
+// stack: the default stack has no HTTP/3, HTTP/3 does not go through a
+// proxy, and with --http3 every request uses HTTP/3 already.
+func newH3Network(opts *config.Options, selectedProxy string) (Transport, error) {
+	name := strings.TrimSpace(opts.Stealth.Impersonate)
+	if name == "" || selectedProxy != "" || opts.Stealth.HTTP3 {
+		return nil, nil
+	}
+	if p, err := profile.Resolve(name); err != nil || !p.SupportsHTTP3 {
+		return nil, nil //nolint:nilerr // newNetwork reports a bad profile
+	}
+	if rules, err := newNetRules(opts.Net); err != nil || rules != nil || hasLocalOptions(opts.Net) {
+		return nil, nil //nolint:nilerr // HTTP/3 does not use these dial options; newNetwork reports a bad rule
+	}
+	h3 := *opts
+	h3.Stealth.HTTP3 = true
+	return newTLSClientTransport(&h3, "")
+}
+
 // newNetwork builds the network transport: tls-client with --impersonate,
 // else net/http.
 func newNetwork(opts *config.Options, selectedProxy string) (Transport, error) {
@@ -211,7 +245,7 @@ func newNetwork(opts *config.Options, selectedProxy string) (Transport, error) {
 		return newTLSClientTransport(opts, selectedProxy)
 	}
 	if opts.Stealth.HTTP3 {
-		return nil, fmt.Errorf("--http3 requires --impersonate with the pure-Go transport backend")
+		return nil, fmt.Errorf("--http 3 needs --impersonate: the default stack has no HTTP/3")
 	}
 
 	tlsCfg, err := buildTLSConfig(opts)
@@ -243,6 +277,7 @@ func newNetwork(opts *config.Options, selectedProxy string) (Transport, error) {
 		DialContext:            envDialer(base, opts.ProxyCfg.Bypass),
 		MaxResponseHeaderBytes: maxHeaderBytes(opts.Resilience.BufferSize),
 	}
+	httpTransport.Protocols = httpProtocols(opts.Stealth.HTTPVersion)
 	if err := useFixedProxy(httpTransport, selectedProxy, opts.ProxyCfg.TLS, base); err != nil {
 		return nil, err
 	}
@@ -261,6 +296,23 @@ func newNetwork(opts *config.Options, selectedProxy string) (Transport, error) {
 		name:       "net/http",
 		limits:     newLimits(opts.Resilience),
 	}, nil
+}
+
+// httpProtocols maps --http to the protocols of net/http. nil keeps the
+// default: HTTP/1.1, and HTTP/2 over TLS (--http auto and 2). 2-prior sends
+// HTTP/2 without an upgrade: h2c on http://, and only h2 on https://.
+func httpProtocols(version string) *http.Protocols {
+	p := new(http.Protocols)
+	switch version {
+	case "1.1":
+		p.SetHTTP1(true)
+	case "2-prior":
+		p.SetHTTP2(true)
+		p.SetUnencryptedHTTP2(true)
+	default:
+		return nil
+	}
+	return p
 }
 
 // useFixedProxy sets --proxy on the net/http transport: SOCKS through the
@@ -348,6 +400,10 @@ func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transpor
 	base := rules.dial(local) // --connect-to, --resolve, --ip
 	// The rules and the local options need ghola's dial function.
 	custom := rules != nil || hasLocalOptions(opts.Net)
+	if custom && opts.Stealth.HTTP3 {
+		// QUIC dials UDP itself, past ghola's dial function.
+		return nil, fmt.Errorf("--http 3 does not work with --resolve, --connect-to, --ip, --interface, --local-port or --unix-socket: HTTP/3 does not use their dial")
+	}
 	dialOpt, err := tlsClientDial(selectedProxy, base, custom, opts.ProxyCfg.Bypass)
 	if err != nil {
 		return nil, err
@@ -355,8 +411,18 @@ func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transpor
 	if dialOpt != nil {
 		options = append(options, dialOpt)
 	}
-	if !opts.Stealth.HTTP3 {
+	if opts.Stealth.HTTP3 {
+		// Without racing, tls-client takes the protocol from the ALPN of
+		// the TCP handshake, which is never h3: the race opens QUIC too.
+		options = append(options, tlsclient.WithProtocolRacing())
+	} else {
 		options = append(options, tlsclient.WithDisableHttp3())
+	}
+	switch opts.Stealth.HTTPVersion {
+	case "1.1":
+		options = append(options, tlsclient.WithForceHttp1())
+	case "2-prior":
+		return nil, fmt.Errorf("--http 2-prior does not work with --impersonate: a browser does not send HTTP/2 without TLS")
 	}
 
 	client, err := tlsclient.NewHttpClient(tlsclient.NewNoopLogger(), options...)
@@ -370,6 +436,7 @@ func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transpor
 		envProxy:    selectedProxy == "",
 		bypass:      opts.ProxyCfg.Bypass,
 		rulesDirect: selectedProxy == "" && custom,
+		only3:       opts.Stealth.HTTPVersion == "3-only",
 	}
 	if t.envProxy && !t.rulesDirect {
 		socksOptions := append(options[:len(options):len(options)], tlsclient.WithDialContext(envDialer(base, opts.ProxyCfg.Bypass)))
@@ -571,6 +638,10 @@ func (t *tlsClientTransport) send(ctx context.Context, req *fasthttp.Request, se
 	httpResp, err := client.Do(httpReq)
 	if err != nil {
 		return nil, nil, w.fail(err)
+	}
+	if t.only3 && httpResp.ProtoMajor != 3 {
+		httpResp.Body.Close()
+		return nil, nil, w.fail(fmt.Errorf("--http 3-only: the server answered over %s, not HTTP/3", httpResp.Proto))
 	}
 	return httpResp, w, nil
 }

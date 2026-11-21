@@ -118,8 +118,8 @@ func unknown(flag string) error {
 	if others := otherIndex[name]; len(others) > 0 {
 		return &UsageError{Msg: otherMessage(name, others)}
 	}
-	if near := nearest(strings.TrimLeft(name, "-")); near != "" {
-		return usagef("%s is not a ghola option. Did you mean --%s?", name, near)
+	if near := nearest(strings.TrimLeft(name, "-")); len(near) > 0 {
+		return usagef("%s is not a ghola option. Did you mean --%s?", name, strings.Join(near, " or --"))
 	}
 	return usagef("%s is not a ghola option. ghola --help lists the options.", name)
 }
@@ -152,7 +152,7 @@ func nativeForm(o *Option) string {
 
 // nearest returns the option name at edit distance 2 or less, the closest
 // first, or "".
-func nearest(name string) string {
+func nearest(name string) []string {
 	type cand struct {
 		name string
 		d    int
@@ -164,7 +164,7 @@ func nearest(name string) string {
 		}
 	}
 	if len(best) == 0 {
-		return ""
+		return nil
 	}
 	sort.Slice(best, func(i, j int) bool {
 		if best[i].d != best[j].d {
@@ -172,7 +172,15 @@ func nearest(name string) string {
 		}
 		return best[i].name < best[j].name
 	})
-	return best[0].name
+	// Every option at the smallest distance, so a tie does not hide the
+	// one the user meant (--headr: --head or --header).
+	var out []string
+	for _, c := range best {
+		if c.d == best[0].d {
+			out = append(out, c.name)
+		}
+	}
+	return out
 }
 
 // distance is the Levenshtein edit distance.

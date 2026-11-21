@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -63,7 +64,14 @@ var setters = map[string]setter{
 		o.Output.Template = t
 		return err
 	},
-	"hsts":           func(o *config.Options, v string, _ *Command) error { o.HSTS = v; return nil },
+	"hsts":    func(o *config.Options, v string, _ *Command) error { o.HSTS = v; return nil },
+	"alt-svc": func(o *config.Options, v string, _ *Command) error { o.AltSvc = v; return nil },
+	"output-events": func(o *config.Options, v string, _ *Command) error {
+		if v == "json" {
+			o.Output.Events = config.NewEventLog(os.Stderr)
+		}
+		return nil
+	},
 	"auth-aws-sigv4": func(*config.Options, string, *Command) error { return nil }, // read in Apply
 	"trace":          func(o *config.Options, v string, _ *Command) error { o.Output.Trace = v; return nil },
 	"trace-format":   func(o *config.Options, v string, _ *Command) error { o.Output.TraceASCII = v == "ascii"; return nil },
@@ -94,15 +102,60 @@ var setters = map[string]setter{
 	"on-complete":     func(o *config.Options, v string, _ *Command) error { o.Output.OnComplete = v; return nil },
 	"on-error":        func(o *config.Options, v string, _ *Command) error { o.Output.OnError = v; return nil },
 	"session":         func(o *config.Options, v string, _ *Command) error { o.Output.NoSession = v == "false"; return nil },
-	"save-headers":    func(o *config.Options, v string, _ *Command) error { o.Output.SaveHeaders = v; return nil },
-	"show-headers":    func(o *config.Options, v string, _ *Command) error { o.Output.Include = v == "true"; return nil },
-	"quiet":           func(o *config.Options, v string, _ *Command) error { o.Output.Silent = v == "true"; return nil },
-	"progress":        setProgress,
-	"verbose":         func(o *config.Options, v string, _ *Command) error { o.Output.Verbose = v == "true"; return nil },
-	"har":             func(o *config.Options, v string, _ *Command) error { o.Output.HAR = v; return nil },
-	"method":          func(o *config.Options, v string, _ *Command) error { o.Method = strings.ToUpper(v); return nil },
-	"head":            setHead,
-	"header":          func(o *config.Options, _ string, c *Command) error { o.Headers = c.Values["header"]; return nil },
+	"wait": func(o *config.Options, v string, _ *Command) error {
+		d, err := ParseDuration(v)
+		o.Resilience.Wait = d
+		return err
+	},
+	"depth":            setInt(func(o *config.Options) *int { return &o.Mirror.Depth }),
+	"cut-dirs":         setInt(func(o *config.Options) *int { return &o.Mirror.CutDirs }),
+	"parent":           mirrorBool(func(m *config.MirrorOptions) *bool { return &m.Parent }),
+	"timestamps":       mirrorBool(func(m *config.MirrorOptions) *bool { return &m.Timestamps }),
+	"requisites":       mirrorBool(func(m *config.MirrorOptions) *bool { return &m.Requisites }),
+	"convert-links":    mirrorBool(func(m *config.MirrorOptions) *bool { return &m.Convert }),
+	"backup-converted": mirrorBool(func(m *config.MirrorOptions) *bool { return &m.Backup }),
+	"adjust-extension": mirrorBool(func(m *config.MirrorOptions) *bool { return &m.AdjustExt }),
+	"robots":           mirrorBool(func(m *config.MirrorOptions) *bool { return &m.Robots }),
+	"spider":           mirrorBool(func(m *config.MirrorOptions) *bool { return &m.Spider }),
+	"offline": func(o *config.Options, v string, _ *Command) error {
+		on := v == "true" // --requisites, --convert-links and --adjust-extension together
+		o.Mirror.Requisites, o.Mirror.Convert, o.Mirror.AdjustExt = on, on, on
+		return nil
+	},
+	"hosts":        func(o *config.Options, v string, _ *Command) error { o.Mirror.Hosts = splitList(v); return nil },
+	"accept":       func(o *config.Options, v string, _ *Command) error { o.Mirror.Accept = splitList(v); return nil },
+	"reject":       func(o *config.Options, v string, _ *Command) error { o.Mirror.Reject = splitList(v); return nil },
+	"include-dirs": func(o *config.Options, v string, _ *Command) error { o.Mirror.IncludeDirs = splitList(v); return nil },
+	"exclude-dirs": func(o *config.Options, v string, _ *Command) error { o.Mirror.ExcludeDirs = splitList(v); return nil },
+	"accept-regex": func(o *config.Options, v string, _ *Command) error {
+		re, err := regexp.Compile(v)
+		o.Mirror.AcceptRegex = re
+		return err
+	},
+	"reject-regex": func(o *config.Options, v string, _ *Command) error {
+		re, err := regexp.Compile(v)
+		o.Mirror.RejectRegex = re
+		return err
+	},
+	"layout":     func(o *config.Options, v string, _ *Command) error { o.Mirror.Layout = v; return nil },
+	"file-names": func(o *config.Options, v string, _ *Command) error { o.Mirror.FileNames = v; return nil },
+	"quota": func(o *config.Options, v string, _ *Command) error {
+		n, err := ParseSize(v)
+		o.Mirror.Quota = n
+		return err
+	},
+	"background":   func(o *config.Options, v string, _ *Command) error { o.Output.Background = v == "true"; return nil },
+	"log":          func(o *config.Options, v string, _ *Command) error { o.Output.Log = v; return nil },
+	"warc":         func(o *config.Options, v string, _ *Command) error { o.Output.WARC = v; return nil },
+	"save-headers": func(o *config.Options, v string, _ *Command) error { o.Output.SaveHeaders = v; return nil },
+	"show-headers": func(o *config.Options, v string, _ *Command) error { o.Output.Include = v == "true"; return nil },
+	"quiet":        func(o *config.Options, v string, _ *Command) error { o.Output.Silent = v == "true"; return nil },
+	"progress":     setProgress,
+	"verbose":      func(o *config.Options, v string, _ *Command) error { o.Output.Verbose = v == "true"; return nil },
+	"har":          func(o *config.Options, v string, _ *Command) error { o.Output.HAR = v; return nil },
+	"method":       func(o *config.Options, v string, _ *Command) error { o.Method = strings.ToUpper(v); return nil },
+	"head":         setHead,
+	"header":       func(o *config.Options, _ string, c *Command) error { o.Headers = c.Values["header"]; return nil },
 	"user-agent": func(o *config.Options, v string, _ *Command) error {
 		o.Stealth.Agent, o.Stealth.AgentExplicit = v, true
 		return nil
@@ -121,6 +174,8 @@ var setters = map[string]setter{
 	"url-glob":           func(*config.Options, string, *Command) error { return nil }, // read in Apply
 	"auth-netrc":         func(*config.Options, string, *Command) error { return nil }, // read in Apply
 	"auth-netrc-file":    func(*config.Options, string, *Command) error { return nil }, // read in Apply
+	"proxy-tls-*":        func(*config.Options, string, *Command) error { return nil }, // the family row; applyProxyTLS sets each member
+	"variable":           func(*config.Options, string, *Command) error { return nil }, // the parser expands --expand-NAME values
 	"ip": func(o *config.Options, v string, _ *Command) error {
 		o.Net.IPVersion = strings.TrimPrefix(v, "any")
 		return nil
@@ -246,6 +301,9 @@ func Apply(c *Command) (*config.Options, error) {
 		return nil, &UsageError{Msg: err.Error()}
 	}
 	applyDefaults(o, c)
+	if c.Job == JobMirror {
+		applyMirrorDefaults(o, c)
+	}
 	if c.Job == JobDownload && !c.Has("output-overwrite") {
 		o.Output.NoOverwrite = true // ghola download keeps an existing file (the spec default)
 	}
@@ -538,6 +596,44 @@ func sessionArgs(c *Command) []string {
 	return out
 }
 
+// mirrorDefaults are the defaults of ghola mirror from the spec table:
+// depth 5 (spec question F), timestamps and robots on, layout full.
+const mirrorDefaultDepth = 5
+
+// applyMirrorDefaults sets the mirror defaults that the command line does
+// not set. The mirror writes many files, so it replaces its own copies.
+func applyMirrorDefaults(o *config.Options, c *Command) {
+	o.Mirror.On = true
+	if !c.Has("depth") {
+		o.Mirror.Depth = mirrorDefaultDepth
+	}
+	if !c.Has("timestamps") {
+		o.Mirror.Timestamps = true
+	}
+	if !c.Has("robots") {
+		o.Mirror.Robots = true
+	}
+}
+
+// mirrorBool sets an on/off option of ghola mirror.
+func mirrorBool(field func(*config.MirrorOptions) *bool) setter {
+	return func(o *config.Options, v string, _ *Command) error {
+		*field(&o.Mirror) = v == "true"
+		return nil
+	}
+}
+
+// splitList reads a comma list, as wget -A, -R, -D, -I and -X take it.
+func splitList(v string) []string {
+	var out []string
+	for _, s := range strings.Split(v, ",") {
+		if s = strings.TrimSpace(s); s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
 // setJSON sends a JSON body: Content-Type and Accept are
 // application/json unless -H sets them, as curl --json does.
 func setJSON(o *config.Options, v string, _ *Command) error {
@@ -679,9 +775,13 @@ func setHTTP(o *config.Options, v string, _ *Command) error {
 	switch v {
 	case "auto":
 		return nil
-	case "3":
+	case "1.0":
+		// Go's HTTP clients (net/http and tls-client) write only HTTP/1.1
+		// request lines. No command of the corpus uses --http1.0.
+		return fmt.Errorf("--http 1.0: ghola cannot send HTTP/1.0 (its HTTP clients write only HTTP/1.1 request lines); use --http 1.1")
+	case "3", "3-only":
 		o.Stealth.HTTP3 = true
-		return nil
 	}
-	return fmt.Errorf("--http %s is in the v1 spec but not built yet (phase 2)", v)
+	o.Stealth.HTTPVersion = v
+	return nil
 }

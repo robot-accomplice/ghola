@@ -11,6 +11,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/fasthttp/websocket"
 	"github.com/robot-accomplice/ghola/internal/client"
 	"github.com/robot-accomplice/ghola/internal/config"
 	gholatransport "github.com/robot-accomplice/ghola/internal/transport"
@@ -62,6 +63,7 @@ const Addr = "127.0.0.1:18789"
 // Handler processes a single bridge request. Exported for testing with
 // custom Doer injection; production callers should use ListenAndServe.
 func Handler(do client.Doer) fasthttp.RequestHandler {
+	rpc := newRPC(nil) // the jobs live as long as the bridge
 	return func(ctx *fasthttp.RequestCtx) {
 		if string(ctx.Path()) == "/health" {
 			ctx.SetContentType("application/json")
@@ -69,6 +71,10 @@ func Handler(do client.Doer) fasthttp.RequestHandler {
 			return
 		}
 
+		if string(ctx.Path()) == RPCPath && (ctx.IsPost() || websocket.FastHTTPIsWebSocketUpgrade(ctx)) {
+			rpc.serve(ctx)
+			return
+		}
 		if !ctx.IsPost() {
 			ctx.SetStatusCode(fasthttp.StatusMethodNotAllowed)
 			return
