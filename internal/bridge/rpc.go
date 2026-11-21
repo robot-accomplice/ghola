@@ -91,6 +91,17 @@ func (c *wsClient) send(b []byte) error {
 	return c.conn.WriteMessage(websocket.TextMessage, b)
 }
 
+// reply answers one request. It holds the write lock from the call to
+// the answer, so a notification that the call causes (a ghola.add whose
+// download ends at once) comes after the answer that names its job. The
+// lock order is c.mu, then s.mu; notify never holds s.mu while it waits
+// for c.mu.
+func (c *wsClient) reply(s *rpcServer, msg []byte) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.conn.WriteMessage(websocket.TextMessage, s.answer(msg))
+}
+
 type rpcRequest struct {
 	JSONRPC string          `json:"jsonrpc"`
 	ID      json.RawMessage `json:"id"`
@@ -137,7 +148,7 @@ func (s *rpcServer) serveWS(ctx *fasthttp.RequestCtx) {
 		}()
 		for {
 			_, msg, err := conn.ReadMessage()
-			if err != nil || c.send(s.answer(msg)) != nil {
+			if err != nil || c.reply(s, msg) != nil {
 				return
 			}
 		}
