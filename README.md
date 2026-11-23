@@ -89,14 +89,20 @@ brew upgrade ghola
 #### macOS / Linux
 
 ```bash
-bash <(curl -fsSL https://roboticus.ai/ghola-install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/robot-accomplice/ghola/main/scripts/install.sh)
 ```
+
+The script installs to `~/.local/bin`.
 
 #### Windows (PowerShell)
 
 ```powershell
-irm https://roboticus.ai/ghola-install.ps1 | iex
+irm https://raw.githubusercontent.com/robot-accomplice/ghola/main/scripts/install.ps1 | iex
 ```
+
+The script installs to `%LOCALAPPDATA%\Programs\ghola\bin` and adds that folder to your user PATH.
+
+Both scripts install the latest release and check it against the release's `checksums.txt`. Set `GHOLA_INSTALL_DIR` to install to another folder.
 
 After install, verify with:
 
