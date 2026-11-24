@@ -11,13 +11,13 @@ require (
 	github.com/fasthttp/websocket v1.5.12
 	github.com/fclairamb/ftpserverlib v0.33.3
 	github.com/jlaffaye/ftp v0.2.4
-	github.com/klauspost/compress v1.20.4
+	github.com/klauspost/compress v1.20.5
 	github.com/pkg/sftp v1.13.12
 	github.com/spf13/afero v1.15.0
-	github.com/tidwall/gjson v1.20.4
+	github.com/tidwall/gjson v1.20.5
 	github.com/valyala/fasthttp v1.79.0
 	golang.org/x/crypto v0.59.0
-	golang.org/x/net v0.62.0
+	golang.org/x/net v0.63.0
 	golang.org/x/sys v0.50.0
 	golang.org/x/term v0.48.0
 )
