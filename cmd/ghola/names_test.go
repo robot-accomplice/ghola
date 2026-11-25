@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -45,7 +46,7 @@ func TestExecute_ServerNamesStayInTheOutputFolder(t *testing.T) {
 		if !strings.HasPrefix(p, out+string(filepath.Separator)) {
 			t.Errorf("ghola wrote %s, outside %s", p, out)
 		}
-		if strings.Contains(filepath.Base(p), ":") {
+		if runtime.GOOS == "windows" && strings.Contains(filepath.Base(p), ":") { // ":" writes an NTFS stream; it is a plain byte elsewhere
 			t.Errorf("ghola wrote %s, a name with a stream", p)
 		}
 		return nil
