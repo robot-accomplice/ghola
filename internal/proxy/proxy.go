@@ -111,24 +111,17 @@ func (s *Selector) HealthCheck() error {
 	for _, proxy := range s.proxies {
 		u, err := url.Parse(proxy)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "proxy-check: %s — parse error: %v\n", proxy, err)
+			fmt.Fprintln(os.Stderr, "proxy-check: a proxy line that is not a URL — parse error") // the raw line may hold a password
 			continue
 		}
-		host := u.Host
-		if !strings.Contains(host, ":") {
-			if u.Scheme == "https" {
-				host += ":443"
-			} else {
-				host += ":80"
-			}
-		}
-		conn, err := net.DialTimeout("tcp", host, timeout)
+		shown := u.Redacted() // the --proxy-user password is in the URL by now
+		conn, err := net.DialTimeout("tcp", checkAddr(u), timeout)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "proxy-check: %s — DEAD (%v)\n", proxy, err)
+			fmt.Fprintf(os.Stderr, "proxy-check: %s — DEAD (%v)\n", shown, err)
 			continue
 		}
 		conn.Close()
-		fmt.Fprintf(os.Stderr, "proxy-check: %s — OK\n", proxy)
+		fmt.Fprintf(os.Stderr, "proxy-check: %s — OK\n", shown)
 		alive = append(alive, proxy)
 	}
 
@@ -154,4 +147,20 @@ func withAuth(rawProxy, proxyAuth string) string {
 	}
 	u.User = url.UserPassword(parts[0], parts[1])
 	return u.String()
+}
+
+// checkAddr is the host:port that --proxy-check connects to: the port of
+// the URL, or the default port of its scheme (1080 for SOCKS, as curl).
+func checkAddr(u *url.URL) string {
+	if u.Port() != "" {
+		return u.Host
+	}
+	port := "80"
+	switch strings.ToLower(u.Scheme) {
+	case "https":
+		port = "443"
+	case "socks4", "socks4a", "socks5", "socks5h":
+		port = "1080"
+	}
+	return net.JoinHostPort(u.Hostname(), port)
 }

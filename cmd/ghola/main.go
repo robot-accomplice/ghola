@@ -403,6 +403,8 @@ func transferAll(ctx context.Context, opts *config.Options, do client.Doer, stre
 	for i, u := range opts.URLs {
 		runs[i] = *opts
 		runs[i].URL = u
+		runs[i].CredentialURL = opts.URL // -u and --auth-bearer belong to the first URL's server
+		runs[i].UseNetrc()               // netrc: the entry of this URL's own host
 		if len(opts.Output.PerURL) == len(opts.URLs) {
 			runs[i].Output.SetTarget(opts.Output.PerURL[i]) // one -o for each URL, in order
 		}

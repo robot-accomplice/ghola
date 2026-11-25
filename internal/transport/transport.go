@@ -265,16 +265,17 @@ func newNetwork(opts *config.Options, selectedProxy string) (Transport, error) {
 		return nil, err
 	}
 	base := rules.dial(local) // --connect-to, --resolve, --ip
+	envTLS := &envProxyTLS{st: opts.ProxyCfg.TLS}
 	httpTransport := &http.Transport{
 		TLSClientConfig:   tlsCfg,
 		ForceAttemptHTTP2: true,
 		// Never auto-negotiate/transparently decompress: downloads must be
 		// byte-exact, and --compressed is handled explicitly by the caller.
 		DisableCompression: true,
-		Proxy:              httpProxyFromEnv(opts.ProxyCfg.Bypass),
+		Proxy:              envTLS.proxy(httpProxyFromEnv(opts.ProxyCfg.Bypass)),
 		// With no --proxy, a SOCKS proxy from the environment goes through
 		// the shared SOCKS dialer. --proxy replaces both below.
-		DialContext:            envDialer(base, opts.ProxyCfg.Bypass),
+		DialContext:            envTLS.dial(envDialer(base, opts.ProxyCfg.Bypass)),
 		MaxResponseHeaderBytes: maxHeaderBytes(opts.Resilience.BufferSize),
 	}
 	httpTransport.Protocols = httpProtocols(opts.Stealth.HTTPVersion)
@@ -333,7 +334,9 @@ func useFixedProxy(tr *http.Transport, selectedProxy string, proxyTLS config.Ste
 	switch {
 	case isSOCKS(proxyURL):
 		tr.Proxy, tr.DialContext = nil, socksDialer(proxyURL, base)
-	case hasProxyTLS(proxyTLS) && strings.EqualFold(proxyURL.Scheme, "https"):
+	case strings.EqualFold(proxyURL.Scheme, "https"):
+		// Always our own TLS to the proxy, with the --proxy-tls-* options
+		// only: net/http would use the server's -k and --tls-ca for it.
 		if tr.DialContext, err = proxyTLSDial(proxyURL, proxyTLS, base); err != nil {
 			return err
 		}

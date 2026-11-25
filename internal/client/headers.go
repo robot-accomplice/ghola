@@ -34,6 +34,9 @@ func setHeaders(req *fasthttp.Request, opts *config.Options, active profile.Brow
 	}
 
 	trusted := sendsCredentials(opts, target)
+	if !trusted {
+		noteWithheld(opts, target)
+	}
 	for _, h := range opts.Headers {
 		key, val, ok := config.ParseHeader(h)
 		if !ok || (!trusted && isCredentialHeader(key)) {
@@ -77,7 +80,7 @@ func setHeaders(req *fasthttp.Request, opts *config.Options, active profile.Brow
 // --location-trusted is set, as in curl. Otherwise any server that redirects
 // can collect them (audit finding H1).
 func sendsCredentials(opts *config.Options, target string) bool {
-	return opts.Resilience.LocationTrusted || sameServer(opts.URL, target)
+	return opts.SendsCredentials(target)
 }
 
 // isCredentialHeader reports whether a -H header carries a credential.
@@ -85,28 +88,30 @@ func isCredentialHeader(key string) bool {
 	return strings.EqualFold(key, "Authorization") || strings.EqualFold(key, "Cookie")
 }
 
-// sameServer reports whether a and b have the same scheme, host and port.
-func sameServer(a, b string) bool {
-	ua, errA := url.Parse(a)
-	ub, errB := url.Parse(b)
-	if errA != nil || errB != nil {
-		return false
+// noteWithheld writes a note when this request carries no credentials
+// because target is not the server they belong to, so a 401 from target
+// can be explained. -q hides it.
+func noteWithheld(opts *config.Options, target string) {
+	if opts.Output.Silent || !hasCredentials(opts) {
+		return
 	}
-	return strings.EqualFold(ua.Scheme, ub.Scheme) &&
-		strings.EqualFold(ua.Hostname(), ub.Hostname()) &&
-		effectivePort(ua) == effectivePort(ub)
+	host := target
+	if u, err := url.Parse(target); err == nil {
+		host = u.Host
+	}
+	fmt.Fprintf(os.Stderr, "Note: the credentials are not sent to %s: they belong to another server (--follow-trusted sends them)\n", host)
 }
 
-// effectivePort returns the URL's port, or the default port of its scheme.
-func effectivePort(u *url.URL) string {
-	if p := u.Port(); p != "" {
-		return p
+// hasCredentials reports whether the run has -u, netrc or a credential
+// header from -H.
+func hasCredentials(opts *config.Options) bool {
+	if opts.User != "" {
+		return true
 	}
-	switch strings.ToLower(u.Scheme) {
-	case "https":
-		return "443"
-	case "http":
-		return "80"
+	for _, h := range opts.Headers {
+		if key, _, ok := config.ParseHeader(h); ok && isCredentialHeader(key) {
+			return true
+		}
 	}
-	return ""
+	return false
 }

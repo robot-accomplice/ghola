@@ -116,8 +116,8 @@ func (t protocolTransport) hostKeyCallback() (ssh.HostKeyCallback, error) {
 func (t protocolTransport) sshAuth(u *url.URL) (string, []ssh.AuthMethod) {
 	name, pass, hasPass := "", "", false
 	switch {
-	case t.opts.User != "":
-		name, pass, hasPass = strings.Cut(t.opts.User, ":")
+	case t.userFor(u) != "":
+		name, pass, hasPass = strings.Cut(t.userFor(u), ":")
 	case u.User != nil:
 		name = u.User.Username()
 		pass, hasPass = u.User.Password()
