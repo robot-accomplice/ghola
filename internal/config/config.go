@@ -6,11 +6,12 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-	"path"
+	"os"
 	"path/filepath"
 	"strconv"
 	"time"
 
+	"github.com/robot-accomplice/ghola/internal/localname"
 	"github.com/robot-accomplice/ghola/internal/profile"
 	"github.com/valyala/fasthttp"
 )
@@ -468,11 +469,21 @@ func inferWgetFilename(opts *Options) {
 	if err != nil {
 		return
 	}
-	name := path.Base(u.Path)
-	if name == "." || name == "/" {
+	name := localname.Safe(u.Path) // the server picks the name: keep it one file in the folder
+	if name == "" {
 		name = "index.html"
+	} else {
+		NoteLocalName(opts, localname.Base(u.Path), name)
 	}
 	opts.Output.File = filepath.Join(opts.Output.Dir, name)
+}
+
+// NoteLocalName writes a note when the name that the server chose (raw)
+// is saved under another name, so a user who looks for raw finds the file.
+func NoteLocalName(opts *Options, raw, saved string) {
+	if saved != raw && !opts.Output.Silent {
+		fmt.Fprintf(os.Stderr, "Note: the server's file name %q is saved as %q\n", raw, saved)
+	}
 }
 
 // TakeURLs stores the URLs of the command line, each with http:// when it

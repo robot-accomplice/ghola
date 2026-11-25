@@ -143,7 +143,7 @@ func TestFinish_TrustedFollowsRedirects(t *testing.T) {
 // The remote name is the last path part, index.html for a bare host, and
 // goes inside -o DIR/.
 func TestFinish_RemoteName(t *testing.T) {
-	for url, want := range map[string]string{"https://h/a/file.zip": "file.zip", "https://h/": "index.html"} {
+	for url, want := range map[string]string{"https://h/a/file.zip": "file.zip", "https://h/": "index.html", "https://h/x/..%5C..%5Cup.txt": "up.txt", "https://h/C:%5Cabs.txt": "abs.txt"} {
 		o := withURL(&Options{Output: OutputOptions{RemoteName: true}}, url)
 		finish(t, o) //nolint:errcheck
 		if o.Output.File != want {

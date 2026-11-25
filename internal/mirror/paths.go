@@ -1,11 +1,10 @@
 package mirror
 
 import (
-	"fmt"
+	"github.com/robot-accomplice/ghola/internal/localname"
 	"net/url"
 	"path"
 	"path/filepath"
-	"runtime"
 	"strings"
 )
 
@@ -44,44 +43,18 @@ func localPath(root string, u *url.URL, layout string, cutDirs int, names string
 	out := make([]string, 0, len(dirs)+2)
 	out = append(out, root)
 	for _, d := range append(dirs, file) {
-		out = append(out, safeName(d, names))
+		out = append(out, localname.Escape(d, fileNameRule(names)))
 	}
 	return filepath.Join(out...)
 }
 
-// windowsForbidden are the characters a Windows file name may not hold.
-const windowsForbidden = `<>:"\|?*`
-
-// safeName escapes the characters that --file-names forbids: unix forbids
-// only "/", windows also <>:"\|?* and control characters, and ascii also
-// every byte above 127. The default is the system's rule.
-func safeName(name, rule string) string {
+// fileNameRule is the --file-names rule, or the system's rule when none
+// is set.
+func fileNameRule(rule string) string {
 	if rule == "" {
-		rule = "unix"
-		if runtime.GOOS == "windows" {
-			rule = "windows"
-		}
+		return localname.SystemRule()
 	}
-	if name == "." || name == ".." {
-		return "%2E" + name[1:] // a name may not climb out of the copy
-	}
-	var b strings.Builder
-	for i := 0; i < len(name); i++ {
-		c := name[i]
-		bad := c == '/' || c == 0
-		switch rule {
-		case "windows":
-			bad = bad || c < 0x20 || strings.IndexByte(windowsForbidden, c) >= 0
-		case "ascii":
-			bad = bad || c < 0x20 || c > 0x7e
-		}
-		if bad {
-			fmt.Fprintf(&b, "%%%02X", c)
-		} else {
-			b.WriteByte(c)
-		}
-	}
-	return b.String()
+	return rule
 }
 
 // withExtension adds .html or .css when the content type needs it and the

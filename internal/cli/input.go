@@ -14,6 +14,7 @@ import (
 	"golang.org/x/net/html"
 
 	"github.com/robot-accomplice/ghola/internal/config"
+	"github.com/robot-accomplice/ghola/internal/localname"
 )
 
 // inputEntry is one URL of an --input file, with its own options in
@@ -225,8 +226,8 @@ func inputMetalink(r io.Reader) ([]inputEntry, error) {
 		if sum := strongestHash(append(f.Hashes, f.V3Hash...)); sum != "" {
 			args = append(args, "--checksum", sum)
 		}
-		if name := filepath.Base(f.Name); f.Name != "" && name == f.Name {
-			args = append(args, "-o", name) // a name with a folder part is not taken: it could leave the folder
+		if name := localname.Safe(f.Name); f.Name != "" && name == f.Name {
+			args = append(args, "-o", name) // a name with a folder part, a stream or a device is not taken
 		}
 		entries = append(entries, inputEntry{url: strings.TrimSpace(urls[0].URL), args: args})
 	}
