@@ -3,10 +3,12 @@ package mirror
 import (
 	"net/url"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/robot-accomplice/ghola/internal/config"
+	"github.com/robot-accomplice/ghola/internal/localname"
 )
 
 func mustURL(t *testing.T, s string) *url.URL {
@@ -39,7 +41,7 @@ func TestLocalPath(t *testing.T) {
 			t.Errorf("%s (%s, cut %d, %s): %s, want %s", tc.url, tc.layout, tc.cut, tc.names, got, tc.want)
 		}
 	}
-	if safeName("..", "unix") == ".." {
+	if localname.Escape("..", "unix") == ".." {
 		t.Error(`".." stays a name that climbs out of the copy`)
 	}
 }
@@ -97,6 +99,26 @@ func TestWithExtension(t *testing.T) {
 		}
 		if got := withExtension(in, ct); got != want {
 			t.Errorf("withExtension(%s) = %s, want %s", in, got, want)
+		}
+	}
+}
+
+// A link is the server's choice. Under every --file-names rule its local
+// path must stay below the root, also when it holds an encoded backslash.
+func TestLocalPath_StaysBelowRoot(t *testing.T) {
+	root := t.TempDir()
+	for _, raw := range []string{"http://h/t/..%5c..%5c..%5cE.txt", "http://h/%2e%2e%5cE.txt", "http://h/x%5c..%5c..%5cE.txt", "http://h/a:s.txt", "http://h/CON"} {
+		for _, rule := range []string{"unix", "windows", "ascii"} {
+			for _, layout := range []string{"full", "flat"} {
+				p := localPath(root, mustURL(t, raw), layout, 0, rule)
+				rel, err := filepath.Rel(root, p)
+				if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+					t.Errorf("%s rule %s layout %s: %q leaves %q", raw, rule, layout, p, root)
+				}
+				if strings.ContainsAny(filepath.Base(p), `\:`) && runtime.GOOS == "windows" {
+					t.Errorf("%s rule %s: name %q", raw, rule, filepath.Base(p))
+				}
+			}
 		}
 	}
 }

@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -17,6 +16,7 @@ import (
 	"time"
 
 	"github.com/robot-accomplice/ghola/internal/config"
+	"github.com/robot-accomplice/ghola/internal/localname"
 	"github.com/robot-accomplice/ghola/internal/profile"
 	gholatransport "github.com/robot-accomplice/ghola/internal/transport"
 	"github.com/valyala/fasthttp"
@@ -255,7 +255,9 @@ func applyRemoteName(opts *config.Options, meta gholatransport.StreamMeta) {
 	if !opts.Output.RemoteHeader {
 		return
 	}
-	if name := dispositionFilename(meta.Disposition); name != "" {
+	raw := dispositionName(meta.Disposition)
+	if name := localname.Safe(raw); name != "" {
+		config.NoteLocalName(opts, raw, name)                   // also when a folder part was dropped
 		opts.Output.File = filepath.Join(opts.Output.Dir, name) // -o DIR/ keeps the folder
 	}
 }
@@ -677,6 +679,12 @@ func resumeOffset(opts *config.Options) (int64, error) {
 // header value, or "" if none. Any directory components are stripped to
 // prevent path traversal.
 func dispositionFilename(disposition string) string {
+	return localname.Safe(dispositionName(disposition)) // the server picks the name: keep it one file in the folder
+}
+
+// dispositionName returns the filename parameter of a Content-Disposition
+// header as the server sent it, or "".
+func dispositionName(disposition string) string {
 	const marker = "filename="
 	i := strings.Index(strings.ToLower(disposition), marker)
 	if i < 0 {
@@ -686,13 +694,7 @@ func dispositionFilename(disposition string) string {
 	if j := strings.IndexByte(name, ';'); j >= 0 {
 		name = name[:j]
 	}
-	name = strings.TrimSpace(name)
-	name = strings.Trim(name, `"`)
-	name = path.Base(name) // strip any directory components
-	if name == "." || name == "/" || name == "" {
-		return ""
-	}
-	return name
+	return strings.Trim(strings.TrimSpace(name), `"`)
 }
 
 // decodeSink removes the content codings of the response before the bytes

@@ -15,6 +15,7 @@ import (
 	"testing"
 
 	"github.com/robot-accomplice/ghola/internal/config"
+	"github.com/robot-accomplice/ghola/internal/localname"
 	gholatransport "github.com/robot-accomplice/ghola/internal/transport"
 	"github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttp/fasthttputil"
@@ -227,6 +228,9 @@ func TestDispositionFilename(t *testing.T) {
 		`attachment; filename="../../etc/passwd"`: "passwd", // path stripped
 		`attachment; filename="a/b/c.tar.gz"`:     "c.tar.gz",
 		`attachment; filename="/etc/shadow"`:      "shadow", // absolute path stripped
+		`attachment; filename="..\..\up.txt"`:     "up.txt", // Windows separators stripped too
+		`attachment; filename="C:\abs.txt"`:       "abs.txt",
+		`attachment; filename="ads.txt:s"`:        localname.Safe("ads.txt:s"),
 	}
 	for in, want := range cases {
 		if got := dispositionFilename(in); got != want {
