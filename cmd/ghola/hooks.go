@@ -6,7 +6,6 @@ import (
 	"os/exec"
 
 	"github.com/robot-accomplice/ghola/internal/config"
-	"github.com/robot-accomplice/ghola/internal/jobs"
 )
 
 // runHook runs --on-complete or --on-error after a download, as aria2c
@@ -19,7 +18,7 @@ func runHook(command string, opts *config.Options) {
 	if command == "" {
 		return
 	}
-	cmd := exec.Command(command, jobs.ID(opts.URL, opts.Output.File), "1", opts.Output.File) //nolint:gosec // the user's own command
+	cmd := exec.Command(command, jobID(opts), "1", jobFile(opts)) //nolint:gosec // the user's own command
 	cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
 	if err := quoteForBatch(cmd); err != nil {
 		if !opts.Output.Silent {

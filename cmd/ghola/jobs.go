@@ -19,12 +19,8 @@ func recordJob(opts *config.Options, old string) string {
 	if opts.Output.NoSession || opts.Output.File == "" {
 		return old
 	}
-	file, err := filepath.Abs(opts.Output.File)
-	if err != nil {
-		file = opts.Output.File
-	}
-	id := jobs.ID(opts.URL, file)
-	err = jobs.Update(func(m map[string]jobs.Job) {
+	file, id := jobFile(opts), jobID(opts)
+	err := jobs.Update(func(m map[string]jobs.Job) {
 		added := time.Now()
 		if j, ok := m[old]; ok {
 			added = j.Added
@@ -35,6 +31,18 @@ func recordJob(opts *config.Options, old string) string {
 	warnJobs(opts, err)
 	return id
 }
+
+// jobFile is the absolute path of the output file: the job list and the
+// hooks name a file by it, so a job keeps its ID when the folder changes.
+func jobFile(opts *config.Options) string {
+	if file, err := filepath.Abs(opts.Output.File); err == nil {
+		return file
+	}
+	return opts.Output.File
+}
+
+// jobID is the ID of the download in the job list.
+func jobID(opts *config.Options) string { return jobs.ID(opts.URL, jobFile(opts)) }
 
 // forgetJob removes a finished download from the job list.
 func forgetJob(opts *config.Options, id string) {
