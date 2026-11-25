@@ -6,10 +6,17 @@ API_URL="https://api.github.com/repos/$REPO/releases/latest"
 INSTALL_DIR="${GHOLA_INSTALL_DIR:-$HOME/.local/bin}"
 
 need_cmd() {
-    if ! command -v "$1" >/dev/null 2>&1; then
-        echo "Missing required command: $1" >&2
+    cmd="$1"
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+        echo "Missing required command: $cmd" >&2
         exit 1
     fi
+}
+
+# fetch follows redirects over HTTPS only, so a redirect cannot move the
+# download to plain HTTP.
+fetch() {
+    curl --proto '=https' --proto-redir '=https' --tlsv1.2 -fL "$@"
 }
 
 need_cmd curl
@@ -37,7 +44,7 @@ case "$arch_raw" in
 esac
 
 tag="$(
-    curl -fsSL "$API_URL" \
+    fetch -sS "$API_URL" \
     | sed -n 's/.*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' \
     | head -n1
 )"
@@ -54,9 +61,9 @@ base_url="https://github.com/$REPO/releases/download/$tag"
 download_url="$base_url/$asset"
 
 if command -v sha256sum >/dev/null 2>&1; then
-    sha256() { sha256sum "$1" | cut -d' ' -f1; }
+    sha256() { file="$1"; sha256sum "$file" | cut -d' ' -f1; }
 elif command -v shasum >/dev/null 2>&1; then
-    sha256() { shasum -a 256 "$1" | cut -d' ' -f1; }
+    sha256() { file="$1"; shasum -a 256 "$file" | cut -d' ' -f1; }
 else
     echo "Missing required command: sha256sum or shasum" >&2
     exit 1
@@ -69,9 +76,9 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 echo "Downloading $asset..."
-curl -fL "$download_url" -o "$tmpdir/$asset"
+fetch "$download_url" -o "$tmpdir/$asset"
 
-curl -fsSL "$base_url/checksums.txt" -o "$tmpdir/checksums.txt"
+fetch -sS "$base_url/checksums.txt" -o "$tmpdir/checksums.txt"
 want="$(awk -v a="$asset" '$2 == a { print $1; exit }' "$tmpdir/checksums.txt")"
 if [ -z "$want" ]; then
     echo "checksums.txt of $tag has no entry for $asset." >&2
