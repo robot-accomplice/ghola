@@ -112,13 +112,15 @@ func changeJobs(verb string, ids []string) int {
 	if len(ids) == 0 {
 		return argError(fmt.Errorf("ghola jobs %s needs a job ID; ghola jobs list shows them", verb))
 	}
-	var missing []string
+	var missing, running []string
 	err := jobs.Update(func(m map[string]jobs.Job) {
 		for _, id := range ids {
 			j, ok := m[id]
 			switch {
 			case !ok:
 				missing = append(missing, id)
+			case config.InUse(j.File):
+				running = append(running, id) // only the job list changes here: a running transfer would go on
 			case verb == "pause":
 				j.Paused = true
 				m[id] = j
@@ -135,6 +137,10 @@ func changeJobs(verb string, ids []string) int {
 	}
 	if len(missing) > 0 {
 		return argError(fmt.Errorf("no job %v; ghola jobs list shows the jobs", missing))
+	}
+	if len(running) > 0 {
+		fmt.Fprintf(os.Stderr, "ghola jobs %s: job %v is running; stop its ghola first (Ctrl+C), then run this again\n", verb, running)
+		return config.WriteFileFailed.Int()
 	}
 	return config.NoError.Int()
 }

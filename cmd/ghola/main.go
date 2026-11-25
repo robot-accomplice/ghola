@@ -103,6 +103,9 @@ func executeOne(ctx context.Context, args []string, hideErrors bool, do client.D
 	}
 	opts.Output.HideErrors = hideErrors
 	noteLateJobWord(c, opts)
+	if opts.Output.Background && c.Last("input") == "-" {
+		return argError(errors.New("--background cannot read --input - : the background process has no stdin; save the list to a file and use --input FILE"))
+	}
 	if code, done := startBackground(opts, args, w); done {
 		return code
 	}
