@@ -340,3 +340,13 @@ func requestURL(req *fasthttp.Request) (*url.URL, error) {
 	}
 	return u, nil
 }
+
+// userFor returns -u (or the netrc entry) for a request to u, or "" when
+// the credentials belong to another server: an FTP or SSH server that a
+// redirect named gets no password unless --follow-trusted.
+func (t protocolTransport) userFor(u *url.URL) string {
+	if t.opts.SendsCredentials(u.String()) {
+		return t.opts.User
+	}
+	return ""
+}
