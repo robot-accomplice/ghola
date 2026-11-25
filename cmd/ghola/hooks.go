@@ -21,6 +21,12 @@ func runHook(command string, opts *config.Options) {
 	}
 	cmd := exec.Command(command, jobs.ID(opts.URL, opts.Output.File), "1", opts.Output.File) //nolint:gosec // the user's own command
 	cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
+	if err := quoteForBatch(cmd); err != nil {
+		if !opts.Output.Silent {
+			fmt.Fprintf(os.Stderr, "Warning: %s not run: %v\n", command, err)
+		}
+		return
+	}
 	if err := cmd.Run(); err != nil && !opts.Output.Silent {
 		fmt.Fprintf(os.Stderr, "Warning: %s: %v\n", command, err)
 	}
