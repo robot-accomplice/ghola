@@ -70,6 +70,67 @@ func expectRange(start, end int64) func(gholatransport.StreamMeta) error {
 	}
 }
 
+// errSegmentLength reports a piece whose body is not as long as the range
+// that its Content-Range names.
+var errSegmentLength = errors.New("segment body length differs from its Content-Range")
+
+// errRemoteChanged reports a piece of another version of the remote file
+// than the probe saw: another size or another ETag.
+var errRemoteChanged = errors.New("the remote file is not the version of the probe")
+
+// rangeWriter passes at most left bytes to w. A body that is longer than
+// its range would write over the next piece.
+type rangeWriter struct {
+	w    io.Writer
+	left int64
+}
+
+func (r *rangeWriter) Write(p []byte) (int, error) {
+	over := int64(len(p)) > r.left
+	if over {
+		p = p[:r.left]
+	}
+	n, err := r.w.Write(p)
+	r.left -= int64(n)
+	if err == nil && over {
+		err = errSegmentLength
+	}
+	return n, err
+}
+
+// remoteVersion is the version of the remote file that the probe saw.
+// Every piece of a segmented download must come from it.
+type remoteVersion struct {
+	url     string // the URL that the probe asked
+	size    int64
+	etag    string
+	ifRange string // a strong ETag, else Last-Modified; "" when there is none
+}
+
+func versionOf(url string, probe gholatransport.StreamMeta) remoteVersion {
+	s := resumeState{ETag: probe.ETag, LastModified: probe.LastModified}
+	return remoteVersion{url: url, size: probe.ContentLength, etag: probe.ETag, ifRange: s.validator()}
+}
+
+// check returns the header check of the piece r: a 206 for exactly r, of a
+// file of the probe's size and, when both answers name one, of the probe's
+// ETag. A --source mirror that names no ETag is checked by size only.
+func (v remoteVersion) check(r byteRange) func(gholatransport.StreamMeta) error {
+	inRange := expectRange(r.start, r.end)
+	return func(meta gholatransport.StreamMeta) error {
+		if err := inRange(meta); err != nil {
+			return err
+		}
+		if total := contentRangeTotal(meta.ContentRange); total != v.size {
+			return fmt.Errorf("%w: Content-Range %q, the probe saw %d bytes", errRemoteChanged, meta.ContentRange, v.size)
+		}
+		if v.etag != "" && meta.ETag != "" && meta.ETag != v.etag {
+			return fmt.Errorf("%w: ETag %s, the probe saw %s", errRemoteChanged, meta.ETag, v.etag)
+		}
+		return nil
+	}
+}
+
 func rangeEnd(end int64) string {
 	if end < 0 {
 		return ""
