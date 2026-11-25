@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 
 	"github.com/robot-accomplice/ghola/internal/client"
@@ -32,6 +33,9 @@ func runMirror(ctx context.Context, opts *config.Options, do client.Doer, stream
 		}
 		if err := m.Run(ctx); err != nil {
 			last = exitFor(err).Int()
+			if log == nil && !opts.Output.HideErrors {
+				fmt.Fprintf(os.Stderr, "Failed: %s: %s\n", u, err) // -q hides the log, not the error
+			}
 		}
 	}
 	return last

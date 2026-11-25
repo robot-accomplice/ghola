@@ -12,6 +12,11 @@ import (
 // ErrTooLarge marks a body larger than --max-size. curl exits 63 for it.
 var ErrTooLarge = errors.New("the body is larger than --max-size")
 
+// ErrOutputExists marks an output file that exists and that ghola did not
+// write: --output-overwrite is off. The file is the user's, so the
+// download is no job to resume or cancel.
+var ErrOutputExists = errors.New("the output file exists")
+
 // OpenOutput opens an output file with the rules of --output-create-dirs
 // and --output-overwrite. Every file that ghola writes for a transfer
 // opens here. ownFile is true when the file is ghola's own partial file (a
@@ -28,7 +33,7 @@ func OpenOutput(o OutputOptions, name string, flags int, ownFile bool) (*os.File
 	}
 	f, err := os.OpenFile(name, flags, 0o644)
 	if errors.Is(err, os.ErrExist) {
-		return nil, fmt.Errorf("%w: %s exists; --output-overwrite replaces it", ErrWrite, name)
+		return nil, fmt.Errorf("%w: %w: %s; --output-overwrite replaces it", ErrWrite, ErrOutputExists, name)
 	}
 	return f, WriteError(err)
 }

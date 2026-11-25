@@ -26,6 +26,9 @@ var jobs = map[string]bool{
 	JobExplain: true, JobProfiles: true, JobCompletion: true, JobCurl: true, JobWget: true, JobAria2c: true,
 }
 
+// IsJob reports whether word is a job word, such as download or mirror.
+func IsJob(word string) bool { return jobs[word] }
+
 // compatJobs take the syntax of the tool they copy; Parse does not read
 // their arguments.
 var compatJobs = map[string]bool{JobCurl: true, JobWget: true, JobAria2c: true}
