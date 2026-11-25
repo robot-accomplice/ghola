@@ -54,9 +54,6 @@ const curlTable = `
 -H --header                    => -H %s
 -A --user-agent                => --user-agent %s
 -e --referer                   => --referer %s
--d --data --data-ascii --data-binary => -d %s
---data-raw                     => --data-literal %s
---data-urlencode               => --field %s
 -F --form                      => --form %s
 -X --request                   => -m %s
 -u --user                      => -u %s
@@ -91,10 +88,8 @@ const curlTable = `
 --retry-max-time               => --retry-max-time %s
 --max-redirs                   => --follow-max %s
 -T --upload-file               => --upload %s
---json                         => --json %s
 --oauth2-bearer                => --auth-bearer %s
 --url-query                    => --query %s
---variable                     => --variable %s
 -n --netrc                     => --auth-netrc
 --netrc-file                   => --auth-netrc-file %s
 --pinnedpubkey                 => --tls-pin %s
@@ -239,12 +234,20 @@ var curlSpec = &toolSpec{
 	defaults:     strings.Fields("--no-follow --follow-max 50 --no-fail -r 0 --no-compressed"),
 	valueLetters: "ACDEFHKPQTUXYbcdehmortuwxyz", // curl 8.22.0 --help all
 	flags:        parseToolTable(curlTable),
-	takesValue:   words("-C --continue-at -K --config --url"),
+	takesValue:   words("-C --continue-at -K --config --url --variable -d --data --data-ascii --data-binary --data-raw --data-urlencode --json"),
 	special:      curlSpecial,
+	finish:       curlFinish,
 }
 
 func curlSpecial(t *translation, name, value string, _ bool) (bool, error) {
+	if kind, ok := curlDataKinds[name]; ok {
+		return true, t.addData(kind, value)
+	}
 	switch name {
+	case "-G", "--get":
+		t.body.get = true
+	case "--variable":
+		return true, t.variable(value)
 	case "-s", "--silent":
 		t.silent = true
 		t.out = append(t.out, "-q")

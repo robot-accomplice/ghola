@@ -112,10 +112,12 @@ type translation struct {
 	job string
 	// wget -r state: -np, -N, -H, -D, -l.
 	noParent, timestamping, spanHosts, domains, level bool
+	body                                             curlBody  // curl's data options
+	vars                                             variables // curl's --variable values
 }
 
 func translate(spec *toolSpec, args []string) (*Compat, error) {
-	t := &translation{spec: spec, out: append([]string(nil), spec.defaults...)}
+	t := &translation{spec: spec, out: append([]string(nil), spec.defaults...), vars: variables{}}
 	if err := t.run(args); err != nil {
 		return nil, err
 	}
@@ -198,6 +200,13 @@ func (t *translation) long(a string, args []string, i int) (int, error) {
 // expandOption translates curl's --expand-NAME VALUE to the --expand- form
 // of the native option, so the native parser expands the variables.
 func (t *translation) expandOption(name, value string) error {
+	if kind, ok := curlDataKinds[name]; ok && t.spec.name == JobCurl {
+		expanded, err := t.vars.expand(value) // the body is built here, not by the native parser
+		if err != nil {
+			return usagef("ghola curl: --%s%s: %v", expandPrefix, strings.TrimPrefix(name, "--"), err)
+		}
+		return t.addData(kind, expanded)
+	}
 	f, ok := t.spec.flags[name]
 	if !ok {
 		return t.notMapped(name)
