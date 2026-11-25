@@ -136,34 +136,14 @@ func TestBuildHeaders_SafariFamily(t *testing.T) {
 	}
 }
 
-func TestBuildHeaders_RefererModes(t *testing.T) {
-	p := DefaultProfile()
-
-	tests := []struct {
-		mode string
-		want string
-	}{
-		{"none", ""},
-		{"auto", "https://www.google.com/"},
-		{"https://example.com/ref", "https://example.com/ref"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.mode, func(t *testing.T) {
-			headers := BuildHeaders(p, HeaderOptions{
-				StealthHeaders: true,
-				RefererMode:    tt.mode,
-			})
-			var got string
-			for _, h := range headers {
-				if h.Key == "Referer" {
-					got = h.Value
-				}
-			}
-			if got != tt.want {
-				t.Errorf("Referer = %q, want %q", got, tt.want)
-			}
-		})
+// The profile headers carry no Referer: --referer is a request option of
+// its own (the client sets it), and a made-up search-engine Referer would
+// lie to the server.
+func TestBuildHeadersHasNoReferer(t *testing.T) {
+	for _, h := range BuildHeaders(DefaultProfile(), HeaderOptions{StealthHeaders: true}) {
+		if h.Key == "Referer" {
+			t.Errorf("profile headers hold Referer %q", h.Value)
+		}
 	}
 }
 
