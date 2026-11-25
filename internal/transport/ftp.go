@@ -113,7 +113,7 @@ func (t protocolTransport) dialFTP(ctx context.Context, u *url.URL) (*ftp.Server
 	if err != nil {
 		return nil, err
 	}
-	user, pass := ftpLogin(u, t.opts.User)
+	user, pass := ftpLogin(u, t.userFor(u))
 	if err := c.Login(user, pass); err != nil {
 		c.Quit() //nolint:errcheck
 		return nil, fmt.Errorf("%w: %w", ErrLoginDenied, err)

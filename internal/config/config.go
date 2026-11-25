@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/robot-accomplice/ghola/internal/localname"
+	"github.com/robot-accomplice/ghola/internal/netrc"
 	"github.com/robot-accomplice/ghola/internal/profile"
 	"github.com/valyala/fasthttp"
 )
@@ -304,12 +305,19 @@ type Options struct {
 	// (--request-target), such as * for OPTIONS.
 	RequestTarget string
 
-	Output     OutputOptions
-	Mirror     MirrorOptions
-	Stealth    StealthOptions
-	Resilience ResilienceOptions
-	ProxyCfg   ProxyOptions
-	Net        NetOptions
+	Output  OutputOptions
+	Mirror  MirrorOptions
+	Stealth StealthOptions
+	// CredentialURL is the URL whose server the credentials belong to: the
+	// first URL of the run. SendsCredentials compares a target with it.
+	CredentialURL string
+	// Netrc are the entries that --auth-netrc read; UseNetrc picks the one
+	// for each URL. UserFromFlag is true when -u gave User.
+	Netrc        []netrc.Entry
+	UserFromFlag bool
+	Resilience   ResilienceOptions
+	ProxyCfg     ProxyOptions
+	Net          NetOptions
 }
 
 // NetOptions change where a TCP connection goes (--ip, --resolve,

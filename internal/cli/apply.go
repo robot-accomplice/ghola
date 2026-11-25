@@ -221,7 +221,7 @@ var setters = map[string]setter{
 	"tls-max":        func(o *config.Options, v string, _ *Command) error { o.Stealth.TLSMax = v; return nil },
 	"tls-ca-dir":     func(o *config.Options, v string, _ *Command) error { o.Stealth.CADir = v; return nil },
 	"tls-pin":        func(o *config.Options, _ string, c *Command) error { o.Stealth.Pins = c.Values["tls-pin"]; return nil },
-	"user":           func(o *config.Options, v string, _ *Command) error { o.User = v; return nil },
+	"user":           func(o *config.Options, v string, _ *Command) error { o.User, o.UserFromFlag = v, true; return nil },
 	"proxy":          func(o *config.Options, v string, _ *Command) error { o.ProxyCfg.Proxy = v; return nil },
 	"proxy-user":     func(o *config.Options, v string, _ *Command) error { o.ProxyCfg.Auth = v; return nil },
 	"proxy-file":     func(o *config.Options, v string, _ *Command) error { o.ProxyCfg.File = v; return nil },
@@ -426,10 +426,10 @@ func expandURLs(args []string, globbing bool) ([]string, error) {
 	return out, nil
 }
 
-// applyNetrc reads the credentials for the first URL's host from the
-// netrc file (--auth-netrc reads ~/.netrc, --auth-netrc-file a given
-// file), unless -u gives them. A user in the URL picks its entry. The
-// credentials go only to that host, as -u does (audit finding H1).
+// applyNetrc reads the netrc file (--auth-netrc reads ~/.netrc,
+// --auth-netrc-file a given file), unless -u gives the credentials. Each
+// URL then takes the entry of its own host (config.UseNetrc), so one
+// host's password never goes to another host of the run.
 func applyNetrc(o *config.Options, c *Command) error {
 	path := c.Last("auth-netrc-file")
 	if path == "" && c.Last("auth-netrc") != "true" {
@@ -453,13 +453,8 @@ func applyNetrc(o *config.Options, c *Command) error {
 	if err != nil {
 		return fmt.Errorf("--auth-netrc: %w", err)
 	}
-	u, err := url.Parse(o.URL)
-	if err != nil {
-		return nil
-	}
-	if e, ok := netrc.Find(entries, u.Hostname(), u.User.Username()); ok {
-		o.User = e.Login + ":" + e.Password
-	}
+	o.Netrc = entries
+	o.UseNetrc() // the first URL; the run sets each other URL
 	return nil
 }
 
