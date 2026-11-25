@@ -102,6 +102,7 @@ func executeOne(ctx context.Context, args []string, hideErrors bool, do client.D
 		return argErrorOrGlob(err)
 	}
 	opts.Output.HideErrors = hideErrors
+	noteLateJobWord(c, opts)
 	if code, done := startBackground(opts, args, w); done {
 		return code
 	}
@@ -534,7 +535,11 @@ func fetch(ctx context.Context, opts *config.Options, do client.Doer, stream cli
 		first := recordJob(opts, "") // a download that is stopped stays in the list
 		if err := client.Download(ctx, opts, stream); err != nil {
 			code := failed(opts, err)
-			recordJob(opts, first) // the remote name may have changed the file
+			if errors.Is(err, config.ErrOutputExists) {
+				forgetJob(opts, first) // the file is the user's, not a partial download
+			} else {
+				recordJob(opts, first) // the remote name may have changed the file
+			}
 			runHook(opts.Output.OnError, opts)
 			return code
 		}
@@ -586,4 +591,18 @@ func fetch(ctx context.Context, opts *config.Options, do client.Doer, stream cli
 	}
 
 	return config.NoError.Int()
+}
+
+// noteLateJobWord writes a note when a job word comes after an option: the
+// job word must be the first argument, so "ghola -v download URL" fetches
+// http://download/ and URL. The note tells the user why.
+func noteLateJobWord(c *cli.Command, opts *config.Options) {
+	if opts.Output.Silent {
+		return
+	}
+	for _, a := range c.Args {
+		if cli.IsJob(a) {
+			fmt.Fprintf(os.Stderr, "Note: %q is read as a URL; a job word must be the first argument: ghola %s [options] URL...\n", a, a)
+		}
+	}
 }
