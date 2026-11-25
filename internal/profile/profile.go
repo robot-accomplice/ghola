@@ -3,6 +3,7 @@ package profile
 import (
 	"fmt"
 	"net/url"
+	"regexp"
 	"strings"
 )
 
@@ -128,15 +129,26 @@ func ListProfiles() []BrowserProfile {
 	return out
 }
 
-// Resolve finds the requested profile. Versioned names currently map to the
-// nearest built-in family profile while preserving the requested name.
+// versionSuffix is the version that may follow a profile name, such as
+// the 120 of "chrome-120".
+var versionSuffix = regexp.MustCompile(`^[0-9]+(\.[0-9]+)*$`)
+
+// Resolve finds the requested profile. An exact name wins, so
+// "chrome-mobile" is not "chrome" with a version. A versioned name maps to
+// the built-in family profile and keeps the requested name. Any other
+// suffix is an unknown profile.
 func Resolve(name string) (BrowserProfile, error) {
 	if strings.TrimSpace(name) == "" {
 		return DefaultProfile(), nil
 	}
 	lower := strings.ToLower(strings.TrimSpace(name))
 	for _, p := range profiles {
-		if p.Name == lower || strings.HasPrefix(lower, p.Name+"-") {
+		if p.Name == lower {
+			return p, nil
+		}
+	}
+	for _, p := range profiles {
+		if version, ok := strings.CutPrefix(lower, p.Name+"-"); ok && versionSuffix.MatchString(version) {
 			resolved := p
 			resolved.Name = lower
 			return resolved, nil
