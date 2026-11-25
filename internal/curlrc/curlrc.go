@@ -18,10 +18,19 @@ import (
 	"strings"
 )
 
-// Args returns the arguments of a config text, as curl would read them
-// from a command line: "url = x" gives "--url", "x".
-func Args(text string) ([]string, error) {
-	var args []string
+// Line is one option line of a config text. N is its line number.
+type Line struct {
+	N        int
+	Opt      string // with its dashes: "url = x" gives "--url"
+	Value    string
+	HasValue bool
+}
+
+// Lines returns the option lines of a config text, as curl reads them.
+// The caller decides whether an option takes the value of its line: curl
+// refuses a value after an option that takes none ("silent yes").
+func Lines(text string) ([]Line, error) {
+	var out []Line
 	for n, line := range strings.Split(strings.ReplaceAll(text, "\r\n", "\n"), "\n") {
 		line = strings.TrimLeft(line, " \t")
 		if line == "" || line[0] == '#' {
@@ -31,12 +40,9 @@ func Args(text string) ([]string, error) {
 		if err != nil {
 			return nil, fmt.Errorf("config line %d: %w", n+1, err)
 		}
-		args = append(args, opt)
-		if hasValue {
-			args = append(args, value)
-		}
+		out = append(out, Line{N: n + 1, Opt: opt, Value: value, HasValue: hasValue})
 	}
-	return args, nil
+	return out, nil
 }
 
 // splitLine returns the option (with its dashes) and its value.

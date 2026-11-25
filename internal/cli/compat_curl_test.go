@@ -1,10 +1,12 @@
 package cli
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/robot-accomplice/ghola/internal/config"
 )
@@ -119,5 +121,61 @@ func TestCurl_EmptyDataStillPosts(t *testing.T) {
 	}
 	if o := curlOptions(t, "-X", "PUT", "-d", "", "u"); o.Method != "PUT" {
 		t.Errorf("-X PUT: method %s", o.Method)
+	}
+}
+
+// A -K file that reads itself stops with an argument error after 5
+// levels, as curl does. Before, ghola curl ran forever.
+func TestCurl_ConfigNestsAtMostFiveDeep(t *testing.T) {
+	path := writeFile(t, "k.txt", "")
+	os.WriteFile(path, []byte("-K "+path+"\n"), 0o644) //nolint:errcheck
+	done := make(chan error, 1)
+	go func() { _, err := FromCurl([]string{"-K", path, "u"}); done <- err }()
+	select {
+	case err := <-done:
+		var ue *UsageError
+		if !errors.As(err, &ue) || !strings.Contains(err.Error(), "5") {
+			t.Fatalf("err = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("a -K file that reads itself does not stop")
+	}
+	// Five levels still work.
+	last := writeFile(t, "k5.txt", "url = http://h/deep\n")
+	for i := 0; i < 4; i++ {
+		last = writeFile(t, "k.txt", "-K "+last+"\n")
+	}
+	if c := fromCurl(t, "-K", last); c.Args[len(c.Args)-1] != "http://h/deep" {
+		t.Errorf("args = %q", c.Args)
+	}
+}
+
+// curl -K - reads the config from stdin.
+func TestCurl_ConfigFromStdin(t *testing.T) {
+	withStdin(t, "url = \"http://h/in\"\n")
+	if c := fromCurl(t, "-K", "-"); c.Args[len(c.Args)-1] != "http://h/in" {
+		t.Errorf("args = %q", c.Args)
+	}
+}
+
+// A -K line with a value after an option that takes none is an error, as
+// in curl. Before, "silent yes" fetched http://yes/.
+func TestCurl_ConfigRefusesValueAfterFlag(t *testing.T) {
+	path := writeFile(t, "k.txt", "url = http://h/\nsilent yes\n")
+	_, err := FromCurl([]string{"-K", path})
+	if err == nil || !strings.Contains(err.Error(), "line 2") || !strings.Contains(err.Error(), "--silent") {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+// curl reads --name=value, on the command line and in a -K file.
+func TestCurl_LongOptionWithEquals(t *testing.T) {
+	path := writeFile(t, "k.txt", "--url=http://h/k\n")
+	c := fromCurl(t, "--output=x.txt", "-K", path)
+	if got := strings.Join(c.Args[len(curlSpec.defaults):], " "); got != "-o x.txt http://h/k" {
+		t.Errorf("args = %q", got)
+	}
+	if _, err := FromCurl([]string{"--location=yes", "u"}); err == nil {
+		t.Error("--location=yes: no error")
 	}
 }

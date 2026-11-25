@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"os"
 	"strconv"
 	"strings"
 
@@ -112,8 +111,9 @@ type translation struct {
 	job string
 	// wget -r state: -np, -N, -H, -D, -l.
 	noParent, timestamping, spanHosts, domains, level bool
-	body                                             curlBody  // curl's data options
-	vars                                             variables // curl's --variable values
+	body                                              curlBody  // curl's data options
+	vars                                              variables // curl's --variable values
+	configDepth                                       int       // the -K files being read
 }
 
 func translate(spec *toolSpec, args []string) (*Compat, error) {
@@ -177,8 +177,8 @@ func (t *translation) long(a string, args []string, i int) (int, error) {
 		return i, nil
 	}
 	name, value, hasValue := strings.Cut(a, "=")
-	if hasValue && !t.spec.equals {
-		name, value, hasValue = a, "", false // curl has no --name=value
+	if hasValue && !t.spec.equals && !t.needsValue("--"+strings.TrimPrefix(name[2:], expandPrefix)) && !t.needsValue(name) {
+		name, value, hasValue = a, "", false // curl takes --name=value only for an option with a value
 	}
 	expand := false
 	if rest, ok := strings.CutPrefix(name, "--"+expandPrefix); ok && t.needsValue("--"+rest) {
@@ -307,17 +307,57 @@ func (t *translation) notMapped(name string) error {
 	return usagef("ghola %s: %s is not supported", t.spec.name, name)
 }
 
-// config reads a curl -K file and translates its arguments.
+// curlConfigDepth is how deep -K files can read other -K files, as in
+// curl. A file that reads itself stops there with an argument error.
+const curlConfigDepth = 5
+
+// config reads a curl -K file ("-" is stdin) and translates its lines.
 func (t *translation) config(path string) error {
-	b, err := os.ReadFile(path)
+	if t.configDepth >= curlConfigDepth {
+		return usagef("ghola curl -K %s: -K files read other -K files more than %d levels deep", path, curlConfigDepth)
+	}
+	text, err := readDataFile(path)
 	if err != nil {
 		return usagef("ghola curl -K: %v", err)
 	}
-	args, err := curlrc.Args(string(b))
+	lines, err := curlrc.Lines(text)
 	if err != nil {
 		return usagef("ghola curl -K %s: %v", path, err)
 	}
-	return t.run(args)
+	t.configDepth++
+	defer func() { t.configDepth-- }()
+	for _, l := range lines {
+		args := []string{l.Opt}
+		if l.HasValue {
+			if !t.optionTakesValue(l.Opt) {
+				return usagef("ghola curl -K %s, line %d: %s takes no value, but the line gives %q", path, l.N, l.Opt, l.Value)
+			}
+			args = append(args, l.Value)
+		}
+		if err := t.run(args); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// optionTakesValue reports whether an option, as a -K line names it,
+// takes the next word as its value: a long option that needs one and has
+// no "=", or a letter group that ends in a letter that takes one.
+func (t *translation) optionTakesValue(opt string) bool {
+	if long, ok := strings.CutPrefix(opt, "--"); ok {
+		if strings.Contains(long, "=") {
+			return false
+		}
+		return t.needsValue("--"+strings.TrimPrefix(long, expandPrefix)) || t.needsValue(opt)
+	}
+	letters := strings.TrimPrefix(opt, "-")
+	for j := 0; j < len(letters); j++ {
+		if strings.ContainsRune(t.spec.valueLetters, rune(letters[j])) {
+			return j == len(letters)-1
+		}
+	}
+	return false
 }
 
 // tries turns a try count (wget -t, aria2c -m) into retries. 0 tries means
