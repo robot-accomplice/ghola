@@ -37,14 +37,22 @@ var cssURL = regexp.MustCompile(`url\(\s*['"]?([^'")\s]+)['"]?\s*\)|@import\s+['
 func pageLinks(base *url.URL, body []byte) (links []link, nofollow bool) {
 	z := html.NewTokenizer(bytes.NewReader(body))
 	s := &pageScan{base: base}
+	inStyle := false
 	for {
 		tt := z.Next()
-		if tt == html.ErrorToken {
+		switch tt {
+		case html.ErrorToken:
 			return s.links, s.nofollow
-		}
-		if tt == html.StartTagToken || tt == html.SelfClosingTagToken {
+		case html.StartTagToken, html.SelfClosingTagToken:
 			name, _ := z.TagName()
+			inStyle = tt == html.StartTagToken && string(name) == "style"
 			s.tag(string(name), tagAttrs(z))
+		case html.TextToken:
+			if inStyle { // the url() links of a <style> element
+				s.links = append(s.links, cssLinks(s.base, z.Text())...)
+			}
+		case html.EndTagToken:
+			inStyle = false
 		}
 	}
 }

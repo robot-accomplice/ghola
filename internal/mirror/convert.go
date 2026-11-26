@@ -65,32 +65,39 @@ func (m *Mirror) target(base *url.URL, local, raw string) string {
 	if saved, ok := m.saved[u.String()]; ok {
 		rel, err := filepath.Rel(filepath.Dir(local), saved)
 		if err == nil {
-			rel = filepath.ToSlash(rel)
-			if frag != "" {
-				rel += "#" + frag
-			}
-			return (&url.URL{Path: rel}).String()
+			// The fragment goes in its own field: in the path, # becomes %23.
+			return (&url.URL{Path: filepath.ToSlash(rel), Fragment: frag}).String()
 		}
 	}
 	u.Fragment = frag
 	return u.String() // not saved: the full URL still works online
 }
 
-// convertHTML rewrites the link attributes; every other byte stays.
+// convertHTML rewrites the link attributes and the url() links of a
+// <style> element; every other byte stays.
 func (m *Mirror) convertHTML(base *url.URL, local string, body []byte) []byte {
 	z := html.NewTokenizer(bytes.NewReader(body))
 	var out bytes.Buffer
+	inStyle := false
 	for {
 		tt := z.Next()
 		if tt == html.ErrorToken {
 			return out.Bytes()
 		}
 		raw := z.Raw()
+		if tt == html.TextToken && inStyle {
+			out.Write(m.convertCSS(base, local, raw))
+			continue
+		}
+		if tt == html.EndTagToken {
+			inStyle = false
+		}
 		if tt != html.StartTagToken && tt != html.SelfClosingTagToken {
 			out.Write(raw)
 			continue
 		}
 		tok := z.Token()
+		inStyle = tt == html.StartTagToken && tok.Data == "style"
 		if m.convertTag(&tok, base, local) {
 			out.WriteString(tok.String())
 		} else {
@@ -99,25 +106,42 @@ func (m *Mirror) convertHTML(base *url.URL, local string, body []byte) []byte {
 	}
 }
 
-// convertTag rewrites the link attribute of one tag. It reports whether
-// the tag changed.
+// convertTag rewrites the link attribute, srcset and style of one tag,
+// the attributes that pageLinks reads. It reports whether the tag changed.
 func (m *Mirror) convertTag(tok *html.Token, base *url.URL, local string) bool {
-	want := "href" // <link>
+	want := ""
 	if la, ok := linkAttrs[tok.Data]; ok {
 		want = la.attr
-	} else if tok.Data != "link" {
-		return false
+	} else if tok.Data == "link" {
+		want = "href"
 	}
 	changed := false
 	for i, a := range tok.Attr {
-		if a.Key != want {
-			continue
+		t := a.Val
+		switch {
+		case want != "" && a.Key == want:
+			t = m.target(base, local, a.Val)
+		case a.Key == "srcset":
+			t = m.convertSrcset(base, local, a.Val)
+		case a.Key == "style":
+			t = string(m.convertCSS(base, local, []byte(a.Val)))
 		}
-		if t := m.target(base, local, a.Val); t != a.Val {
+		if t != a.Val {
 			tok.Attr[i].Val, changed = t, true
 		}
 	}
 	return changed
+}
+
+// convertSrcset rewrites the URL of each image candidate ("URL 2x").
+func (m *Mirror) convertSrcset(base *url.URL, local, srcset string) string {
+	parts := strings.Split(srcset, ",")
+	for i, p := range parts {
+		if f := strings.Fields(p); len(f) > 0 {
+			parts[i] = strings.Replace(p, f[0], m.target(base, local, f[0]), 1)
+		}
+	}
+	return strings.Join(parts, ",")
 }
 
 // convertCSS rewrites url() and @import.
