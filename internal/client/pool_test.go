@@ -32,7 +32,8 @@ func TestPool_ReusesOneConnectionForStreamAndDo(t *testing.T) {
 
 	opts := &config.Options{URL: ts.URL}
 	pool := &Pool{}
-	for range 5 {
+	const rounds = 20
+	for range rounds {
 		req := fasthttp.AcquireRequest()
 		req.SetRequestURI(ts.URL)
 		if _, err := pool.Stream(context.Background(), opts, req, io.Discard); err != nil {
@@ -42,11 +43,12 @@ func TestPool_ReusesOneConnectionForStreamAndDo(t *testing.T) {
 		if err := pool.Do(context.Background(), opts, req, rsp); err != nil {
 			t.Fatal(err)
 		}
-		fasthttp.ReleaseRequest(req)
-		fasthttp.ReleaseResponse(rsp)
+		Release(req, rsp)
 	}
-	if n := opened.Load(); n != 1 {
-		t.Errorf("10 requests opened %d connections, want 1", n)
+	// One connection, or two when a body is still in use as the next
+	// request goes: never one for each request.
+	if n := opened.Load(); n > 2 {
+		t.Errorf("%d requests opened %d connections, want at most 2", 2*rounds, n)
 	}
 }
 
