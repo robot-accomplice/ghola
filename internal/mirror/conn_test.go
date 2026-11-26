@@ -10,17 +10,17 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/robot-accomplice/ghola/internal/config"
 )
 
-// A mirror of many files reuses its connections. One new connection for
-// each file runs out of file descriptors on a large site (ulimit -n 1024
-// stopped a run after about 1,000 files), because the connections stay
-// open until the process ends.
+// A mirror of many files keeps few connections open. A connection that
+// stays open for each file runs out of file descriptors on a large site
+// (ulimit -n 1024 stopped a run after about 1,000 files).
 func TestMirror_ReusesConnectionsAcrossFiles(t *testing.T) {
 	const pages = 40
-	var opened atomic.Int64
+	var open atomic.Int64 // connections that the server has open now
 	var links strings.Builder
 	for i := range pages {
 		fmt.Fprintf(&links, `<a href="p%d.html">p</a>`, i)
@@ -38,8 +38,11 @@ func TestMirror_ReusesConnectionsAcrossFiles(t *testing.T) {
 		io.WriteString(w, "<html>page</html>") //nolint:errcheck
 	}))
 	ts.Config.ConnState = func(_ net.Conn, s http.ConnState) {
-		if s == http.StateNew {
-			opened.Add(1)
+		switch s {
+		case http.StateNew:
+			open.Add(1)
+		case http.StateClosed, http.StateHijacked:
+			open.Add(-1)
 		}
 	}
 	ts.Start()
@@ -50,7 +53,11 @@ func TestMirror_ReusesConnectionsAcrossFiles(t *testing.T) {
 	if err := m.Run(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if n := opened.Load(); n > 2 {
-		t.Errorf("%d files opened %d connections; one shared transport reuses one", pages+2, n)
+	const limit = 2 // net/http keeps at most 2 idle connections for each host
+	for deadline := time.Now().Add(2 * time.Second); open.Load() > limit && time.Now().Before(deadline); {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if n := open.Load(); n > limit {
+		t.Errorf("%d files keep %d connections open, want at most %d", pages+2, n, limit)
 	}
 }

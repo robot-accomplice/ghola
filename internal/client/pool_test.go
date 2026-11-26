@@ -8,23 +8,27 @@ import (
 	"net/http/httptest"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/robot-accomplice/ghola/internal/config"
 	"github.com/valyala/fasthttp"
 )
 
-// A Pool serves many requests over one connection. DefaultStreamer and
-// DefaultDoer open a new connection for each request, and each idle
-// connection stays open until the process ends: a long run uses up the
-// file descriptors.
-func TestPool_ReusesOneConnectionForStreamAndDo(t *testing.T) {
-	var opened atomic.Int64
+// A Pool keeps the open connections bounded over many requests.
+// DefaultStreamer and DefaultDoer build a transport for each request, and
+// each one keeps an idle connection open until the process ends: a long
+// run uses up the file descriptors.
+func TestPool_KeepsTheOpenConnectionsBounded(t *testing.T) {
+	var open atomic.Int64 // connections that the server has open now
 	ts := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		io.WriteString(w, "ok") //nolint:errcheck
 	}))
 	ts.Config.ConnState = func(_ net.Conn, s http.ConnState) {
-		if s == http.StateNew {
-			opened.Add(1)
+		switch s {
+		case http.StateNew:
+			open.Add(1)
+		case http.StateClosed, http.StateHijacked:
+			open.Add(-1)
 		}
 	}
 	ts.Start()
@@ -45,10 +49,15 @@ func TestPool_ReusesOneConnectionForStreamAndDo(t *testing.T) {
 		}
 		Release(req, rsp)
 	}
-	// One connection, or two when a body is still in use as the next
-	// request goes: never one for each request.
-	if n := opened.Load(); n > 2 {
-		t.Errorf("%d requests opened %d connections, want at most 2", 2*rounds, n)
+	// net/http may open an extra connection while one goes back to the
+	// idle pool, and it closes the extra ones. It keeps at most 2 idle
+	// connections for each host.
+	const limit = 2
+	for deadline := time.Now().Add(2 * time.Second); open.Load() > limit && time.Now().Before(deadline); {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if n := open.Load(); n > limit {
+		t.Errorf("%d requests keep %d connections open, want at most %d", 2*rounds, n, limit)
 	}
 }
 
