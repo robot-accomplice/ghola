@@ -248,29 +248,7 @@ func (m *Mirror) robotsAllow(ctx context.Context, u *url.URL) bool {
 	key := u.Scheme + "://" + u.Host
 	rules, ok := m.robots[key]
 	if !ok {
-		opts := *m.Base
-		opts.URL = key + "/robots.txt"
-		opts.URLs = []string{opts.URL}
-		opts.Output.Fail = false
-		robotsURL := &url.URL{Scheme: u.Scheme, Host: u.Host, Path: "/robots.txt"}
-		req, rsp, err := client.FetchURL(ctx, &opts, m.Do)
-		switch {
-		case err != nil:
-			// An unreachable robots.txt closes the site (RFC 9309, 2.3.1.4).
-			rules = disallowAll
-			m.fail(robotsURL, fmt.Errorf("nothing is fetched from the site: %w", err))
-		case rsp.StatusCode() >= http.StatusInternalServerError:
-			// A server error closes the site too: it is not a permission.
-			rules = disallowAll
-			m.fail(robotsURL, fmt.Errorf("%w: %d, so nothing is fetched from the site (RFC 9309)", config.ErrHTTPStatus, rsp.StatusCode()))
-		case rsp.StatusCode() == http.StatusOK:
-			if body, err := gholatransport.ReadBody(rsp); err == nil {
-				rules = parseRobots(strings.NewReader(string(body)))
-			}
-		}
-		if err == nil {
-			client.Release(req, rsp)
-		}
+		rules = m.fetchRobots(ctx, &url.URL{Scheme: u.Scheme, Host: u.Host, Path: "/robots.txt"})
 		m.robots[key] = rules
 	}
 	p := u.EscapedPath()
@@ -281,6 +259,45 @@ func (m *Mirror) robotsAllow(ctx context.Context, u *url.URL) bool {
 		p += "?" + u.RawQuery
 	}
 	return rules.allows(p)
+}
+
+// fetchRobots fetches robots.txt as a file of the mirror, as wget does:
+// it goes through the same transport, redirects and --warc as the other
+// files. A 4xx answer opens the whole site. A 5xx answer, or no answer,
+// closes it (RFC 9309, 2.3.1.3 and 2.3.1.4).
+func (m *Mirror) fetchRobots(ctx context.Context, u *url.URL) robotsRules {
+	local := localPath(m.Root, u, m.Opts.Layout, m.Opts.CutDirs, m.Opts.FileNames)
+	if m.Opts.Spider { // --spider saves nothing
+		tmp, err := os.CreateTemp("", "ghola-robots-")
+		if err != nil {
+			m.fail(u, err)
+			return disallowAll
+		}
+		tmp.Close()
+		local = tmp.Name()
+		defer os.Remove(local) //nolint:errcheck // a temporary file
+	}
+	opts := m.requestOptions(u, local)
+	opts.Output.Fail = true // an HTTP error writes no file
+	err := client.Download(ctx, opts, m.Stream)
+	status := opts.Output.Info.Status
+	switch {
+	case err == nil:
+		f, err := os.Open(local)
+		if err != nil {
+			m.fail(u, err)
+			return disallowAll
+		}
+		defer f.Close()
+		return parseRobots(f)
+	case errors.Is(err, config.ErrHTTPStatus) && status >= http.StatusBadRequest && status < http.StatusInternalServerError:
+		return robotsRules{}
+	case errors.Is(err, config.ErrHTTPStatus):
+		m.fail(u, fmt.Errorf("%w: %d, so nothing is fetched from the site (RFC 9309)", config.ErrHTTPStatus, status))
+	default:
+		m.fail(u, fmt.Errorf("nothing is fetched from the site: %w", err))
+	}
+	return disallowAll
 }
 
 // pause waits --wait between requests.
