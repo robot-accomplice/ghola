@@ -16,6 +16,7 @@ import (
 	"github.com/robot-accomplice/ghola/internal/config"
 	"github.com/robot-accomplice/ghola/internal/glob"
 	"github.com/robot-accomplice/ghola/internal/netrc"
+	"github.com/robot-accomplice/ghola/internal/transport"
 	"github.com/valyala/fasthttp"
 )
 
@@ -310,6 +311,9 @@ func Apply(c *Command) (*config.Options, error) {
 	if c.Job == JobDownload && o.Output.File == "" && !o.Output.Stdout {
 		o.Output.RemoteName = true // ghola download saves under the remote name
 	}
+	if err := transport.CheckOptions(o); err != nil {
+		return nil, &UsageError{Msg: err.Error()} // a bad value exits 2 before any request
+	}
 	explicit := map[string]bool{config.ExplicitMethod: c.Has("method") || c.Has("head") || c.Has("upload"), config.ExplicitProfileHeaders: c.Has("impersonate-headers")}
 	if err := config.Finish(o, func(name string) bool { return explicit[name] }); err != nil {
 		return nil, &UsageError{Msg: err.Error()}
@@ -415,12 +419,23 @@ func expandURLs(args []string, globbing bool) ([]string, error) {
 	if !globbing {
 		return args, nil
 	}
-	var out []string
+	var patterns []*glob.Pattern
+	total := 0
 	for _, a := range args {
 		p, err := glob.Parse(a)
+		if errors.Is(err, glob.ErrTooMany) {
+			return nil, &UsageError{Msg: err.Error()} // an argument error (exit 2), not a bad URL
+		}
 		if err != nil {
 			return nil, err
 		}
+		if total += p.Count(); total > glob.MaxURLs {
+			return nil, &UsageError{Msg: glob.ErrTooMany.Error()}
+		}
+		patterns = append(patterns, p)
+	}
+	out := make([]string, 0, total)
+	for _, p := range patterns {
 		p.Each(func(u string, _ []string) bool { out = append(out, u); return true })
 	}
 	return out, nil
@@ -572,10 +587,12 @@ func applyProxyTLS(o *config.Options, c *Command) error {
 
 // notInSession are the options that a resumed job does not take again:
 // ghola jobs resume gives the file, the URL and -c itself, and the others
-// name more than one job.
+// name more than one job. --variable can hold a secret, and the options
+// that use it already hold the expanded value.
 var notInSession = map[string]bool{
 	"output": true, "input": true, "input-format": true, "jobs": true, "next": true,
 	"continue": true, "continue-at": true, "config": true, "no-config": true, "session": true,
+	"variable": true,
 }
 
 // sessionArgs are the options of the run as --name=value, in the table

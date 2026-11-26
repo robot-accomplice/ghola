@@ -152,7 +152,7 @@ func TestFromWget(t *testing.T) {
 	for want, args := range map[string][]string{
 		"mirror -r 0 --no-compressed --no-url-glob --auth-netrc --depth 2 --parent --no-timestamps --hosts '*' -o ./ https://h/":      {"-r", "-l", "2", "-H", "https://h/"},
 		"mirror -r 0 --no-compressed --no-url-glob --auth-netrc --depth 0 --convert-links --output-create-dirs -o site/ https://h/d/": {"-m", "-np", "-k", "-P", "site", "https://h/d/"},
-		"download -r 0 --no-compressed --no-url-glob --auth-netrc -q --layout no-host u":                                              {"-nv", "-nH", "u"},
+		"download -r 0 --no-compressed --no-url-glob --auth-netrc -q u":                                                               {"-nv", "-nH", "u"},
 		"mirror -r 0 --no-compressed --no-url-glob --auth-netrc --no-robots --warc w.warc --parent --no-timestamps -o ./ u":           {"-r", "-e", "robots=off", "--warc-file=w", "u"},
 	} {
 		if got := native(t, FromWget, args...); got != want {

@@ -33,7 +33,7 @@ data-literal,,request,fetch,text,,--data-raw,--post-data,,0B,"Send the text as t
 field,,request,fetch,name=value (repeat),,--data-urlencode,,,0B,Add a URL-encoded form field to the body.
 form,,request,fetch,name=value | name=@file (repeat),,-F,,,0B,Send a multipart/form-data body.
 json,,request,fetch,text | @file | @-,,--json,,,2,Send a JSON body. Sets Content-Type and Accept to application/json.
-query,,request,all,name=value (repeat),,--url-query / -G,,,2,Add a URL-encoded query parameter to each URL.
+query,,request,all,name=value (repeat),,--url-query / -G / --get,,,2,Add a URL-encoded query parameter to each URL.
 upload,,request,fetch,path,,-T,--body-file --method=PUT,,0B,Send the file as the body of a PUT.
 range,,request,all,byte range,,-r,,,0B,"Request only the byte range, for example 0-1023."
 continue,-c,request,all,bool,false,-C -,-c,-c,0B,"Resume a partial file. The request sends If-Range, so a file that changed on the server starts again from byte 0."
@@ -42,9 +42,9 @@ chain,,request,fetch,eth|base|solana,,,,,0B,JSON-RPC shortcut: POST with the RPC
 url-glob,,request,all,bool,true,-g (inverse),,-Z,2,"Expand {a,b} and [1-9] in URLs."
 url-path-as-is,,request,all,bool,false,--path-as-is,,,2,Send the path without removing ./ and ../.
 request-target,,request,fetch,string,,--request-target,,,2,Send this request target in place of the URL path.
-variable,,request,fetch,name=value (repeat),,--variable,,,2,"Set a variable: NAME=VALUE, NAME@FILE or %NAME (from the environment). Only the --expand-NAME form of an option expands {{name}} in its value, as in curl."
+variable,,request,all,name=value (repeat),,--variable,,,2,"Set a variable: NAME=VALUE, NAME@FILE or %NAME (from the environment). Only the --expand-NAME form of an option expands {{name}} in its value, as in curl."
 next,,request,fetch,(separator),,-: / --next,,,2,Start the options for the next URL.
-input,-i,request,all,path,,-K (partly),-i,-i,3,"Read URLs from PATH (- for stdin): one for each line, with options for each URL in aria2's format."
+input,-i,request,all,path,,,-i,-i,3,"Read URLs from PATH (- for stdin): one for each line, with options for each URL in aria2's format."
 input-format,,request,all,lines|html|sitemap|metalink,lines,,-F / --force-html,(detected),3,The format of --input.
 http,,http,all,auto|1.0|1.1|2|2-prior|3|3-only,auto,--http1.0 / --http1.1 / --http2 / --http2-prior-knowledge / --http3 / --http3-only,--no-http2 (Wget2),,2,"The HTTP version. 3 and 3-only need --impersonate with a profile that has HTTP/3; 3-only fails when the answer is not HTTP/3. 1.0 is refused: ghola's HTTP clients write only HTTP/1.1 request lines."
 compressed,,http,all,bool,true,--compressed,--compression (Wget2),--http-accept-gzip,0B,"Ask for gzip, br and zstd and decode the body. A segment of a download asks for identity."

@@ -36,7 +36,9 @@ func DefaultConfigPath() string {
 // compatibility commands read no ghola config: curl, wget and aria2c have
 // config rules of their own.
 func WithConfig(args []string, c *Command) (*Command, error) {
-	if compatJobs[c.Job] || c.Last("no-config") == "true" {
+	// Only the transfer jobs read the config: a bad line must not stop
+	// --help, --version, explain or completion, which can say what is wrong.
+	if !transferJobs[c.Job] || c.Has("help") || c.Has("version") || c.Last("no-config") == "true" {
 		return c, nil
 	}
 	path, explicit := c.Last("config"), true
@@ -78,6 +80,7 @@ func WithConfig(args []string, c *Command) (*Command, error) {
 func configArgs(job, path, text string) ([]string, error) {
 	var out []string
 	scope := parser{c: &Command{Job: job}}
+	text = strings.TrimPrefix(text, "\ufeff") // a BOM that an editor saved
 	for n, line := range strings.Split(text, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -85,7 +88,7 @@ func configArgs(job, path, text string) ([]string, error) {
 		}
 		name, value, hasValue := strings.Cut(line, "=")
 		name = strings.TrimPrefix(strings.TrimSpace(name), "--")
-		value = strings.Trim(strings.TrimSpace(value), `"`)
+		value = configValue(value)
 		o, _ := lookupLong(name)
 		switch {
 		case o == nil:
@@ -109,4 +112,20 @@ func configArgs(job, path, text string) ([]string, error) {
 		return nil, fmt.Errorf("config file %s: %w", path, err)
 	}
 	return out, nil
+}
+
+// configValue is the value of a config line. A quoted value is taken as
+// it is; in an unquoted one, whitespace and then # start a comment, so a
+// URL keeps its #fragment.
+func configValue(raw string) string {
+	v := strings.TrimSpace(raw)
+	if len(v) >= 2 && v[0] == '"' && v[len(v)-1] == '"' {
+		return v[1 : len(v)-1]
+	}
+	for i := 1; i < len(v); i++ {
+		if v[i] == '#' && (v[i-1] == ' ' || v[i-1] == '\t') {
+			return strings.TrimSpace(v[:i])
+		}
+	}
+	return v
 }

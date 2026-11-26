@@ -128,7 +128,7 @@ The phase column says where each option is built. 0B is the parser build (step 7
 | `--field` (fetch) | name=value (repeat) |  | --data-urlencode |  |  | 0B | Add a URL-encoded form field to the body. |
 | `--form` (fetch) | name=value \| name=@file (repeat) |  | -F |  |  | 0B | Send a multipart/form-data body. |
 | `--json` (fetch) | text \| @file \| @- |  | --json |  |  | 2 | Send a JSON body. Sets Content-Type and Accept to application/json. |
-| `--query` | name=value (repeat) |  | --url-query / -G |  |  | 2 | Add a URL-encoded query parameter to each URL. |
+| `--query` | name=value (repeat) |  | --url-query / -G / --get |  |  | 2 | Add a URL-encoded query parameter to each URL. |
 | `--upload` (fetch) | path |  | -T | --body-file --method=PUT |  | 0B | Send the file as the body of a PUT. |
 | `--range` | byte range |  | -r |  |  | 0B | Request only the byte range, for example 0-1023. |
 | `--continue`, `-c` | bool | false | -C - | -c | -c | 0B | Resume a partial file. The request sends If-Range, so a file that changed on the server starts again from byte 0. |
@@ -137,9 +137,9 @@ The phase column says where each option is built. 0B is the parser build (step 7
 | `--url-glob` | bool | true | -g (inverse) |  | -Z | 2 | Expand {a,b} and [1-9] in URLs. |
 | `--url-path-as-is` | bool | false | --path-as-is |  |  | 2 | Send the path without removing ./ and ../. |
 | `--request-target` (fetch) | string |  | --request-target |  |  | 2 | Send this request target in place of the URL path. |
-| `--variable` (fetch) | name=value (repeat) |  | --variable |  |  | 2 | Set a variable: NAME=VALUE, NAME@FILE or %NAME (from the environment). Only the --expand-NAME form of an option expands {{name}} in its value, as in curl. |
+| `--variable` | name=value (repeat) |  | --variable |  |  | 2 | Set a variable: NAME=VALUE, NAME@FILE or %NAME (from the environment). Only the --expand-NAME form of an option expands {{name}} in its value, as in curl. |
 | `--next` (fetch) | (separator) |  | -: / --next |  |  | 2 | Start the options for the next URL. |
-| `--input`, `-i` | path |  | -K (partly) | -i | -i | 3 | Read URLs from PATH (- for stdin): one for each line, with options for each URL in aria2's format. |
+| `--input`, `-i` | path |  |  | -i | -i | 3 | Read URLs from PATH (- for stdin): one for each line, with options for each URL in aria2's format. |
 | `--input-format` | lines\|html\|sitemap\|metalink | lines |  | -F / --force-html | (detected) | 3 | The format of --input. |
 
 ### HTTP

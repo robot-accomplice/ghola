@@ -138,6 +138,12 @@ func translate(spec *toolSpec, args []string) (*Compat, error) {
 	case spec.downloadWithoutFile && t.file == "":
 		out = append([]string{JobDownload}, out...)
 	}
+	// The native parser checks the values here, so a tool value that has
+	// no native form fails at once, and --show-native never prints a
+	// command that fails.
+	if _, err := Parse(out); err != nil {
+		return nil, usagef("ghola %s: %v", spec.name, err)
+	}
 	return &Compat{Args: out, HideErrors: t.silent && !t.showError, ShowNative: t.showNative}, nil
 }
 

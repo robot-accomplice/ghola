@@ -1,6 +1,7 @@
 package glob
 
 import (
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -91,5 +92,19 @@ func TestCount(t *testing.T) {
 	p, _ := Parse("http://x/{a,b,c}[1-10]")
 	if p.Count() != 30 {
 		t.Errorf("Count = %d", p.Count())
+	}
+}
+
+// A glob that gives more than MaxURLs URLs is refused before any URL is
+// built. Before, [1-100000000] built every URL and ran out of memory.
+func TestParse_RefusesTooManyURLs(t *testing.T) {
+	for _, u := range []string{"http://h/[1-100000000]", "http://h/[1-1000][1-1000]"} {
+		if _, err := Parse(u); !errors.Is(err, ErrTooMany) {
+			t.Errorf("%s: err = %v", u, err)
+		}
+	}
+	p, err := Parse("http://h/[1-100000]")
+	if err != nil || p.Count() != MaxURLs {
+		t.Errorf("the limit itself: count %v, err %v", p, err)
 	}
 }

@@ -102,7 +102,7 @@ func checkValue(o *Option, v string) error {
 	var err error
 	switch o.Type {
 	case typeInt:
-		_, err = strconv.Atoi(v)
+		err = checkCount(v)
 	case typeDuration:
 		_, err = ParseDuration(v)
 	case typeSize:
@@ -136,4 +136,12 @@ func checkEnum(o *Option, v string) error {
 // URL is one: PEM|DER|P12 are words in capitals.
 func isPlaceholder(choice string) bool {
 	return choice == "URL"
+}
+
+// checkCount checks a whole number, with a message that names the value.
+func checkCount(v string) error {
+	if _, err := strconv.Atoi(v); err != nil {
+		return fmt.Errorf("%q is not a whole number", v)
+	}
+	return nil
 }

@@ -16,6 +16,7 @@
 package glob
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -37,6 +38,18 @@ const (
 	msgNestedBrace    = "nested brace"
 	msgUnmatchedClose = "unmatched close brace/bracket"
 )
+
+// MaxURLs is the most URLs that the globs of one command line give.
+// ghola builds every URL before the first request, so a larger glob is
+// refused at once, not after it has filled the memory.
+const MaxURLs = 100_000
+
+// ErrTooMany is the error of a glob that gives more than MaxURLs URLs.
+var ErrTooMany = fmt.Errorf("the URL globs give more than %d URLs", MaxURLs)
+
+// errBadRange marks a range that cannot be read; parseGlob adds the
+// position.
+var errBadRange = errors.New(msgBadRange)
 
 // Pattern is a parsed URL glob.
 type Pattern struct {
@@ -78,6 +91,9 @@ func Parse(url string) (*Pattern, error) {
 		}
 	}
 	p.addText(&text)
+	if p.Count() > MaxURLs {
+		return nil, ErrTooMany
+	}
 	return p, nil
 }
 
@@ -106,9 +122,12 @@ func parseGlob(url string, start int) (values []string, end int, literal bool, e
 	if isIPv6(inner) {
 		return nil, end, true, nil
 	}
-	values, ok := parseRange(inner)
-	if !ok {
+	values, err = parseRange(inner)
+	if errors.Is(err, errBadRange) {
 		return nil, 0, false, &Error{msgBadRange, end + 2}
+	}
+	if err != nil {
+		return nil, 0, false, err
 	}
 	return values, end, false, nil
 }
@@ -139,22 +158,22 @@ func parseList(url string, start int) ([]string, int, error) {
 
 // parseRange reads the inside of [a-b] or [a-b:step]: numbers, or letters
 // of the same case.
-func parseRange(s string) ([]string, bool) {
+func parseRange(s string) ([]string, error) {
 	spec, stepText, hasStep := strings.Cut(s, ":")
 	from, to, ok := strings.Cut(spec, "-")
 	if !ok || from == "" || to == "" {
-		return nil, false
+		return nil, errBadRange
 	}
 	step := 1
 	if hasStep {
 		n, err := strconv.Atoi(stepText)
 		if err != nil || n < 1 {
-			return nil, false
+			return nil, errBadRange
 		}
 		step = n
 	}
 	if a, b, ok := letters(from, to); ok {
-		return letterRange(a, b, step), true
+		return letterRange(a, b, step), nil
 	}
 	return numberRange(from, to, step)
 }
@@ -168,11 +187,14 @@ func letterRange(a, b byte, step int) []string {
 }
 
 // numberRange keeps the width of a start with a leading zero.
-func numberRange(from, to string, step int) ([]string, bool) {
+func numberRange(from, to string, step int) ([]string, error) {
 	a, errA := strconv.Atoi(from)
 	b, errB := strconv.Atoi(to)
 	if errA != nil || errB != nil || a < 0 || b < a {
-		return nil, false
+		return nil, errBadRange
+	}
+	if (b-a)/step >= MaxURLs {
+		return nil, ErrTooMany
 	}
 	width := 0
 	if len(from) > 1 && from[0] == '0' {
@@ -182,7 +204,7 @@ func numberRange(from, to string, step int) ([]string, bool) {
 	for n := a; n <= b; n += step {
 		out = append(out, fmt.Sprintf("%0*d", width, n))
 	}
-	return out, true
+	return out, nil
 }
 
 // letters reports a letter range of one case, from <= to.
@@ -203,11 +225,14 @@ func isIPv6(s string) bool {
 	return ip != nil && strings.Contains(addr, ":")
 }
 
-// Count is the number of URLs that the pattern gives.
+// Count is the number of URLs that the pattern gives, or MaxURLs+1 when
+// it gives more.
 func (p *Pattern) Count() int {
 	n := 1
 	for _, pt := range p.parts {
-		n *= len(pt.values)
+		if n *= len(pt.values); n > MaxURLs {
+			return MaxURLs + 1
+		}
 	}
 	return n
 }
