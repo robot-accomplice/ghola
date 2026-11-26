@@ -36,12 +36,12 @@ func setTLSVersions(cfg *tls.Config, lowest, highest string) error {
 		}
 		ver, ok := tlsVersions[v.value]
 		if !ok {
-			return fmt.Errorf("%s %q: use 1.2 or 1.3", v.name, v.value)
+			return config.BadOptionf("%s %q: use 1.2 or 1.3", v.name, v.value)
 		}
 		*v.field = ver
 	}
 	if cfg.MinVersion != 0 && cfg.MaxVersion != 0 && cfg.MinVersion > cfg.MaxVersion {
-		return fmt.Errorf("--tls-min %s is above --tls-max %s", lowest, highest)
+		return config.BadOptionf("--tls-min %s is above --tls-max %s", lowest, highest)
 	}
 	return nil
 }
@@ -90,15 +90,15 @@ func caPool(file, dir string) (*x509.CertPool, error) {
 type pinSet map[string]bool
 
 // parsePins reads sha256//BASE64 values; several may be joined with ";",
-// as curl takes them.
+// as curl takes them, or with ",". Base64 has neither character.
 func parsePins(values []string) (pinSet, error) {
 	pins := pinSet{}
 	for _, v := range values {
-		for _, p := range strings.Split(v, ";") {
+		for _, p := range strings.FieldsFunc(v, func(r rune) bool { return r == ';' || r == ',' }) {
 			b64, ok := strings.CutPrefix(strings.TrimSpace(p), "sha256//")
 			raw, err := base64.StdEncoding.DecodeString(b64)
 			if !ok || err != nil || len(raw) != sha256.Size {
-				return nil, fmt.Errorf("--tls-pin %q: use sha256//BASE64 of the public key", p)
+				return nil, config.BadOptionf("--tls-pin %q: use sha256//BASE64 of the public key", p)
 			}
 			pins[b64] = true
 		}

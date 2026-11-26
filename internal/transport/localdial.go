@@ -25,7 +25,8 @@ func hasLocalOptions(n config.NetOptions) bool {
 // localDial returns the base dial function: from the --interface address
 // and a --local-port in its range, or to the --unix-socket. The socket
 // serves HTTP only, as in curl, so FTP and SSH pass unixOK false.
-func localDial(n config.NetOptions, unixOK bool) (dialFunc, error) {
+func localDial(opts *config.Options, unixOK bool) (dialFunc, error) {
+	n := opts.Net
 	d, err := sourceDial(n, unixOK)
 	if err != nil || n.DoH == "" || (n.UnixSocket != "" && unixOK) {
 		return d, err
@@ -34,7 +35,11 @@ func localDial(n config.NetOptions, unixOK bool) (dialFunc, error) {
 	if n.IPVersion == "4" || n.IPVersion == "6" {
 		network = "tcp" + n.IPVersion
 	}
-	return newDoH(n.DoH, network).dial(d), nil // --doh resolves the name
+	doh, err := newDoH(n.DoH, network, opts.Stealth)
+	if err != nil {
+		return nil, err
+	}
+	return doh.dial(d), nil // --doh resolves the name
 }
 
 // sourceDial is localDial without --doh.

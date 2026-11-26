@@ -227,6 +227,9 @@ func newH3Network(opts *config.Options, selectedProxy string) (Transport, error)
 	if name == "" || selectedProxy != "" || opts.Stealth.HTTP3 {
 		return nil, nil
 	}
+	if len(opts.Stealth.Pins) > 0 || opts.Stealth.CRL != "" {
+		return nil, nil // HTTP/3 does not check them: stay on TCP
+	}
 	if p, err := profile.Resolve(name); err != nil || !p.SupportsHTTP3 {
 		return nil, nil //nolint:nilerr // newNetwork reports a bad profile
 	}
@@ -260,7 +263,7 @@ func newNetwork(opts *config.Options, selectedProxy string) (Transport, error) {
 	if err != nil {
 		return nil, err
 	}
-	local, err := localDial(opts.Net, true) // --interface, --local-port, --unix-socket
+	local, err := localDial(opts, true) // --interface, --local-port, --unix-socket
 	if err != nil {
 		return nil, err
 	}
@@ -373,12 +376,8 @@ func tlsClientProfile(opts *config.Options) (tlsprofiles.ClientProfile, error) {
 	if !ok {
 		return tlsprofiles.ClientProfile{}, fmt.Errorf("no tls-client profile mapping for %q", activeProfile.Name)
 	}
-	// The browser profile sets the TLS handshake, and ghola does not yet
-	// pass a CA pool or a client certificate to tls-client; fail loud
-	// rather than ignore the options. A pin would be per host on
-	// tls-client, and --tls-pin covers every host of the transfer.
-	if opts.Stealth.ClientCert != "" || opts.Stealth.CACert != "" || hasTLSOptions(opts.Stealth) || hasProxyTLS(opts.ProxyCfg.TLS) {
-		return tlsprofiles.ClientProfile{}, fmt.Errorf("the --tls-* options other than --no-tls-verify do not work with --impersonate yet: the browser profile sets the TLS handshake")
+	if err := impersonateRefused(opts); err != nil {
+		return tlsprofiles.ClientProfile{}, err
 	}
 	return mappedProfile, nil
 }
@@ -415,6 +414,12 @@ func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transpor
 	if opts.Stealth.Insecure {
 		options = append(options, tlsclient.WithInsecureSkipVerify())
 	}
+	tlsOptions, transportOptions, err := impersonateTLS(opts.Stealth)
+	if err != nil {
+		return nil, err
+	}
+	options = append(options, tlsOptions...)
+	options = append(options, tlsclient.WithTransportOptions(transportOptions))
 	if opts.Resilience.Timeout > 0 {
 		options = append(options, tlsclient.WithTimeoutMilliseconds(opts.Resilience.Timeout))
 	}
@@ -422,7 +427,7 @@ func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transpor
 	if err != nil {
 		return nil, err
 	}
-	local, err := localDial(opts.Net, true) // --interface, --local-port, --unix-socket
+	local, err := localDial(opts, true) // --interface, --local-port, --unix-socket
 	if err != nil {
 		return nil, err
 	}
