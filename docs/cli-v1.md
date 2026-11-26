@@ -1,6 +1,6 @@
 # ghola v1 command line
 
-**Status (2026-11-20): draft for Jon's review** (phase 0B, step 6 of `docs/plans/2026-11-15-parity-and-ux-plan.md`). No code uses it yet. Section 11 lists the questions that need a decision.
+**Status (2026-11-26): the v1 command line of ghola v1.0.0 and later.** ghola parses its command line from these tables. Section 11 records the questions and the decisions.
 
 The data is in three files in `docs/cli/`: `v1-options.csv`, `v0-to-v1.csv` and `v1-tasks.csv`. `python scripts/cli_spec.py` checks them, runs the task test and writes the tables in this file between the BEGIN and END markers. Do not edit those tables by hand. The parser (step 7) is built from `v1-options.csv`, so the spec and the code cannot drift.
 
@@ -31,7 +31,7 @@ The first word picks the job. Without a job word, ghola fetches.
 
 Rules:
 1. The job word must be the first argument.
-2. Options can come before or after the URLs, as in curl. `--` ends the options.
+2. Options can come before or after the URLs, as in curl. `--` ends the options. The URL globs of one command line give at most 100000 URLs; more is an argument error.
 3. Each option has a scope: `all` (fetch, download, mirror and inspect), or one job. `ghola inspect` also takes the fetch options, because it makes a request as a fetch does (for example with `--impersonate` or `--proxy`). An option outside its scope is an argument error that names the job where it works.
 
 ## 2. Short letters
@@ -84,7 +84,7 @@ The native jobs use the defaults that Jon decided in `docs/cli/v1-defaults.md`. 
 5. Responses are decompressed.
 6. The progress meter shows only when stderr is a terminal and the body does not go to it.
 7. There are no default timeouts.
-8. Several URLs go on after a failure, and the exit code is the last error, as in curl.
+8. Several URLs go on after a failure, and the exit code is that of the last URL that failed. curl differs: it exits with the code of the last URL, so it exits 0 when the last URL works.
 
 ## 5. Options
 
@@ -95,7 +95,7 @@ The phase column says where each option is built. 0B is the parser build (step 7
 
 | Option | Type | Default | curl | wget | aria2 | Phase | Description |
 |---|---|---|---|---|---|---|---|
-| `--output`, `-o` | path | stdout (fetch); remote name (download and mirror) | -o / -O / --output-dir | -O / -P | -o / -d | 0B | Write the body to PATH. A PATH that ends in / or names a folder gets the remote file name inside it. With several URLs: one -o DIR/ serves all, or one -o for each URL in order. |
+| `--output`, `-o` | path | stdout (fetch); remote name (download and mirror) | -o / -O / --output-dir | -O / -P | -o / -d | 0B | Write the body to PATH. A PATH that ends in / or names a folder gets the remote file name inside it; ghola creates that last folder when it does not exist, and a missing folder above it needs --output-create-dirs. With several URLs: one -o DIR/ serves all, or one -o for each URL in order. |
 | `--output-name` | url\|header | url | -J | --content-disposition | (default header) | 0B | Take the remote file name from the URL or from Content-Disposition. A name with a folder part is refused. |
 | `--output-overwrite` | bool | true (fetch); false (download and mirror) | --no-clobber (inverse) | -nc (inverse) | --allow-overwrite | 2 | Replace an existing file. Without it an existing file stops the job with exit 23. |
 | `--output-create-dirs` | bool | false | --create-dirs | -x | (default) | 2 | Create the missing folders of PATH. |
@@ -119,7 +119,7 @@ The phase column says where each option is built. 0B is the parser build (step 7
 | Option | Type | Default | curl | wget | aria2 | Phase | Description |
 |---|---|---|---|---|---|---|---|
 | `--method`, `-m` (fetch) | string | GET; POST with a body | -X | --method |  | 0B | Send the request with this method. |
-| `--head`, `-I` (fetch) | bool | false | -I | --spider -S |  | 0B | Send HEAD and write the response headers to stdout. |
+| `--head`, `-I` (fetch) | bool | false | -I |  |  | 0B | Send HEAD and write the response headers to stdout. |
 | `--header`, `-H` | Name: value (repeat) |  | -H | --header | --header | 0B | Add a request header. "Name:" removes a header that ghola or the profile sets. |
 | `--user-agent` | string | ghola/VERSION | -A | -U | -U | 0B | Set the User-Agent header. |
 | `--referer` | none\|auto\|URL | none | -e | --referer | --referer | 0B | Set the Referer header. auto sends the previous URL after a redirect. |
@@ -129,12 +129,12 @@ The phase column says where each option is built. 0B is the parser build (step 7
 | `--form` (fetch) | name=value \| name=@file (repeat) |  | -F |  |  | 0B | Send a multipart/form-data body. |
 | `--json` (fetch) | text \| @file \| @- |  | --json |  |  | 2 | Send a JSON body. Sets Content-Type and Accept to application/json. |
 | `--query` | name=value (repeat) |  | --url-query / -G / --get |  |  | 2 | Add a URL-encoded query parameter to each URL. |
-| `--upload` (fetch) | path |  | -T | --body-file --method=PUT |  | 0B | Send the file as the body of a PUT. |
+| `--upload` (fetch) | path |  | -T | --body-file |  | 0B | Send the file as the body of a PUT. |
 | `--range` | byte range |  | -r |  |  | 0B | Request only the byte range, for example 0-1023. |
 | `--continue`, `-c` | bool | false | -C - | -c | -c | 0B | Resume a partial file. The request sends If-Range, so a file that changed on the server starts again from byte 0. |
 | `--continue-at` (fetch) | bytes |  | -C N | --start-pos |  | 0B | Resume at this byte offset. |
 | `--chain` (fetch) | eth\|base\|solana |  |  |  |  | 0B | JSON-RPC shortcut: POST with the RPC headers of the chain. |
-| `--url-glob` | bool | true | -g (inverse) |  | -Z | 2 | Expand {a,b} and [1-9] in URLs. |
+| `--url-glob` | bool | true | -g (inverse) |  | -P | 2 | Expand {a,b} and [1-9] in URLs. |
 | `--url-path-as-is` | bool | false | --path-as-is |  |  | 2 | Send the path without removing ./ and ../. |
 | `--request-target` (fetch) | string |  | --request-target |  |  | 2 | Send this request target in place of the URL path. |
 | `--variable` | name=value (repeat) |  | --variable |  |  | 2 | Set a variable: NAME=VALUE, NAME@FILE or %NAME (from the environment). Only the --expand-NAME form of an option expands {{name}} in its value, as in curl. |
@@ -146,8 +146,8 @@ The phase column says where each option is built. 0B is the parser build (step 7
 
 | Option | Type | Default | curl | wget | aria2 | Phase | Description |
 |---|---|---|---|---|---|---|---|
-| `--http` | auto\|1.0\|1.1\|2\|2-prior\|3\|3-only | auto | --http1.0 / --http1.1 / --http2 / --http2-prior-knowledge / --http3 / --http3-only | --no-http2 (Wget2) |  | 2 | The HTTP version. 3 and 3-only need --impersonate with a profile that has HTTP/3; 3-only fails when the answer is not HTTP/3. 1.0 is refused: ghola's HTTP clients write only HTTP/1.1 request lines. |
-| `--compressed` | bool | true | --compressed | --compression (Wget2) | --http-accept-gzip | 0B | Ask for gzip, br and zstd and decode the body. A segment of a download asks for identity. |
+| `--http` | auto\|1.0\|1.1\|2\|2-prior\|3\|3-only | auto | --http1.0 / --http1.1 / --http2 / --http2-prior-knowledge / --http3 / --http3-only | --no-http2 (Wget2) |  | 2 | The HTTP version. 2 uses HTTP/2 on https:// only: on http:// it sends HTTP/1.1, because ghola has no h2c upgrade (2-prior sends HTTP/2 at once). 3 and 3-only need --impersonate with a profile that has HTTP/3; 3-only fails when the answer is not HTTP/3. 1.0 is refused: ghola's HTTP clients write only HTTP/1.1 request lines. |
+| `--compressed` | bool | true | --compressed | --compression (Wget2) | --http-accept-gzip | 0B | Ask for gzip, deflate, br and zstd and decode the body. A segment of a download asks for identity. |
 | `--follow` | bool | true | -L | (default) | (default) | 0B | Follow redirects. |
 | `--follow-max` | int | 20 | --max-redirs | --max-redirect |  | 0B | Stop with exit 47 after this many redirects. |
 | `--follow-trusted` | bool | false | --location-trusted |  |  | 0B | Send -u and the Authorization and Cookie headers to other hosts after a redirect too. |
@@ -179,7 +179,7 @@ The phase column says where each option is built. 0B is the parser build (step 7
 | `--retry-max`, `-r` | int | 3 (idempotent methods); 0 (others) | --retry | -t | -m | 0B | Retries after a transient failure. A POST retries only when this is set. |
 | `--retry-delay` | duration | 1s (doubles each time) | --retry-delay | --waitretry | --retry-wait | 0B | The first wait before a retry. Retry-After from the server wins. |
 | `--retry-max-time` | duration |  | --retry-max-time |  |  | 2 | Stop retries after this total time. |
-| `--retry-status` | list | 408,429,500,502,503,504,522,524 | (fixed list) | --retry-on-http-error |  | 0B | The status codes that are retried. A refused or reset connection and a timeout are always retried. |
+| `--retry-status` | status list | 408,429,500,502,503,504,522,524 | (fixed list) | --retry-on-http-error |  | 0B | The status codes that are retried. A refused or reset connection is retried. -t is one limit over all attempts, so a timeout is not retried. |
 
 ### Names and connections
 
@@ -205,7 +205,7 @@ The phase column says where each option is built. 0B is the parser build (step 7
 | `--tls-cert-type` | PEM\|DER\|P12 | PEM | --cert-type | --certificate-type |  | 2 | The format of --tls-cert. |
 | `--tls-min` | 1.2\|1.3 | 1.2 | --tlsv1.2 / --tlsv1.3 | --secure-protocol | --min-tls-version | 2 | The lowest TLS version. |
 | `--tls-max` | 1.2\|1.3 | 1.3 | --tls-max |  |  | 2 | The highest TLS version. |
-| `--tls-ciphers` | list |  | --ciphers / --tls13-ciphers | --ciphers |  | 2 | The cipher suites. With --impersonate this changes the fingerprint and ghola writes a warning. |
+| `--tls-ciphers` | cipher list |  | --ciphers / --tls13-ciphers | --ciphers |  | 2 | The TLS 1.2 cipher suites (Go picks the TLS 1.3 suites itself). Refused with --impersonate (exit 2): the profile sets the suites. |
 | `--tls-pin` | sha256//hash (list) |  | --pinnedpubkey | --pinnedpubkey (Wget2) |  | 2 | Refuse a server key that does not match. |
 | `--tls-crl` | path |  | --crlfile | --crl-file |  | 2 | Refuse certificates in this CRL. |
 | `--tls-ocsp` | bool | false | --cert-status | --ocsp (Wget2) |  | 2 | Require a good OCSP staple. |
@@ -217,8 +217,8 @@ The phase column says where each option is built. 0B is the parser build (step 7
 |---|---|---|---|---|---|---|---|
 | `--user`, `-u` | user:password |  | -u | --user / --password | --http-user / --http-passwd | 0B | Send these credentials. They go only to the host of the first URL unless --follow-trusted. |
 | `--auth` | basic\|digest\|ntlm\|negotiate\|any | basic | --basic / --digest / --ntlm / --negotiate / --anyauth |  |  | 2 | The authentication method for --user. |
-| `--auth-bearer` | token |  | --oauth2-bearer |  |  | 2 | Send Authorization: Bearer with the token. |
-| `--auth-aws-sigv4` | provider:region:service |  | --aws-sigv4 |  |  | 2 | Sign the request with AWS Signature Version 4. |
+| `--auth-bearer` | token |  | --oauth2-bearer |  |  | 2 | Send Authorization: Bearer with the token. It goes only to the host of the first URL unless --follow-trusted. |
+| `--auth-aws-sigv4` | provider:region:service |  | --aws-sigv4 |  |  | 2 | Sign the request with AWS Signature Version 4. The key signs only requests to the host of the first URL unless --follow-trusted. |
 | `--auth-netrc` | bool | false | -n / --netrc | (default on) | (default on) | 2 | Read credentials from ~/.netrc. |
 | `--auth-netrc-file` | path |  | --netrc-file |  | --netrc-path | 2 | Read credentials from this netrc file. |
 
@@ -245,8 +245,8 @@ The phase column says where each option is built. 0B is the parser build (step 7
 
 | Option | Type | Default | curl | wget | aria2 | Phase | Description |
 |---|---|---|---|---|---|---|---|
-| `--impersonate` | profile |  |  |  |  | 0B | Copy a browser's TLS and HTTP/2 fingerprint: chrome firefox safari edge. ghola profiles lists them. |
-| `--impersonate-headers` | bool | false |  |  |  | 0B | Send the browser's default headers in its order. |
+| `--impersonate` | profile |  |  |  |  | 0B | Copy a browser's TLS and HTTP/2 fingerprint: chrome firefox safari edge. ghola profiles lists them. --tls-ca, --tls-ca-dir, --tls-cert, --tls-key, --tls-pin and --tls-crl work with it; the other --tls-* options are refused with exit 2, because they would change the fingerprint. |
+| `--impersonate-headers` | bool | false; true with --impersonate |  |  |  | 0B | Send the browser's default headers in its order. --impersonate turns it on; --no-impersonate-headers turns it off. |
 | `--impersonate-accept-language` | string | profile default |  |  |  | 0B | Override the profile's Accept-Language. |
 
 ### Download manager
@@ -289,7 +289,7 @@ The phase column says where each option is built. 0B is the parser build (step 7
 | `--quota` (mirror) | size |  |  | -Q |  | 4 | Stop after this many bytes in total. |
 | `--spider` | bool | false |  | --spider | --dry-run | 4 | Check the links and save nothing. |
 | `--file-names` | unix\|windows\|ascii | system |  | --restrict-file-names |  | 4 | Which characters a local file name may hold. |
-| `--warc` | path |  |  | --warc-file |  | 4 | Also write the exchange as a WARC file. |
+| `--warc` | path |  |  | --warc-file |  | 4 | Also write the exchange as a WARC file. A fetch needs -o FILE: the WARC records come from a transfer to a file. |
 
 ### General
 
@@ -305,16 +305,23 @@ The phase column says where each option is built. 0B is the parser build (step 7
 
 `ghola curl`, `ghola wget` and `ghola aria2c` accept the syntax of the tool they copy, with that tool's defaults (D4). For example, `ghola curl URL` does not follow redirects.
 
-1. **One table.** Each compatibility option maps to a native option through the curl, wget and aria2 columns of `v1-options.csv`. The parser for each compatibility command is generated from those columns, so a new native option is in the compatibility commands when its column is filled.
+1. **One table.** Each compatibility option maps to a native option through the curl, wget and aria2 columns of `v1-options.csv`. Each compatibility command has its own table in `internal/cli/compat_tools.go`, and a test runs every flag of the curl column through `ghola curl`, so the spec and the command cannot drift.
 2. **`--show-native`** prints the native command and does not run it. The harness runs that native command too, and compares the results (plan risk 2).
 3. **An option with no native form** is an argument error (exit 2) that names it. For example `--libcurl` and the mail protocols are not planned (plan section 8).
-4. **No rc files.** The compatibility commands do not read `.curlrc`, `.wgetrc` or `aria2.conf`, so a pasted command runs the same on every computer. `ghola wget -e` and `ghola curl -K` read their arguments.
+4. **No rc files.** The compatibility commands do not read `.curlrc`, `.wgetrc` or `aria2.conf`, so a pasted command runs the same on every computer. `ghola wget -e` and `ghola curl -K` read their arguments. A `-K` file can read other `-K` files at most 5 levels deep, as in curl.
+5. **The native parser checks the native form.** A tool value with no native form (for example `wget --restrict-file-names=lowercase`) is an argument error at once, so `--show-native` never prints a command that fails.
+6. **Known differences.** These tool behaviours have no native form in v1.0.1:
+   - `ghola curl --no-clobber` stops with exit 23 when the file exists. curl writes `NAME.1`.
+   - `ghola curl -Z` with the bodies on stdout runs the transfers one after the other. The bytes are the same.
+   - `ghola curl -e 'URL;auto'` is refused. Use `-e URL` or `-e ';auto'`.
+   - `ghola aria2c` does not rename an existing file. aria2c writes `NAME.1`; ghola stops with exit 23, and the error names `--allow-overwrite=true`.
+   - `ghola aria2c` does not use `--min-split-size`. `-x` and `-s` set the number of ranges, as min(-s, -x), with aria2's defaults 5 and 1. ghola writes a note for it unless `-q`.
 
 ## 7. Errors that teach
 
 Each case is an argument error (exit 2). The message names the fix.
 
-1. **An unknown option** shows the nearest native name (edit distance 2 or less): "`--folow` is not a ghola option. Did you mean `--follow`?"
+1. **An unknown option** shows the native names that start with it (`--out`: `--output`), or else the nearest native name (edit distance 2 or less, and less than the length of the name, so one letter gets no guess): "`--folow` is not a ghola option. Did you mean `--follow`?"
 2. **A v0 flag** shows its v1 form from `v0-to-v1.csv`: "`--serve` is a v0 flag. Use `ghola serve`."
 3. **A flag of curl, wget or aria2** shows the native form from the equivalents columns: "`-L` is a curl flag. In ghola, redirects are on by default. Use `--no-follow` to turn them off."
 4. **A letter that changed its meaning.** `-c`, `-i` and `-w` had other meanings in v0 (`--chain`, `--include`, `--wget`). A v0 command with these letters does not get the v0 message, because the letters are valid. Section 11, question E, decides this.
@@ -322,7 +329,7 @@ Each case is an argument error (exit 2). The message names the fix.
 ## 8. Exit codes, config and environment
 
 1. **Exit codes** are curl's numbers, as in phase 1 (README table). 2 is an argument error. `ghola explain CODE` writes the cause and what to try.
-2. **Config file:** `~/.config/ghola/config` (on Windows `%APPDATA%\ghola\config`). It holds one option on each line, in long form without the dashes, for example `follow-max = 10`. An option on the command line wins. `--config PATH` reads another file, and `--no-config` reads none.
+2. **Config file:** `~/.config/ghola/config` (on Windows `%APPDATA%\ghola\config`). It holds one option on each line, in long form without the dashes, for example `follow-max = 10`. A line that starts with `#` is a comment, and so is the rest of a line after whitespace and `#`, unless the value is in double quotes. A UTF-8 BOM at the start is ignored. An option on the command line wins. `--config PATH` reads another file, and `--no-config` reads none. Only the transfer jobs (fetch, download, mirror and inspect) read the file, so a bad line does not stop `--help`, `--version`, `explain` or `completion`.
 3. **Environment:**
    - `http_proxy`, `https_proxy` and `no_proxy`, as in phase 1, M8.
    - `NO_COLOR` and `TERM=dumb` turn the colour off, as in v0.
@@ -341,7 +348,7 @@ v1.0.0 removes the v0 flags (plan step 8). A v0 flag stops with an argument erro
 | `-c / --chain NAME` | --chain NAME | No short letter: -c is --continue. |
 | `--cacert` | --tls-ca |  |
 | `--cert` | --tls-cert |  |
-| `--compressed` | (default) | Use --no-compressed to turn it off. |
+| `--compressed` | --compressed (the default) | Use --no-compressed to turn it off. |
 | `--connect-timeout SECONDS` | --timeout-connect DURATION | A bare number is still seconds. |
 | `-n / --connections N` | -n / --connections N | Only for ghola download. |
 | `-C / --continue-at OFFSET` | -c / --continue or --continue-at OFFSET | -C - becomes -c. |
@@ -351,7 +358,7 @@ v1.0.0 removes the v0 flags (plan step 8). A v0 flag stops with an argument erro
 | `--data-binary` | -d / --data |  |
 | `--data-urlencode` | --field |  |
 | `-D / --drift MS` | --wait-jitter DURATION |  |
-| `-f / --fail` | (default) | Use --no-fail to turn it off. The rule is now status 400 and above. |
+| `-f / --fail` | --fail (the default) | Use --no-fail to turn it off. The rule is now status 400 and above. |
 | `-F / --form` | --form | No short letter (1.4% of curl files). |
 | `-G / --ghost` | (removed) | It sent an X-Ghola-Identity header that marked each request as coming from ghola. |
 | `--har` | --har |  |
@@ -360,7 +367,7 @@ v1.0.0 removes the v0 flags (plan step 8). A v0 flag stops with an argument erro
 | `--http3` | --http 3 |  |
 | `--impersonate` | --impersonate |  |
 | `-i / --include` | --show-headers | curl 8.10 uses the same name. |
-| `-k / --insecure` | --no-tls-verify |  |
+| `-k / --insecure` | -k / --no-tls-verify |  |
 | `--jq PATH` | --output-select PATH | The syntax is gjson and not jq. See open question 2. |
 | `--key` | --tls-key |  |
 | `--limit-rate` | --rate-max |  |
@@ -437,7 +444,7 @@ The plan's rule counts the job word as an option. No design can meet it, for two
 | 20 | Show only the response headers | `ghola -I URL` | 1 | 7 | curl 1/7, wget 2/16 | yes |  |  |
 | 21 | Show the response headers and the body | `ghola --show-headers URL` | 1 | 19 | curl 1/7, wget 3/12 | **no** |  | Accepted: --show-headers is in 0.9% of curl files. |
 | 22 | Debug a request | `ghola -v URL` | 1 | 7 | curl 1/7, wget 1/7, aria2 1/30 | yes |  |  |
-| 23 | Print only the status code | `ghola -qo /dev/null -w '%{http_code}' URL` | 3 | 36 | curl 3/36 | yes |  |  |
+| 23 | Print only the status code | `ghola -qo /dev/null -w '%{http_code}' URL` | 3 | 36 | curl 3/36 | yes |  | On Windows, write -o NUL for -o /dev/null. |
 | 24 | Get one field of a JSON answer | `ghola --output-select name URL` | 1 | 25 | none | yes | output-select |  |
 | 25 | Skip the TLS certificate check | `ghola -k URL` | 1 | 7 | curl 1/7, wget 3/32, aria2 1/30 | yes |  |  |
 | 26 | Trust a private CA | `ghola --tls-ca ca.pem URL` | 1 | 20 | curl 1/20, wget 3/33, aria2 1/28 | yes | tls-ca |  |

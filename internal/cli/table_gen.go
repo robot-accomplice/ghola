@@ -5,7 +5,7 @@ package cli
 
 // optionsCSV is docs/cli/v1-options.csv.
 const optionsCSV = `name,short,group,scope,type,default,curl,wget,aria2,phase,description
-output,-o,output,all,path,stdout (fetch); remote name (download and mirror),-o / -O / --output-dir,-O / -P,-o / -d,0B,"Write the body to PATH. A PATH that ends in / or names a folder gets the remote file name inside it. With several URLs: one -o DIR/ serves all, or one -o for each URL in order."
+output,-o,output,all,path,stdout (fetch); remote name (download and mirror),-o / -O / --output-dir,-O / -P,-o / -d,0B,"Write the body to PATH. A PATH that ends in / or names a folder gets the remote file name inside it; ghola creates that last folder when it does not exist, and a missing folder above it needs --output-create-dirs. With several URLs: one -o DIR/ serves all, or one -o for each URL in order."
 output-name,,output,all,url|header,url,-J,--content-disposition,(default header),0B,Take the remote file name from the URL or from Content-Disposition. A name with a folder part is refused.
 output-overwrite,,output,all,bool,true (fetch); false (download and mirror),--no-clobber (inverse),-nc (inverse),--allow-overwrite,2,Replace an existing file. Without it an existing file stops the job with exit 23.
 output-create-dirs,,output,all,bool,false,--create-dirs,-x,(default),2,Create the missing folders of PATH.
@@ -24,7 +24,7 @@ trace,,output,all,path,,--trace / --trace-ascii,,,2,Write all bytes sent and rec
 trace-format,,output,all,hex|ascii,hex,--trace-ascii,,,2,The format of --trace.
 trace-time,,output,all,bool,false,--trace-time,,,2,Add a time to each --trace and --verbose line.
 method,-m,request,fetch,string,GET; POST with a body,-X,--method,,0B,Send the request with this method.
-head,-I,request,fetch,bool,false,-I,--spider -S,,0B,Send HEAD and write the response headers to stdout.
+head,-I,request,fetch,bool,false,-I,,,0B,Send HEAD and write the response headers to stdout.
 header,-H,request,all,Name: value (repeat),,-H,--header,--header,0B,"Add a request header. ""Name:"" removes a header that ghola or the profile sets."
 user-agent,,request,all,string,ghola/VERSION,-A,-U,-U,0B,Set the User-Agent header.
 referer,,request,all,none|auto|URL,none,-e,--referer,--referer,0B,Set the Referer header. auto sends the previous URL after a redirect.
@@ -34,20 +34,20 @@ field,,request,fetch,name=value (repeat),,--data-urlencode,,,0B,Add a URL-encode
 form,,request,fetch,name=value | name=@file (repeat),,-F,,,0B,Send a multipart/form-data body.
 json,,request,fetch,text | @file | @-,,--json,,,2,Send a JSON body. Sets Content-Type and Accept to application/json.
 query,,request,all,name=value (repeat),,--url-query / -G / --get,,,2,Add a URL-encoded query parameter to each URL.
-upload,,request,fetch,path,,-T,--body-file --method=PUT,,0B,Send the file as the body of a PUT.
+upload,,request,fetch,path,,-T,--body-file,,0B,Send the file as the body of a PUT.
 range,,request,all,byte range,,-r,,,0B,"Request only the byte range, for example 0-1023."
 continue,-c,request,all,bool,false,-C -,-c,-c,0B,"Resume a partial file. The request sends If-Range, so a file that changed on the server starts again from byte 0."
 continue-at,,request,fetch,bytes,,-C N,--start-pos,,0B,Resume at this byte offset.
 chain,,request,fetch,eth|base|solana,,,,,0B,JSON-RPC shortcut: POST with the RPC headers of the chain.
-url-glob,,request,all,bool,true,-g (inverse),,-Z,2,"Expand {a,b} and [1-9] in URLs."
+url-glob,,request,all,bool,true,-g (inverse),,-P,2,"Expand {a,b} and [1-9] in URLs."
 url-path-as-is,,request,all,bool,false,--path-as-is,,,2,Send the path without removing ./ and ../.
 request-target,,request,fetch,string,,--request-target,,,2,Send this request target in place of the URL path.
 variable,,request,all,name=value (repeat),,--variable,,,2,"Set a variable: NAME=VALUE, NAME@FILE or %NAME (from the environment). Only the --expand-NAME form of an option expands {{name}} in its value, as in curl."
 next,,request,fetch,(separator),,-: / --next,,,2,Start the options for the next URL.
 input,-i,request,all,path,,,-i,-i,3,"Read URLs from PATH (- for stdin): one for each line, with options for each URL in aria2's format."
 input-format,,request,all,lines|html|sitemap|metalink,lines,,-F / --force-html,(detected),3,The format of --input.
-http,,http,all,auto|1.0|1.1|2|2-prior|3|3-only,auto,--http1.0 / --http1.1 / --http2 / --http2-prior-knowledge / --http3 / --http3-only,--no-http2 (Wget2),,2,"The HTTP version. 3 and 3-only need --impersonate with a profile that has HTTP/3; 3-only fails when the answer is not HTTP/3. 1.0 is refused: ghola's HTTP clients write only HTTP/1.1 request lines."
-compressed,,http,all,bool,true,--compressed,--compression (Wget2),--http-accept-gzip,0B,"Ask for gzip, br and zstd and decode the body. A segment of a download asks for identity."
+http,,http,all,auto|1.0|1.1|2|2-prior|3|3-only,auto,--http1.0 / --http1.1 / --http2 / --http2-prior-knowledge / --http3 / --http3-only,--no-http2 (Wget2),,2,"The HTTP version. 2 uses HTTP/2 on https:// only: on http:// it sends HTTP/1.1, because ghola has no h2c upgrade (2-prior sends HTTP/2 at once). 3 and 3-only need --impersonate with a profile that has HTTP/3; 3-only fails when the answer is not HTTP/3. 1.0 is refused: ghola's HTTP clients write only HTTP/1.1 request lines."
+compressed,,http,all,bool,true,--compressed,--compression (Wget2),--http-accept-gzip,0B,"Ask for gzip, deflate, br and zstd and decode the body. A segment of a download asks for identity."
 follow,,http,all,bool,true,-L,(default),(default),0B,Follow redirects.
 follow-max,,http,all,int,20,--max-redirs,--max-redirect,,0B,Stop with exit 47 after this many redirects.
 follow-trusted,,http,all,bool,false,--location-trusted,,,0B,Send -u and the Authorization and Cookie headers to other hosts after a redirect too.
@@ -69,7 +69,7 @@ wait-jitter,,limits,all,duration,0,,--random-wait,,0B,Add a random wait from 0 t
 retry-max,-r,retry,all,int,3 (idempotent methods); 0 (others),--retry,-t,-m,0B,Retries after a transient failure. A POST retries only when this is set.
 retry-delay,,retry,all,duration,1s (doubles each time),--retry-delay,--waitretry,--retry-wait,0B,The first wait before a retry. Retry-After from the server wins.
 retry-max-time,,retry,all,duration,,--retry-max-time,,,2,Stop retries after this total time.
-retry-status,,retry,all,list,"408,429,500,502,503,504,522,524",(fixed list),--retry-on-http-error,,0B,The status codes that are retried. A refused or reset connection and a timeout are always retried.
+retry-status,,retry,all,status list,"408,429,500,502,503,504,522,524",(fixed list),--retry-on-http-error,,0B,"The status codes that are retried. A refused or reset connection is retried. -t is one limit over all attempts, so a timeout is not retried."
 ip,,net,all,any|4|6,any,-4 / -6,-4 / -6,--disable-ipv6,2,The IP version.
 resolve,,net,all,host:port:addr (repeat),,--resolve,,,2,Use this address for host:port.
 connect-to,,net,all,host:port:host2:port2 (repeat),,--connect-to,,,2,Connect to host2:port2 for requests to host:port.
@@ -85,15 +85,15 @@ tls-key,,tls,all,path,,--key,--private-key,--private-key,0B,The private key of -
 tls-cert-type,,tls,all,PEM|DER|P12,PEM,--cert-type,--certificate-type,,2,The format of --tls-cert.
 tls-min,,tls,all,1.2|1.3,1.2,--tlsv1.2 / --tlsv1.3,--secure-protocol,--min-tls-version,2,The lowest TLS version.
 tls-max,,tls,all,1.2|1.3,1.3,--tls-max,,,2,The highest TLS version.
-tls-ciphers,,tls,all,list,,--ciphers / --tls13-ciphers,--ciphers,,2,The cipher suites. With --impersonate this changes the fingerprint and ghola writes a warning.
+tls-ciphers,,tls,all,cipher list,,--ciphers / --tls13-ciphers,--ciphers,,2,The TLS 1.2 cipher suites (Go picks the TLS 1.3 suites itself). Refused with --impersonate (exit 2): the profile sets the suites.
 tls-pin,,tls,all,sha256//hash (list),,--pinnedpubkey,--pinnedpubkey (Wget2),,2,Refuse a server key that does not match.
 tls-crl,,tls,all,path,,--crlfile,--crl-file,,2,Refuse certificates in this CRL.
 tls-ocsp,,tls,all,bool,false,--cert-status,--ocsp (Wget2),,2,Require a good OCSP staple.
 tls-ech,,tls,all,bool,false,--ech,,,2,Use Encrypted Client Hello when the server offers it.
 user,-u,auth,all,user:password,,-u,--user / --password,--http-user / --http-passwd,0B,Send these credentials. They go only to the host of the first URL unless --follow-trusted.
 auth,,auth,all,basic|digest|ntlm|negotiate|any,basic,--basic / --digest / --ntlm / --negotiate / --anyauth,,,2,The authentication method for --user.
-auth-bearer,,auth,all,token,,--oauth2-bearer,,,2,Send Authorization: Bearer with the token.
-auth-aws-sigv4,,auth,all,provider:region:service,,--aws-sigv4,,,2,Sign the request with AWS Signature Version 4.
+auth-bearer,,auth,all,token,,--oauth2-bearer,,,2,Send Authorization: Bearer with the token. It goes only to the host of the first URL unless --follow-trusted.
+auth-aws-sigv4,,auth,all,provider:region:service,,--aws-sigv4,,,2,Sign the request with AWS Signature Version 4. The key signs only requests to the host of the first URL unless --follow-trusted.
 auth-netrc,,auth,all,bool,false,-n / --netrc,(default on),(default on),2,Read credentials from ~/.netrc.
 auth-netrc-file,,auth,all,path,,--netrc-file,,--netrc-path,2,Read credentials from this netrc file.
 proxy,,proxy,all,URL,from the environment,-x,-e use_proxy=on,--all-proxy,0B,Send through this proxy: http https socks4 socks4a socks5 socks5h (SOCKS in phase 2).
@@ -105,8 +105,8 @@ proxy-bypass,,proxy,all,list,from no_proxy,--noproxy,(no_proxy),--no-proxy,2,Hos
 proxy-tls-*,,proxy,all,(as --tls-*),,--proxy-cacert / --proxy-insecure / ...,,,2,Each --tls-* option has a --proxy-tls-* form for an HTTPS proxy.
 cookie,,cookie,all,name=value | file (repeat),,-b,--load-cookies,--load-cookies,0B,"Send this cookie, or the cookies in the file."
 cookie-jar,,cookie,all,path,,-c (write) with -b (read),--load-cookies / --save-cookies,--load-cookies / --save-cookies,0B,Read cookies from PATH and write them back. ghola reads the Netscape format and the v0 JSON jar. A new jar is Netscape.
-impersonate,,impersonate,all,profile,,,,,0B,Copy a browser's TLS and HTTP/2 fingerprint: chrome firefox safari edge. ghola profiles lists them.
-impersonate-headers,,impersonate,all,bool,false,,,,0B,Send the browser's default headers in its order.
+impersonate,,impersonate,all,profile,,,,,0B,"Copy a browser's TLS and HTTP/2 fingerprint: chrome firefox safari edge. ghola profiles lists them. --tls-ca, --tls-ca-dir, --tls-cert, --tls-key, --tls-pin and --tls-crl work with it; the other --tls-* options are refused with exit 2, because they would change the fingerprint."
+impersonate-headers,,impersonate,all,bool,false; true with --impersonate,,,,0B,Send the browser's default headers in its order. --impersonate turns it on; --no-impersonate-headers turns it off.
 impersonate-accept-language,,impersonate,all,string,profile default,,,,0B,Override the profile's Accept-Language.
 connections,-n,download,download,int,1,,,-x / -s,3,Split one file into N ranges on N connections. Needs Range support.
 jobs,-j,download,all,int,1,-Z / --parallel-max,,-j,3,Run up to N transfers at the same time.
@@ -139,7 +139,7 @@ robots,,mirror,mirror,bool,true,,-e robots=off (inverse),,4,Obey robots.txt and 
 quota,,mirror,mirror,size,,,-Q,,4,Stop after this many bytes in total.
 spider,,mirror,all,bool,false,,--spider,--dry-run,4,Check the links and save nothing.
 file-names,,mirror,all,unix|windows|ascii,system,,--restrict-file-names,,4,Which characters a local file name may hold.
-warc,,mirror,all,path,,,--warc-file,,4,Also write the exchange as a WARC file.
+warc,,mirror,all,path,,,--warc-file,,4,Also write the exchange as a WARC file. A fetch needs -o FILE: the WARC records come from a transfer to a file.
 config,,general,all,path,~/.config/ghola/config,-K,--config / -e,--conf-path,2,Read options from PATH.
 no-config,,general,all,bool,false,-q (first),--no-config,--no-conf,2,Read no config file.
 help,-h,general,all,topic,,-h / --help category,-h,-h,0B,"Show help, or the help for a topic."
@@ -154,7 +154,7 @@ const v0CSV = `v0,v1,note
 -c / --chain NAME,--chain NAME,No short letter: -c is --continue.
 --cacert,--tls-ca,
 --cert,--tls-cert,
---compressed,(default),Use --no-compressed to turn it off.
+--compressed,--compressed (the default),Use --no-compressed to turn it off.
 --connect-timeout SECONDS,--timeout-connect DURATION,A bare number is still seconds.
 -n / --connections N,-n / --connections N,Only for ghola download.
 -C / --continue-at OFFSET,-c / --continue or --continue-at OFFSET,-C - becomes -c.
@@ -164,7 +164,7 @@ const v0CSV = `v0,v1,note
 --data-binary,-d / --data,
 --data-urlencode,--field,
 -D / --drift MS,--wait-jitter DURATION,
--f / --fail,(default),Use --no-fail to turn it off. The rule is now status 400 and above.
+-f / --fail,--fail (the default),Use --no-fail to turn it off. The rule is now status 400 and above.
 -F / --form,--form,No short letter (1.4% of curl files).
 -G / --ghost,(removed),It sent an X-Ghola-Identity header that marked each request as coming from ghola.
 --har,--har,
@@ -173,7 +173,7 @@ const v0CSV = `v0,v1,note
 --http3,--http 3,
 --impersonate,--impersonate,
 -i / --include,--show-headers,curl 8.10 uses the same name.
--k / --insecure,--no-tls-verify,
+-k / --insecure,-k / --no-tls-verify,
 --jq PATH,--output-select PATH,The syntax is gjson and not jq. See open question 2.
 --key,--tls-key,
 --limit-rate,--rate-max,
