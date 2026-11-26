@@ -259,15 +259,11 @@ func newNetwork(opts *config.Options, selectedProxy string) (Transport, error) {
 	// net/http streams resp.Body whatever the Content-Length. fasthttp's
 	// client read a body with a known length into memory, which caused the
 	// v0.6.0 large-download OOM, and it was removed for decision D3.
-	rules, err := newNetRules(opts.Net)
+	plan, err := newDialPlan(opts, true) // --connect-to, --resolve, --ip, --doh, --interface, --local-port, --unix-socket
 	if err != nil {
 		return nil, err
 	}
-	local, err := localDial(opts, true) // --interface, --local-port, --unix-socket
-	if err != nil {
-		return nil, err
-	}
-	base := rules.dial(local) // --connect-to, --resolve, --ip
+	base := plan.direct
 	envTLS := &envProxyTLS{st: opts.ProxyCfg.TLS}
 	httpTransport := &http.Transport{
 		TLSClientConfig:   tlsCfg,
@@ -278,11 +274,11 @@ func newNetwork(opts *config.Options, selectedProxy string) (Transport, error) {
 		Proxy:              envTLS.proxy(httpProxyFromEnv(opts.ProxyCfg.Bypass)),
 		// With no --proxy, a SOCKS proxy from the environment goes through
 		// the shared SOCKS dialer. --proxy replaces both below.
-		DialContext:            envTLS.dial(envDialer(base, opts.ProxyCfg.Bypass)),
+		DialContext:            envTLS.dial(envDialer(plan, opts.ProxyCfg.Bypass)),
 		MaxResponseHeaderBytes: maxHeaderBytes(opts.Resilience.BufferSize),
 	}
 	httpTransport.Protocols = httpProtocols(opts.Stealth.HTTPVersion)
-	if err := useFixedProxy(httpTransport, selectedProxy, opts.ProxyCfg.TLS, base); err != nil {
+	if err := useFixedProxy(httpTransport, selectedProxy, opts.ProxyCfg.TLS, plan); err != nil {
 		return nil, err
 	}
 	if err := useECH(httpTransport, opts, base); err != nil {
@@ -322,7 +318,8 @@ func httpProtocols(version string) *http.Protocols {
 // useFixedProxy sets --proxy on the net/http transport: SOCKS through the
 // shared dialer, and an https proxy with the --proxy-tls-* options
 // through proxyTLSDial. The environment then does not apply.
-func useFixedProxy(tr *http.Transport, selectedProxy string, proxyTLS config.StealthOptions, base dialFunc) error {
+func useFixedProxy(tr *http.Transport, selectedProxy string, proxyTLS config.StealthOptions, plan *dialPlan) error {
+	base := plan.direct
 	if selectedProxy == "" {
 		if hasProxyTLS(proxyTLS) {
 			return fmt.Errorf("the --proxy-tls-* options need an https:// --proxy")
@@ -336,7 +333,7 @@ func useFixedProxy(tr *http.Transport, selectedProxy string, proxyTLS config.Ste
 	tr.Proxy, tr.DialContext = http.ProxyURL(proxyURL), base
 	switch {
 	case isSOCKS(proxyURL):
-		tr.Proxy, tr.DialContext = nil, socksDialer(proxyURL, base)
+		tr.Proxy, tr.DialContext = nil, socksDialer(proxyURL, plan)
 	case strings.EqualFold(proxyURL.Scheme, "https"):
 		// Always our own TLS to the proxy, with the --proxy-tls-* options
 		// only: net/http would use the server's -k and --tls-ca for it.
@@ -423,22 +420,17 @@ func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transpor
 	if opts.Resilience.Timeout > 0 {
 		options = append(options, tlsclient.WithTimeoutMilliseconds(opts.Resilience.Timeout))
 	}
-	rules, err := newNetRules(opts.Net)
+	plan, err := newDialPlan(opts, true) // --connect-to, --resolve, --ip, --doh, --interface, --local-port, --unix-socket
 	if err != nil {
 		return nil, err
 	}
-	local, err := localDial(opts, true) // --interface, --local-port, --unix-socket
-	if err != nil {
-		return nil, err
-	}
-	base := rules.dial(local) // --connect-to, --resolve, --ip
 	// The rules and the local options need ghola's dial function.
-	custom := rules != nil || hasLocalOptions(opts.Net)
+	custom := plan.rules != nil || hasLocalOptions(opts.Net)
 	if custom && opts.Stealth.HTTP3 {
 		// QUIC dials UDP itself, past ghola's dial function.
-		return nil, fmt.Errorf("--http 3 does not work with --resolve, --connect-to, --ip, --interface, --local-port or --unix-socket: HTTP/3 does not use their dial")
+		return nil, config.BadOptionf("--http 3 does not work with --resolve, --connect-to, --ip, --interface, --local-port or --unix-socket: HTTP/3 does not use their dial")
 	}
-	dialOpt, err := tlsClientDial(selectedProxy, base, custom, opts.ProxyCfg.Bypass)
+	dialOpt, err := tlsClientDial(selectedProxy, plan, custom, opts.ProxyCfg.Bypass)
 	if err != nil {
 		return nil, err
 	}
@@ -465,7 +457,7 @@ func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transpor
 		only3:       opts.Stealth.HTTPVersion == "3-only",
 	}
 	if t.envProxy && !t.rulesDirect {
-		socksOptions := append(options[:len(options):len(options)], tlsclient.WithDialContext(envDialer(base, opts.ProxyCfg.Bypass)))
+		socksOptions := append(options[:len(options):len(options)], tlsclient.WithDialContext(envDialer(plan, opts.ProxyCfg.Bypass)))
 		if t.socksClient, err = tlsclient.NewHttpClient(tlsclient.NewNoopLogger(), socksOptions...); err != nil {
 			return nil, err
 		}
@@ -475,14 +467,14 @@ func newTLSClientTransport(opts *config.Options, selectedProxy string) (Transpor
 
 // tlsClientDial returns the tls-client option for the proxy and the dial
 // function, or nil for tls-client's own dialer.
-func tlsClientDial(selectedProxy string, base dialFunc, custom bool, bypass *string) (tlsclient.HttpClientOption, error) {
+func tlsClientDial(selectedProxy string, plan *dialPlan, custom bool, bypass *string) (tlsclient.HttpClientOption, error) {
 	if selectedProxy == "" {
 		if !custom {
 			return nil, nil
 		}
 		// The rules need ghola's dial function, so this client cannot take
 		// an HTTP proxy from the environment: clientFor refuses one.
-		return tlsclient.WithDialContext(envDialer(base, bypass)), nil
+		return tlsclient.WithDialContext(envDialer(plan, bypass)), nil
 	}
 	proxyURL, err := url.Parse(selectedProxy)
 	if err != nil {
@@ -492,7 +484,7 @@ func tlsClientDial(selectedProxy string, base dialFunc, custom bool, bypass *str
 	case isSOCKS(proxyURL):
 		// tls-client has no local-DNS socks5 and runs its own SOCKS4; the
 		// shared dialer gives both stacks the same SOCKS behaviour.
-		return tlsclient.WithDialContext(socksDialer(proxyURL, base)), nil
+		return tlsclient.WithDialContext(socksDialer(proxyURL, plan)), nil
 	case custom:
 		return nil, ErrRulesNeedDirect
 	default:
