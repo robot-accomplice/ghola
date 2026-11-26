@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
@@ -21,6 +22,10 @@ func startGuardedBridge(t *testing.T) (string, string) {
 		t.Fatal(err)
 	}
 	addr, token := ln.Addr().String(), "test-token"
+	t.Chdir(t.TempDir()) // RPC jobs write only below the folder where ghola serve runs
+	if err := os.Mkdir("out", 0o755); err != nil {
+		t.Fatal(err)
+	}
 	srv := &fasthttp.Server{Handler: Guard(Handler(nil), addr, token)}
 	go srv.Serve(ln)                     //nolint:errcheck
 	t.Cleanup(func() { srv.Shutdown() }) //nolint:errcheck
@@ -41,7 +46,7 @@ func TestRPC_WebSocket(t *testing.T) {
 	defer conn.Close()
 	conn.SetReadDeadline(time.Now().Add(10 * time.Second)) //nolint:errcheck
 	add := map[string]any{"jsonrpc": "2.0", "id": 7, "method": "ghola.add",
-		"params": map[string]any{"urls": []string{files.URL + "/f"}, "args": []string{"-o", t.TempDir() + "/"}}}
+		"params": map[string]any{"urls": []string{files.URL + "/f"}, "args": []string{"-o", "out/"}}}
 	if err := conn.WriteJSON(add); err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +111,7 @@ func TestRPC_WebSocketAnswerComesFirst(t *testing.T) {
 	}
 	defer conn.Close()
 	conn.SetReadDeadline(time.Now().Add(30 * time.Second)) //nolint:errcheck
-	dir := t.TempDir() + "/"
+	dir := "out/"
 	for i := range 100 {
 		add := map[string]any{"jsonrpc": "2.0", "id": i + 1, "method": "ghola.add",
 			"params": map[string]any{"urls": []string{fmt.Sprintf("%s/f%d", files.URL, i)}, "args": []string{"-o", dir}}}

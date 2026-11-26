@@ -261,7 +261,7 @@ redirectLoop:
 
 			if opts.Resilience.Location && isRedirectStatus(status) {
 				loc := string(rsp.Header.Peek("Location"))
-				if err := checkRedirectScheme(effectiveURL, loc); err != nil {
+				if err := checkRedirectScheme(opts, effectiveURL, loc); err != nil {
 					fasthttp.ReleaseRequest(req)
 					fasthttp.ReleaseResponse(rsp)
 					return nil, nil, err
@@ -360,14 +360,19 @@ var ErrRedirectScheme = errors.New("redirect to a protocol that ghola does not f
 var redirectSchemes = map[string]bool{"http": true, "https": true, "ftp": true, "ftps": true}
 
 // checkRedirectScheme refuses a redirect to a protocol outside
-// redirectSchemes. A Location that does not resolve is the caller's case.
-func checkRedirectScheme(baseURL, location string) error {
+// redirectSchemes, or outside http and https with HTTPRedirectsOnly (the
+// bridge). A Location that does not resolve is the caller's case.
+func checkRedirectScheme(opts *config.Options, baseURL, location string) error {
 	next, ok := resolveLocation(baseURL, location)
 	if !ok {
 		return nil
 	}
 	u, err := url.Parse(next)
-	if err != nil || redirectSchemes[strings.ToLower(u.Scheme)] {
+	if err != nil {
+		return nil
+	}
+	scheme := strings.ToLower(u.Scheme)
+	if redirectSchemes[scheme] && (!opts.Resilience.HTTPRedirectsOnly || scheme == "http" || scheme == "https") {
 		return nil
 	}
 	return fmt.Errorf("%w: %s (Location %q)", ErrRedirectScheme, u.Scheme, location)

@@ -2,6 +2,7 @@ package cookies
 
 import (
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/url"
@@ -83,7 +84,16 @@ func (j *Jar) Load() error {
 	}
 	if strings.HasPrefix(text, "[") {
 		j.format = formatJSON
-		return json.Unmarshal(data, &j.entries)
+		if err := json.Unmarshal(data, &j.entries); err != nil {
+			return err
+		}
+		for _, e := range j.entries {
+			if e.Name == "" || e.Domain == "" {
+				// Some other JSON file of the user's: Save would replace it.
+				return fmt.Errorf("%s is not a cookie jar: a JSON jar entry needs a name and a domain", j.path)
+			}
+		}
+		return nil
 	}
 	j.entries, err = parseNetscape(text)
 	return err

@@ -71,8 +71,9 @@ func TestRPC(t *testing.T) {
 		fmt.Fprint(w, "content of "+r.URL.Path)
 	}))
 	defer srv.Close()
-	h := Handler(nil)
 	dir := t.TempDir() + "/"
+	t.Chdir(dir) // RPC jobs write only below the folder where ghola serve runs
+	h := Handler(nil)
 	res, msg := rpcCall(t, h, "ghola.add", map[string]any{"urls": []string{srv.URL + "/a"}, "args": []string{"-o", dir}})
 	if msg != "" {
 		t.Fatal(msg)

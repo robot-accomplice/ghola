@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"net/url"
 	"os"
@@ -64,6 +65,7 @@ const Addr = "127.0.0.1:18789"
 // custom Doer injection; production callers should use ListenAndServe.
 func Handler(do client.Doer) fasthttp.RequestHandler {
 	rpc := newRPC(nil) // the jobs live as long as the bridge
+	root := rpc.root   // the folder where ghola serve runs: files that a client names stay below it
 	return func(ctx *fasthttp.RequestCtx) {
 		if string(ctx.Path()) == "/health" {
 			ctx.SetContentType("application/json")
@@ -90,6 +92,12 @@ func Handler(do client.Doer) fasthttp.RequestHandler {
 		if br.URL == "" {
 			ctx.SetStatusCode(fasthttp.StatusBadRequest)
 			writeError(ctx, "url is required")
+			return
+		}
+		if br.CookieJar != "" && !insideFolder(root, br.CookieJar) {
+			log.Printf("ghola bridge: refused cookie_jar %q: outside the folder where ghola serve runs", br.CookieJar)
+			ctx.SetStatusCode(fasthttp.StatusBadRequest)
+			writeError(ctx, "cookie_jar must be a file below the folder where ghola serve runs")
 			return
 		}
 		if !bridgeScheme(br.URL) {
@@ -135,6 +143,8 @@ func Handler(do client.Doer) fasthttp.RequestHandler {
 				Location:   br.Location,
 				MaxRedirs:  maxRedirs(br.MaxRedirs),
 				RetryHTTP:  br.RetryHTTP,
+				// The bridge fetches http(s) only, also after a redirect.
+				HTTPRedirectsOnly: true,
 			},
 			Output: config.OutputOptions{
 				Silent: true,
@@ -200,7 +210,7 @@ func writeError(ctx *fasthttp.RequestCtx, msg string) {
 	ctx.SetContentType("application/json")
 	out, err := json.Marshal(Response{Headers: map[string]string{}, Error: msg})
 	if err != nil {
-		ctx.SetBodyString(`{"error":"marshal failed"}`)
+		ctx.SetBodyString(`{"status_code":0,"headers":{},"body":"","error":"marshal failed"}`) // the shape that clients parse
 		return
 	}
 	ctx.SetBody(out)
