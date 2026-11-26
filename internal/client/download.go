@@ -120,9 +120,12 @@ func Download(ctx context.Context, opts *config.Options, stream Streamer) error 
 		return err // the state file stays, so a resume can check the version
 	}
 	if d := opts.Output.DigestFor(meta.StatusCode, meta.Header.Get("Content-Digest"), meta.ContentEncoding); d != nil && opts.Output.Range == "" {
-		// The file stays: the digest may be the wrong one, and the bytes
-		// are what the server sent.
 		if err := d.CheckFile(opts.Output.File); err != nil {
+			if errors.Is(err, config.ErrChecksum) {
+				// A file under the final name looks verified, and its state
+				// file would let a resume take it as finished.
+				discardOutput(opts.Output.File)
+			}
 			return err
 		}
 	}
@@ -183,8 +186,8 @@ var errProbed = errors.New("probe done")
 
 // followRedirects calls get for url, and again for each redirect that get
 // reports with errRedirect, up to --max-redirs hops. It returns the last URL
-// and its meta. A download follows redirects without -L, as it did before
-// the HEAD request was removed.
+// and its meta. get reports errRedirect only when the options follow
+// redirects (follows).
 func followRedirects(opts *config.Options, url string, get func(string) (gholatransport.StreamMeta, error)) (string, gholatransport.StreamMeta, error) {
 	for hops := 0; ; hops++ {
 		meta, err := get(url)
@@ -205,9 +208,18 @@ func followRedirects(opts *config.Options, url string, get func(string) (gholatr
 	}
 }
 
-// isRedirect reports a redirect answer with a Location to follow.
-func isRedirect(meta gholatransport.StreamMeta) bool {
-	return isRedirectStatus(meta.StatusCode) && meta.Location != ""
+// follows reports a redirect answer with a Location that the options
+// follow. With --no-follow the redirect answer is the result, as with
+// curl -o without -L.
+func follows(opts *config.Options, meta gholatransport.StreamMeta) bool {
+	return opts.Resilience.Location && isRedirectStatus(meta.StatusCode) && meta.Location != ""
+}
+
+// discardOutput removes a download file that must not look like a result,
+// and its state file.
+func discardOutput(file string) {
+	os.Remove(file)
+	_ = removeState(file)
 }
 
 // probeRanges follows redirects with 1-byte ranged GETs and returns the final
@@ -221,7 +233,7 @@ func probeRanges(ctx context.Context, opts *config.Options, stream Streamer) (st
 		buildDownloadRequest(req, opts, url, fasthttp.MethodGet, "")
 		req.Header.Set("Range", "bytes=0-0")
 		meta, err := stream(ctx, opts, req, newCheckedSink(io.Discard, func(m gholatransport.StreamMeta) error {
-			if isRedirect(m) {
+			if follows(opts, m) {
 				return errRedirect
 			}
 			return errProbed
@@ -562,18 +574,23 @@ func (g singleGet) get(ctx context.Context, opts *config.Options, stream Streame
 		if ferr := dec.flush(); ferr != nil && err == nil {
 			err = ferr
 		}
+		if errors.Is(err, gholatransport.ErrBadEncoding) && g.offset == 0 {
+			f.discard() // an empty or cut file is no result
+		}
 	}
 	opened = f.f != nil
 	switch {
+	case errors.Is(err, errComplete):
+		return meta, opened, nil // -c on a complete file: nothing to fetch
 	case errors.Is(err, errRangeIgnored):
 		return meta, opened, fmt.Errorf("download: server ignored resume Range (status 200); cannot continue at %d", g.offset)
 	case errors.Is(err, errRedirect):
 		return meta, opened, err
 	case err != nil:
 		return meta, opened, fmt.Errorf("download: %w", err)
-	case meta.StatusCode < 200 || meta.StatusCode >= 300:
-		return meta, opened, fmt.Errorf("download: %w: %d", config.ErrHTTPStatus, meta.StatusCode)
 	}
+	// Any other status is the result: --fail decided in checkStatus, by the
+	// rule of the stdout path.
 	return meta, opened, nil
 }
 
@@ -611,12 +628,14 @@ func (g singleGet) check(opts *config.Options, f *lazyFile) func(gholatransport.
 }
 
 // checkStatus stops a response that writes no file: a redirect, a status
-// that a retry follows, a 304 to a condition, and a status that --fail
-// refuses.
+// that a retry follows, a 304 to a condition, a 416 to a resume of a
+// complete file, and a status that --fail refuses.
 func (g singleGet) checkStatus(opts *config.Options, meta gholatransport.StreamMeta) error {
 	switch {
-	case isRedirect(meta):
+	case follows(opts, meta):
 		return errRedirect
+	case completeAt(meta, g.offset):
+		return errComplete
 	case g.retryStatus && isRetryableHTTPStatus(opts, meta.StatusCode):
 		return fmt.Errorf("%w %d", errRetryStatus, meta.StatusCode)
 	case opts.Output.CondTime && meta.StatusCode == fasthttp.StatusNotModified:
@@ -682,6 +701,17 @@ func (l *lazyFile) open() error {
 func (l *lazyFile) Write(p []byte) (int, error) {
 	n, err := l.f.Write(p)
 	return n, config.WriteError(err)
+}
+
+// discard closes and removes a file that this download opened, and its
+// state file.
+func (l *lazyFile) discard() {
+	if l.f == nil {
+		return
+	}
+	l.f.Close()
+	l.f = nil
+	discardOutput(l.name)
 }
 
 func (l *lazyFile) Close() error {
@@ -780,15 +810,35 @@ func (d *decodeSink) Write(p []byte) (int, error) {
 		pr, pw := io.Pipe()
 		d.pw, d.done = pw, make(chan error, 1)
 		go func() {
+			dst := &writeTap{w: d.dst}
 			decoded, err := gholatransport.DecodeBody(pr, d.encoding)
 			if err == nil {
-				_, err = io.Copy(d.dst, decoded)
+				_, err = io.Copy(dst, decoded)
+			}
+			if err != nil && dst.err == nil {
+				// Not a failed write: the body does not decode (curl exit 61).
+				err = fmt.Errorf("%w: %w", gholatransport.ErrBadEncoding, err)
 			}
 			pr.CloseWithError(err) // a failed decode or write stops the stream
 			d.done <- err
 		}()
 	}
 	return d.pw.Write(p)
+}
+
+// writeTap keeps the first error of w, so that a failed write is not
+// taken for a failed decode.
+type writeTap struct {
+	w   io.Writer
+	err error
+}
+
+func (t *writeTap) Write(p []byte) (int, error) {
+	n, err := t.w.Write(p)
+	if err != nil && t.err == nil {
+		t.err = err
+	}
+	return n, err
 }
 
 // flush ends the stream and returns the decoder's error.
