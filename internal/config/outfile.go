@@ -17,6 +17,11 @@ var ErrTooLarge = errors.New("the body is larger than --max-size")
 // download is no job to resume or cancel.
 var ErrOutputExists = errors.New("the output file exists")
 
+// ErrOutputInUse marks an output file that another transfer writes now: a
+// second ghola, or "ghola jobs resume" next to a running download. Two
+// writers on one file would mix their bytes.
+var ErrOutputInUse = errors.New("another transfer writes the output file")
+
 // OpenOutput opens an output file with the rules of --output-create-dirs
 // and --output-overwrite. Every file that ghola writes for a transfer
 // opens here. ownFile is true when the file is ghola's own partial file (a
@@ -31,12 +36,22 @@ func OpenOutput(o OutputOptions, name string, flags int, ownFile bool) (*os.File
 	if o.NoOverwrite && !ownFile && flags&os.O_APPEND == 0 {
 		flags |= os.O_EXCL
 	}
-	f, err := os.OpenFile(name, flags, 0o644)
+	if flags&os.O_TRUNC != 0 && InUse(name) {
+		return nil, fmt.Errorf("%w: %w: %s", ErrWrite, ErrOutputInUse, name) // O_TRUNC would empty the other writer's file
+	}
+	f, err := openLocked(name, flags)
 	if errors.Is(err, os.ErrExist) {
 		return nil, fmt.Errorf("%w: %w: %s; --output-overwrite replaces it", ErrWrite, ErrOutputExists, name)
 	}
+	if errors.Is(err, ErrOutputInUse) {
+		return nil, fmt.Errorf("%w: %w: %s", ErrWrite, err, name)
+	}
 	return f, WriteError(err)
 }
+
+// InUse reports whether a transfer writes name now: it holds the lock that
+// OpenOutput takes. A file that does not exist is not in use.
+func InUse(name string) bool { return inUse(name) }
 
 // SaveETag writes the ETag of a 2xx answer to --cond-etag-save, as curl
 // --etag-save does: the value as the server sent it, and a newline. With
