@@ -6,8 +6,10 @@ import (
 	"bytes"
 	"fmt"
 	"mime/multipart"
+	"net/textproto"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -27,7 +29,8 @@ func URLEncodeData(pairs []string) string {
 }
 
 // BuildFormBody assembles a multipart/form-data body. Each entry is
-// name=value, or name=@path to attach a file's contents. Returns the
+// name=value, or name=@path to attach a file's contents. As in curl -F, a
+// file can end in ;type=TYPE and ;filename=NAME. Returns the
 // Content-Type (with boundary) and the encoded body.
 func BuildFormBody(form []string) (string, []byte, error) {
 	var buf bytes.Buffer
@@ -39,16 +42,7 @@ func BuildFormBody(form []string) (string, []byte, error) {
 		}
 		name, val := entry[:i], entry[i+1:]
 		if strings.HasPrefix(val, "@") {
-			path := val[1:]
-			content, err := os.ReadFile(path)
-			if err != nil {
-				return "", nil, fmt.Errorf("read --form file %q: %w", path, err)
-			}
-			fw, err := mw.CreateFormFile(name, path)
-			if err != nil {
-				return "", nil, err
-			}
-			if _, err := fw.Write(content); err != nil {
+			if err := writeFormFile(mw, name, val[1:]); err != nil {
 				return "", nil, err
 			}
 		} else {
@@ -62,3 +56,37 @@ func BuildFormBody(form []string) (string, []byte, error) {
 	}
 	return mw.FormDataContentType(), buf.Bytes(), nil
 }
+
+// writeFormFile writes one file part. spec is PATH[;type=TYPE][;filename=NAME].
+// The part names the file by its base name, as curl does, and its type
+// is application/octet-stream unless ;type= gives one.
+func writeFormFile(mw *multipart.Writer, name, spec string) error {
+	params := strings.Split(spec, ";")
+	path, fileName, fileType := params[0], filepath.Base(params[0]), "application/octet-stream"
+	for _, p := range params[1:] {
+		k, v, _ := strings.Cut(p, "=")
+		switch strings.ToLower(strings.TrimSpace(k)) {
+		case "type":
+			fileType = v
+		case "filename":
+			fileName = v
+		default:
+			return fmt.Errorf("--form %s=@%s: %q is not a file parameter (use ;type= or ;filename=)", name, spec, p)
+		}
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read --form file %q: %w", path, err)
+	}
+	h := textproto.MIMEHeader{}
+	h.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, quoteEscaper.Replace(name), quoteEscaper.Replace(fileName)))
+	h.Set("Content-Type", fileType)
+	fw, err := mw.CreatePart(h)
+	if err != nil {
+		return err
+	}
+	_, err = fw.Write(content)
+	return err
+}
+
+var quoteEscaper = strings.NewReplacer("\\", "\\\\", `"`, "\\\"")

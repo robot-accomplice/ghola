@@ -21,7 +21,7 @@ func fromCurl(t *testing.T, args ...string) *Curl {
 // groups and values attached to a letter translate as curl reads them.
 func TestFromCurl_Translates(t *testing.T) {
 	c := fromCurl(t, "-sSL", "-H", "X-A: 1", "-ofile.zip", "-C", "-", "https://h/f")
-	want := append(append([]string(nil), curlSpec.defaults...), "-q", "--follow", "-H", "X-A: 1", "-o", "file.zip", "-c", "https://h/f")
+	want := append(append([]string(nil), curlSpec.defaults...), "-q", "--follow", "-H", "X-A: 1", "-c", "-o", "file.zip", "https://h/f")
 	if !reflect.DeepEqual(c.Args, want) {
 		t.Errorf("args =\n%q\nwant\n%q", c.Args, want)
 	}
@@ -104,8 +104,7 @@ func TestFromCurl_Config(t *testing.T) {
 // what it maps to, so nothing runs with a dropped option.
 func TestFromCurl_Unsupported(t *testing.T) {
 	for args, want := range map[string]string{
-		"--tls13-ciphers x": "maps to --tls-ciphers",
-		"--libcurl x":       "is not supported",
+		"--libcurl x": "is not supported",
 	} {
 		_, err := FromCurl(strings.Fields(args))
 		if err == nil || !strings.Contains(err.Error(), want) {

@@ -1,9 +1,12 @@
 package cli
 
 import (
+	"cmp"
 	"io"
 	"net/url"
 	"os"
+	"path"
+	"path/filepath"
 	"strings"
 )
 
@@ -106,6 +109,11 @@ func readDataFile(name string) (string, error) {
 // body that is not empty sets no method, so a redirect changes the POST
 // to a GET as curl -d does.
 func curlFinish(t *translation) {
+	curlBodyFinish(t)
+	curlOutputs(t)
+}
+
+func curlBodyFinish(t *translation) {
 	b := &t.body
 	if !b.set {
 		return
@@ -140,10 +148,11 @@ func querySep(u string) string {
 	return "?"
 }
 
-// headers are the -H values of the native arguments so far.
+// headers are the -H values of the native arguments so far, without the
+// tool's defaults.
 func (t *translation) headers() []string {
 	var out []string
-	for i := 0; i+1 < len(t.out); i++ {
+	for i := len(t.spec.defaults); i+1 < len(t.out); i++ {
 		if t.out[i] == "-H" {
 			out = append(out, t.out[i+1])
 		}
@@ -163,5 +172,178 @@ func (t *translation) variable(arg string) error {
 		name = name[:i]
 	}
 	t.out = append(t.out, "--variable", name+"="+t.vars[name])
+	return nil
+}
+
+// curlOutput is the output state of one curl group. curl pairs each -o
+// and -O with the next URL in order; a URL without one goes to stdout,
+// or under its remote name with --remote-name-all.
+type curlOutput struct {
+	outputs       []string // a file name, or "" for -O (the remote name)
+	dir           string   // --output-dir
+	remoteNameAll bool
+	upload        string // -T
+	parallel      bool   // -Z
+	parallelMax   string
+}
+
+// curlOutputOption handles the curl options that depend on the URLs or
+// on each other, and the --no- form of a curl on/off option. It returns
+// false for other options.
+func curlOutputOption(t *translation, name, value string) (bool, error) {
+	c := &t.output
+	switch name {
+	case "-o", "--output":
+		c.outputs = append(c.outputs, value)
+	case "-O", "--remote-name":
+		c.outputs = append(c.outputs, "")
+	case "--remote-name-all":
+		c.remoteNameAll = true
+	case "--output-dir":
+		c.dir = value
+	case "-T", "--upload-file":
+		c.upload = value
+		t.out = append(t.out, "--upload", value)
+	case "-Z", "--parallel":
+		c.parallel = true
+	case "--parallel-max":
+		c.parallelMax = value
+	case "-e", "--referer":
+		return true, curlReferer(t, value)
+	default:
+		return curlNegated(t, name)
+	}
+	return true, nil
+}
+
+// curlReferer reads -e: ";auto" sends the previous URL after a redirect,
+// as native --referer auto does. URL;auto has no native form.
+func curlReferer(t *translation, value string) error {
+	switch {
+	case value == ";auto":
+		value = "auto"
+	case strings.HasSuffix(value, ";auto"):
+		return usagef("ghola curl: -e %s is not supported: use -e URL, or -e ';auto' for the previous URL after a redirect", value)
+	}
+	t.out = append(t.out, "--referer", value)
+	return nil
+}
+
+// curlNegated translates curl's --no-NAME of an on/off option that maps
+// to one native on/off option: --no-location is --no-follow, and
+// --no-insecure is --tls-verify.
+func curlNegated(t *translation, name string) (bool, error) {
+	rest, ok := strings.CutPrefix(name, "--no-")
+	if !ok {
+		return false, nil
+	}
+	f, ok := t.spec.flags["--"+rest]
+	if !ok || f.value || len(f.args) != 1 || !strings.HasPrefix(f.args[0], "--") {
+		return false, nil
+	}
+	native := f.args[0]
+	if positive, ok := strings.CutPrefix(native, "--no-"); ok {
+		native = "--" + positive
+	} else {
+		native = "--no-" + native[2:]
+	}
+	t.out = append(t.out, native)
+	return true, nil
+}
+
+// curlOutputs adds the -o of each URL, the file name of -T to a URL that
+// ends in /, and --jobs for -Z.
+func curlOutputs(t *translation) {
+	c := &t.output
+	if c.upload != "" && c.upload != "-" {
+		for i, u := range t.tail {
+			if strings.HasSuffix(u, "/") {
+				t.tail[i] = u + url.PathEscape(filepath.Base(c.upload)) // curl -T f URL/ uploads to URL/f
+			}
+		}
+	}
+	outs := c.outputs
+	switch {
+	case len(outs) == 0 && c.remoteNameAll:
+		outs = []string{""} // one -o DIR/ serves every URL
+	case len(outs) > 0 && len(outs) < len(t.tail) && !hasGlob(t.tail):
+		pad := "-"
+		if c.remoteNameAll {
+			pad = ""
+		}
+		for len(outs) < len(t.tail) {
+			outs = append(outs, pad)
+		}
+	}
+	toStdout := len(outs) == 0
+	for i, o := range outs {
+		u := ""
+		if len(outs) == len(t.tail) {
+			u = t.tail[i]
+		}
+		t.out = append(t.out, "-o", c.target(o, u))
+		toStdout = toStdout || o == "-"
+	}
+	// Bodies on stdout go one after the other: ghola writes stdout from one
+	// transfer at a time, and the bytes are the same.
+	if c.parallel && !toStdout {
+		t.out = append(t.out, "--jobs", cmp.Or(c.parallelMax, curlParallelMax))
+	}
+}
+
+// curlParallelMax is curl's default number of parallel transfers.
+const curlParallelMax = "50"
+
+// target is the native -o of one output. -O on a URL without a file name
+// writes curl_response, as curl 8 does.
+func (c *curlOutput) target(o, u string) string {
+	dir := c.dir
+	switch {
+	case o == "-":
+		return o
+	case o == "" && u != "" && remoteNameEmpty(u):
+		o = curlNoName
+	case o == "":
+		return cmp.Or(dir, ".") + "/"
+	case filepath.IsAbs(o):
+		return o
+	}
+	if dir == "" {
+		return o
+	}
+	return strings.TrimSuffix(dir, "/") + "/" + o
+}
+
+// curlNoName is the file name of curl -O for a URL without one.
+const curlNoName = "curl_response"
+
+// remoteNameEmpty reports a URL whose path has no file name.
+func remoteNameEmpty(u string) bool {
+	p, err := url.Parse(u)
+	return err == nil && path.Base("/"+p.Path) == "/" || err == nil && strings.HasSuffix(p.Path, "/")
+}
+
+// hasGlob reports a URL with a curl glob, which can stand for several
+// URLs.
+func hasGlob(urls []string) bool {
+	for _, u := range urls {
+		if strings.ContainsAny(u, "[{") {
+			return true
+		}
+	}
+	return false
+}
+
+// curlECH reads curl --ech: true and hard turn ECH on (ghola has no soft
+// mode), false turns it off.
+func curlECH(t *translation, value string) error {
+	switch value {
+	case "true", "hard":
+		t.out = append(t.out, "--tls-ech")
+	case "false":
+		t.out = append(t.out, "--no-tls-ech")
+	default:
+		return usagef("ghola curl: --ech %s is not supported: use true, hard or false", value)
+	}
 	return nil
 }

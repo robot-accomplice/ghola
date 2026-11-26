@@ -114,6 +114,7 @@ type translation struct {
 	body                                              curlBody  // curl's data options
 	vars                                              variables // curl's --variable values
 	configDepth                                       int       // the -K files being read
+	output                                            curlOutput
 }
 
 func translate(spec *toolSpec, args []string) (*Compat, error) {
@@ -163,11 +164,14 @@ func (t *translation) run(args []string) error {
 	return nil
 }
 
-func (t *translation) needsValue(name string) bool {
-	if f, ok := t.spec.flags[name]; ok {
+func (t *translation) needsValue(name string) bool { return t.spec.valueTaker(name) }
+
+// valueTaker reports whether the option takes a value.
+func (s *toolSpec) valueTaker(name string) bool {
+	if f, ok := s.flags[name]; ok {
 		return f.value
 	}
-	return t.spec.takesValue[name]
+	return s.takesValue[name]
 }
 
 // long handles --name, --name=value (wget, aria2c) and --name value.

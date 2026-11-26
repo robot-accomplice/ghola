@@ -179,3 +179,96 @@ func TestCurl_LongOptionWithEquals(t *testing.T) {
 		t.Error("--location=yes: no error")
 	}
 }
+
+// Every curl flag that the curl column of v1-options.csv names runs in
+// ghola curl, so the spec and the compatibility command cannot drift.
+// Before, --output-dir, --no-clobber, -G, -Z, --parallel-max,
+// --tls13-ciphers and --stderr were in the spec and refused.
+func TestCurl_RunsEveryFlagOfTheSpec(t *testing.T) {
+	cfg := writeFile(t, "k.txt", "")
+	for _, o := range table {
+		for _, f := range flags(o.Curl) {
+			args := []string{f}
+			if curlSpec.valueTaker(f) {
+				args = append(args, map[string]string{"-K": cfg, "--variable": "a=1", "--ech": "true"}[f])
+				if len(args) == 1 || args[1] == "" {
+					args = append(args[:1], "1")
+				}
+			}
+			if _, err := FromCurl(append(args, "http://h/")); err != nil {
+				t.Errorf("--%s: curl %s: %v", o.Name, f, err)
+			}
+		}
+	}
+}
+
+// curl pairs each -o and -O with the next URL; a URL without one goes to
+// stdout, or under its remote name with --remote-name-all. --output-dir
+// holds the files, and -O on a URL without a file name writes
+// curl_response.
+func TestCurl_OutputsPairWithURLs(t *testing.T) {
+	for want, args := range map[string][]string{
+		"-o ./ -o - http://h/a http://h/b":                {"-O", "http://h/a", "http://h/b"},
+		"-o ./ http://h/a http://h/b":                     {"--remote-name-all", "http://h/a", "http://h/b"},
+		"-o x -o ./ http://h/a http://h/b":                {"--remote-name-all", "-o", "x", "http://h/a", "http://h/b"},
+		"-o d/ http://h/a":                                {"--output-dir", "d", "-O", "http://h/a"},
+		"-o d/x.txt http://h/a":                           {"--output-dir", "d", "-o", "x.txt", "http://h/a"},
+		"-o ./ 'http://h/g[1-2]'":                         {"-O", "http://h/g[1-2]"},
+		"-o curl_response -o ./ http://h/ http://h/b.txt": {"-O", "-O", "http://h/", "http://h/b.txt"},
+		"-o curl_response http://h/":                      {"-O", "http://h/"},
+	} {
+		got := strings.TrimPrefix(native(t, FromCurl, args...), ShellQuote(curlSpec.defaults)+" ")
+		if got != want {
+			t.Errorf("%q:\n got %s\nwant %s", args, got, want)
+		}
+	}
+}
+
+// The other curl options that ghola curl refused: --no-NAME of an on/off
+// option, -N, -q after the first argument, -Z with --parallel-max, -T
+// to a URL that ends in /, and -e ';auto'.
+func TestCurl_MoreOptions(t *testing.T) {
+	for want, args := range map[string][]string{
+		"--no-follow --no-fail --no-compressed --tls-verify u": {"--no-location", "--no-fail", "--no-compressed", "--no-insecure", "u"},
+		"u":                                              {"-N", "u", "-q"},
+		"-o ./ --jobs 2 http://h/a http://h/b":           {"-Z", "--parallel-max", "2", "--remote-name-all", "http://h/a", "http://h/b"},
+		"-o ./ --jobs 50 u":                              {"-Z", "-O", "u"},
+		"http://h/a http://h/b":                          {"-Z", "http://h/a", "http://h/b"},
+		"--upload up.txt http://h/d/up.txt":              {"-T", "up.txt", "http://h/d/"},
+		"--referer auto u":                               {"-e", ";auto", "u"},
+		"--no-output-overwrite -o f u":                   {"--no-clobber", "-o", "f", "u"},
+		"--log e.txt --help":                             {"--stderr", "e.txt", "-h"},
+		"--tls-ciphers TLS_AES_128_GCM_SHA256 --version": {"--tls13-ciphers", "TLS_AES_128_GCM_SHA256", "-V"},
+	} {
+		got := strings.TrimPrefix(native(t, FromCurl, args...), ShellQuote(curlSpec.defaults)+" ")
+		if got != want {
+			t.Errorf("%q:\n got %s\nwant %s", args, got, want)
+		}
+	}
+	if _, err := FromCurl([]string{"-e", "http://r/;auto", "u"}); err == nil {
+		t.Error("-e URL;auto: no error")
+	}
+}
+
+// curl sends Accept: */* unless -H sets another; --json sets
+// application/json.
+func TestCurl_SendsAcceptAll(t *testing.T) {
+	last := func(o *config.Options) string {
+		v := ""
+		for _, h := range o.Headers {
+			if k, val, _ := config.ParseHeader(h); strings.EqualFold(k, "Accept") {
+				v = val
+			}
+		}
+		return v
+	}
+	for want, args := range map[string][]string{
+		"*/*":              {"u"},
+		"text/html":        {"-H", "Accept: text/html", "u"},
+		"application/json": {"--json", "{}", "u"},
+	} {
+		if got := last(curlOptions(t, args...)); got != want {
+			t.Errorf("%q: Accept %q, want %q", args, got, want)
+		}
+	}
+}
