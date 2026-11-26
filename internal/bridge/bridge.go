@@ -5,12 +5,14 @@ package bridge
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net"
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/fasthttp/websocket"
 	"github.com/robot-accomplice/ghola/internal/client"
@@ -183,7 +185,13 @@ func Handler(do client.Doer) fasthttp.RequestHandler {
 
 		rspHeaders := make(map[string]string)
 		for key, value := range rsp.Header.All() {
-			rspHeaders[string(key)] = string(value)
+			k, v := string(key), string(value)
+			// A repeated header keeps every value, joined as HTTP allows.
+			// Set-Cookie values hold commas (Expires), so the last one stays.
+			if prev, ok := rspHeaders[k]; ok && !strings.EqualFold(k, "Set-Cookie") {
+				v = prev + ", " + v
+			}
+			rspHeaders[k] = v
 		}
 
 		out, err := json.Marshal(Response{
@@ -246,7 +254,7 @@ func ListenAndServe(addr string) error {
 		return fmt.Errorf("write bridge token: %w", err)
 	}
 	fmt.Fprintf(os.Stderr, "ghola bridge listening on %s (token in %s)\n", addr, path)
-	return fasthttp.Serve(ln, Guard(Handler(nil), addr, token))
+	return newServer(Guard(Handler(nil), addr, token), bridgeReadTimeout, bridgeIdleTimeout).Serve(ln)
 }
 
 // bridgeScheme reports whether the bridge may fetch raw: http and https
@@ -261,4 +269,36 @@ func bridgeScheme(raw string) bool {
 		return true
 	}
 	return false
+}
+
+// The limits of the bridge server. The read timeout covers only the
+// client's request: the upstream fetch runs in the handler, and clients
+// have their own request timeout. A WebSocket connection is hijacked, so
+// these limits do not end it.
+const (
+	bridgeReadTimeout = 30 * time.Second
+	bridgeIdleTimeout = 2 * time.Minute
+	maxBridgeBody     = 4 << 20 // fasthttp's default, now set on purpose
+)
+
+// newServer returns the bridge server: handler with the read and idle
+// timeouts and the body limit. An error before the handler (a body that is
+// too large, a request that does not parse, a timeout) gets the reply
+// shape that clients parse: status_code, headers, body and error.
+func newServer(handler fasthttp.RequestHandler, read, idle time.Duration) *fasthttp.Server {
+	return &fasthttp.Server{
+		Handler:            handler,
+		ReadTimeout:        read,
+		IdleTimeout:        idle,
+		MaxRequestBodySize: maxBridgeBody,
+		ErrorHandler: func(ctx *fasthttp.RequestCtx, err error) {
+			log.Printf("ghola bridge: refused a request from %s: %v", ctx.RemoteAddr(), err)
+			status := fasthttp.StatusBadRequest
+			if errors.Is(err, fasthttp.ErrBodyTooLarge) {
+				status = fasthttp.StatusRequestEntityTooLarge
+			}
+			ctx.SetStatusCode(status)
+			writeError(ctx, err.Error())
+		},
+	}
 }
