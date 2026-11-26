@@ -38,14 +38,17 @@ func isSOCKS(u *url.URL) bool {
 }
 
 // socksDialer returns a dial function that connects to addr through the
-// SOCKS proxy p. base opens the TCP connection to the proxy.
-func socksDialer(p *url.URL, base dialFunc) dialFunc {
+// SOCKS proxy p. plan.direct opens the TCP connection to the proxy, and
+// plan names the target: --connect-to for every form, and --resolve or
+// --doh when ghola resolves the name (socks4, socks5).
+func socksDialer(p *url.URL, plan *dialPlan) dialFunc {
 	proxyAddr := p.Host
 	if p.Port() == "" {
 		proxyAddr = net.JoinHostPort(p.Hostname(), socksDefaultPort)
 	}
 	scheme := strings.ToLower(p.Scheme)
 	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		addr = plan.rules.connect(addr)
 		host, portStr, err := net.SplitHostPort(addr)
 		if err != nil {
 			return nil, err
@@ -56,7 +59,7 @@ func socksDialer(p *url.URL, base dialFunc) dialFunc {
 		}
 		hosts := []string{host}
 		if scheme == schemeSOCKS4 || scheme == schemeSOCKS5 {
-			if hosts, err = resolveLocal(ctx, host, scheme == schemeSOCKS4); err != nil {
+			if hosts, err = plan.resolve(ctx, addr, scheme == schemeSOCKS4); err != nil {
 				return nil, err
 			}
 		}
@@ -64,7 +67,7 @@ func socksDialer(p *url.URL, base dialFunc) dialFunc {
 		// resolve to an IPv6 address that the target does not listen on.
 		var errs []error
 		for _, h := range hosts {
-			conn, err := socksConnect(ctx, base, proxyAddr, scheme, h, uint16(port), p.User)
+			conn, err := socksConnect(ctx, plan.direct, proxyAddr, scheme, h, uint16(port), p.User)
 			if err == nil {
 				return conn, nil
 			}
@@ -96,22 +99,31 @@ func socksConnect(ctx context.Context, base dialFunc, proxyAddr, scheme, host st
 	return conn, nil
 }
 
-// resolveLocal resolves host in the client. SOCKS4 can carry only IPv4.
-func resolveLocal(ctx context.Context, host string, v4Only bool) ([]string, error) {
+// resolve resolves the host of addr in the client, as a direct dial
+// does: --resolve, else --doh or the system resolver. SOCKS4 can carry
+// only IPv4.
+func (p *dialPlan) resolve(ctx context.Context, addr string, v4Only bool) ([]string, error) {
+	host, _, _ := net.SplitHostPort(addr)
 	if ip := net.ParseIP(host); ip != nil {
 		if v4Only && ip.To4() == nil {
 			return nil, fmt.Errorf("socks4: %s is not an IPv4 address", host)
 		}
 		return []string{host}, nil
 	}
-	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
-	if err != nil {
-		return nil, err
+	var ips []net.IP
+	for _, a := range p.rules.addresses(addr) {
+		ips = append(ips, net.ParseIP(a))
+	}
+	if len(ips) == 0 {
+		var err error
+		if ips, err = p.lookup(ctx, host); err != nil {
+			return nil, err
+		}
 	}
 	var out []string
-	for _, a := range addrs {
-		if !v4Only || a.IP.To4() != nil {
-			out = append(out, a.IP.String())
+	for _, ip := range ips {
+		if !v4Only || ip.To4() != nil {
+			out = append(out, ip.String())
 		}
 	}
 	if len(out) == 0 {

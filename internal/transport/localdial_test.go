@@ -85,7 +85,7 @@ func TestLocalDial_BadValues(t *testing.T) {
 		{LocalPort: "0"}, {LocalPort: "9-3"}, {LocalPort: "x"}, {LocalPort: "1-70000"},
 		{Interface: "no-such-interface-ghola"},
 	} {
-		if _, err := localDial(&config.Options{Net: n}, true); err == nil {
+		if _, _, err := localDial(&config.Options{Net: n}, true); err == nil {
 			t.Errorf("%+v was accepted", n)
 		}
 	}

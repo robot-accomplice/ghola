@@ -125,16 +125,16 @@ func envSOCKS(ctx context.Context, bypass *string) (*url.URL, error) {
 // envDialer dials through the SOCKS proxy that the environment names for
 // the request, with the shared SOCKS dialer, and else dials directly. An
 // HTTP proxy from the environment is the stack's own job.
-func envDialer(base dialFunc, bypass *string) dialFunc {
+func envDialer(plan *dialPlan, bypass *string) dialFunc {
 	return func(ctx context.Context, network, addr string) (net.Conn, error) {
 		p, err := envSOCKS(ctx, bypass)
 		if err != nil {
 			return nil, err
 		}
 		if p != nil {
-			return socksDialer(p, base)(ctx, network, addr)
+			return socksDialer(p, plan)(ctx, network, addr)
 		}
-		return base(ctx, network, addr)
+		return plan.direct(ctx, network, addr)
 	}
 }
 
