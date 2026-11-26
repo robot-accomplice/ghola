@@ -122,11 +122,11 @@ var setters = map[string]setter{
 		o.Mirror.Requisites, o.Mirror.Convert, o.Mirror.AdjustExt = on, on, on
 		return nil
 	},
-	"hosts":        func(o *config.Options, v string, _ *Command) error { o.Mirror.Hosts = splitList(v); return nil },
-	"accept":       func(o *config.Options, v string, _ *Command) error { o.Mirror.Accept = splitList(v); return nil },
-	"reject":       func(o *config.Options, v string, _ *Command) error { o.Mirror.Reject = splitList(v); return nil },
-	"include-dirs": func(o *config.Options, v string, _ *Command) error { o.Mirror.IncludeDirs = splitList(v); return nil },
-	"exclude-dirs": func(o *config.Options, v string, _ *Command) error { o.Mirror.ExcludeDirs = splitList(v); return nil },
+	"hosts":        setList("hosts", func(o *config.Options) *[]string { return &o.Mirror.Hosts }),
+	"accept":       setList("accept", func(o *config.Options) *[]string { return &o.Mirror.Accept }),
+	"reject":       setList("reject", func(o *config.Options) *[]string { return &o.Mirror.Reject }),
+	"include-dirs": setList("include-dirs", func(o *config.Options) *[]string { return &o.Mirror.IncludeDirs }),
+	"exclude-dirs": setList("exclude-dirs", func(o *config.Options) *[]string { return &o.Mirror.ExcludeDirs }),
 	"accept-regex": func(o *config.Options, v string, _ *Command) error {
 		re, err := regexp.Compile(v)
 		o.Mirror.AcceptRegex = re
@@ -267,7 +267,11 @@ func Apply(c *Command) (*config.Options, error) {
 			return nil, usagef("--%s is in the v1 spec but not built yet (phase %s)", name, table[i].Phase)
 		}
 		if err := set(o, c.Last(name), c); err != nil {
-			return nil, &UsageError{Msg: err.Error()}
+			msg := err.Error()
+			if !strings.HasPrefix(msg, "--") { // name the option, unless the setter did
+				msg = "--" + name + ": " + msg
+			}
+			return nil, &UsageError{Msg: msg}
 		}
 	}
 	if err := applyProxyTLS(o, c); err != nil {
@@ -621,6 +625,19 @@ func mirrorBool(field func(*config.MirrorOptions) *bool) setter {
 }
 
 // splitList reads a comma list, as wget -A, -R, -D, -I and -X take it.
+// setList stores a comma list. A repeated option adds to the list, as
+// wget does with -X a -X b.
+func setList(name string, field func(*config.Options) *[]string) setter {
+	return func(o *config.Options, _ string, c *Command) error {
+		var all []string
+		for _, v := range c.Values[name] {
+			all = append(all, splitList(v)...)
+		}
+		*field(o) = all
+		return nil
+	}
+}
+
 func splitList(v string) []string {
 	var out []string
 	for _, s := range strings.Split(v, ",") {
