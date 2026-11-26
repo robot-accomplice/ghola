@@ -171,8 +171,12 @@ func withAuth(rawProxy, proxyAuth string) string {
 	return u.String()
 }
 
-// defaultProxyPort is the port of a proxy without one, as curl reads -x.
-const defaultProxyPort = "1080"
+// defaultProxyScheme and defaultProxyPort complete a proxy value that has
+// no scheme, as curl reads -x: an HTTP proxy on port 1080.
+const (
+	defaultProxyScheme = "http"
+	defaultProxyPort   = "1080"
+)
 
 // normalize reads a --proxy value or a --proxy-file line as curl reads -x:
 // a value without a scheme is an HTTP proxy, on port 1080 when it has no
@@ -180,7 +184,7 @@ const defaultProxyPort = "1080"
 // proxy without a host is a bad option value.
 func normalize(raw string) (string, error) {
 	if !strings.Contains(raw, "://") {
-		raw = "http://" + raw
+		raw = defaultProxyScheme + "://" + raw
 		if u, err := url.Parse(raw); err == nil && u.Port() == "" && u.Hostname() != "" {
 			u.Host = net.JoinHostPort(u.Hostname(), defaultProxyPort)
 			raw = u.String()
