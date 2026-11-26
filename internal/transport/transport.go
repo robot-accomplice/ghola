@@ -208,9 +208,13 @@ func New(opts *config.Options, selectedProxy string) (Transport, error) {
 	if out := opts.Output.TraceOut; out != nil {
 		t.trace = &tracer{w: out, ascii: opts.Output.TraceASCII, times: opts.Output.TraceTime}
 	}
-	if selectedProxy != "" && opts.ProxyCfg.Bypass != nil {
-		// A host in --proxy-bypass goes direct, also after a redirect.
-		if t.direct, err = newNetwork(opts, ""); err != nil {
+	if selectedProxy != "" {
+		// A host in --proxy-bypass, or else in no_proxy, goes direct, also
+		// after a redirect, as in curl. That host meets no proxy, so the
+		// --proxy-tls-* options do not apply to it.
+		direct := *opts
+		direct.ProxyCfg.TLS = config.StealthOptions{}
+		if t.direct, err = newNetwork(&direct, ""); err != nil {
 			return nil, err
 		}
 	}

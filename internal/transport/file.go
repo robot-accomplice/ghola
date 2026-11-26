@@ -34,8 +34,8 @@ type protocolTransport struct {
 	network Transport
 	opts    *config.Options
 	proxy   string // the --proxy URL, "" for the environment
-	// direct serves the hosts in --proxy-bypass when --proxy is set. nil
-	// without both.
+	// direct serves the hosts in --proxy-bypass (else no_proxy) when
+	// --proxy is set. nil without --proxy.
 	direct Transport
 	// hsts is the --hsts cache, nil without it.
 	hsts *hstsCache
@@ -51,7 +51,7 @@ type protocolTransport struct {
 }
 
 // networkFor returns the network transport for u: direct for a host in
-// --proxy-bypass, else the one with the proxy.
+// --proxy-bypass or no_proxy, else the one with the proxy.
 func (t protocolTransport) networkFor(u *fasthttp.URI) Transport {
 	if t.direct != nil && bypassed(&url.URL{Host: string(u.Host())}, t.opts.ProxyCfg.Bypass) {
 		return t.direct

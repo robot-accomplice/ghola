@@ -139,7 +139,7 @@ func TestWithAuth(t *testing.T) {
 		{"adds auth", "http://proxy.local:8080", "user:pass", "http://user:pass@proxy.local:8080"},
 		{"no auth", "http://proxy.local:8080", "", "http://proxy.local:8080"},
 		{"existing userinfo preserved", "http://existing:cred@proxy.local:8080", "user:pass", "http://existing:cred@proxy.local:8080"},
-		{"bad auth format", "http://proxy.local:8080", "nouserpass", "http://proxy.local:8080"},
+		{"user without password", "http://proxy.local:8080", "nouserpass", "http://nouserpass@proxy.local:8080"},
 	}
 
 	for _, tt := range tests {
