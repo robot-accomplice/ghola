@@ -190,7 +190,7 @@ func TestCurl_RunsEveryFlagOfTheSpec(t *testing.T) {
 		for _, f := range flags(o.Curl) {
 			args := []string{f}
 			if curlSpec.valueTaker(f) {
-				args = append(args, map[string]string{"-K": cfg, "--variable": "a=1", "--ech": "true"}[f])
+				args = append(args, map[string]string{"-K": cfg, "--variable": "a=1", "--ech": "true", "--cert-type": "PEM", "--tls-max": "1.2"}[f])
 				if len(args) == 1 || args[1] == "" {
 					args = append(args[:1], "1")
 				}
