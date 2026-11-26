@@ -3,6 +3,7 @@ package transport
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +12,8 @@ import (
 	"sync"
 
 	"golang.org/x/net/dns/dnsmessage"
+
+	"github.com/robot-accomplice/ghola/internal/config"
 )
 
 // dohMaxAnswer limits a DoH answer: a DNS message is at most 64 KiB.
@@ -30,8 +33,16 @@ type dohResolver struct {
 	ech     map[string][]byte // the ECH config of each host, for --tls-ech
 }
 
-func newDoH(url, network string) *dohResolver {
-	return &dohResolver{url: url, network: network, client: &http.Client{}, cache: map[string][]net.IP{}, ech: map[string][]byte{}}
+// newDoH returns the resolver of --doh. An https server is verified with
+// the transfer's -k, --tls-ca and --tls-ca-dir.
+func newDoH(url, network string, st config.StealthOptions) (*dohResolver, error) {
+	pool, err := caPool(st.CACert, st.CADir)
+	if err != nil {
+		return nil, err
+	}
+	tr := http.DefaultTransport.(*http.Transport).Clone()
+	tr.TLSClientConfig = &tls.Config{RootCAs: pool, InsecureSkipVerify: st.Insecure} //nolint:gosec // opt-in via -k
+	return &dohResolver{url: url, network: network, client: &http.Client{Transport: tr}, cache: map[string][]net.IP{}, ech: map[string][]byte{}}, nil
 }
 
 // dial resolves the host of addr with DoH, and dials each address in turn
@@ -152,7 +163,7 @@ func (r *dohResolver) exchange(ctx context.Context, host string, t dnsmessage.Ty
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.url, bytes.NewReader(msg))
+	req, err := http.NewRequestWithContext(ownRequest{ctx}, http.MethodPost, r.url, bytes.NewReader(msg))
 	if err != nil {
 		return nil, fmt.Errorf("--doh: %w", err)
 	}
@@ -172,3 +183,12 @@ func (r *dohResolver) exchange(ctx context.Context, host string, t dnsmessage.Ty
 	}
 	return body, nil
 }
+
+// ownRequest keeps the deadline and the cancel of the transfer's context
+// and drops its values. The DoH query runs inside the dial of a transfer,
+// whose context carries the transfer's trace: without this, the query's
+// connection fired the transfer's GotConn, so a failed dial after it was
+// reported as a receive error (exit 56) and not as its own cause.
+type ownRequest struct{ context.Context }
+
+func (ownRequest) Value(any) any { return nil }

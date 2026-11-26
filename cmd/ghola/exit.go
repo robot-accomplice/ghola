@@ -22,6 +22,8 @@ import (
 func exitFor(err error) config.ExitCode {
 	var dnsErr *net.DNSError
 	switch {
+	case errors.Is(err, config.ErrBadOption):
+		return config.BadFlag
 	case errors.Is(err, config.ErrHTTPStatus):
 		return config.HTTPError
 	case errors.Is(err, config.ErrChecksum):

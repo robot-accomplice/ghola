@@ -264,3 +264,36 @@ func TestBuildHeaders_SecFetchUserOnlyGET(t *testing.T) {
 		t.Error("POST should not have Sec-Fetch-User")
 	}
 }
+
+// A mobile profile must send its own phone User-Agent and sec-ch-ua-mobile.
+// The prefix match took "chrome-mobile" for "chrome" with a version, so
+// the request looked like a desktop browser.
+func TestResolve_MobileProfileIsNotTheDesktopProfile(t *testing.T) {
+	for _, name := range []string{"chrome-mobile", "safari-mobile"} {
+		p, err := Resolve(name)
+		if err != nil {
+			t.Fatalf("Resolve(%q): %v", name, err)
+		}
+		if !strings.Contains(p.UserAgent, "Mobile") {
+			t.Errorf("%s: User-Agent %q is not the mobile one", name, p.UserAgent)
+		}
+	}
+	if p, _ := Resolve("chrome-mobile"); p.SecCHUAMobile != "?1" {
+		t.Errorf("chrome-mobile: sec-ch-ua-mobile = %q, want ?1", p.SecCHUAMobile)
+	}
+}
+
+// Only a version may follow a profile name. Any other suffix is a typo,
+// and taking it as the base profile hides the typo.
+func TestResolve_RefusesASuffixThatIsNotAVersion(t *testing.T) {
+	for _, name := range []string{"chrome-xyz", "firefox-", "safari-mobil", "edge-1x"} {
+		if _, err := Resolve(name); err == nil {
+			t.Errorf("Resolve(%q) = nil error, want unknown profile", name)
+		}
+	}
+	for _, name := range []string{"chrome-120", "firefox-147.0"} {
+		if _, err := Resolve(name); err != nil {
+			t.Errorf("Resolve(%q): %v", name, err)
+		}
+	}
+}

@@ -61,7 +61,10 @@ func useECH(tr *http.Transport, opts *config.Options, base dialFunc) error {
 	if opts.Net.DoH == "" {
 		return ErrECHNeedsDoH
 	}
-	r := newDoH(opts.Net.DoH, "")
+	r, err := newDoH(opts.Net.DoH, "", opts.Stealth)
+	if err != nil {
+		return err
+	}
 	cfg := tr.TLSClientConfig
 	if cfg == nil {
 		cfg = &tls.Config{}

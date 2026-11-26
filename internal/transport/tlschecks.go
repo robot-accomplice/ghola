@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/ocsp"
 
@@ -121,6 +122,22 @@ func verifyStaple(cs tls.ConnectionState) error {
 	if rsp.Status != ocsp.Good {
 		return fmt.Errorf("%w: the status is %s", ErrCertStatus, ocspStatus[rsp.Status])
 	}
+	return stapleCurrent(rsp, time.Now())
+}
+
+// ocspClockSkew is the clock difference that the validity check of a
+// staple allows, as OpenSSL's OCSP_check_validity does for curl.
+const ocspClockSkew = 5 * time.Minute
+
+// stapleCurrent refuses an answer that is not valid at now: an old "good"
+// answer from before a revocation says nothing about the certificate now.
+func stapleCurrent(rsp *ocsp.Response, now time.Time) error {
+	if now.Add(ocspClockSkew).Before(rsp.ThisUpdate) {
+		return fmt.Errorf("%w: the answer is valid only from %s", ErrCertStatus, rsp.ThisUpdate.UTC().Format(time.RFC3339))
+	}
+	if !rsp.NextUpdate.IsZero() && now.Add(-ocspClockSkew).After(rsp.NextUpdate) {
+		return fmt.Errorf("%w: the answer expired at %s", ErrCertStatus, rsp.NextUpdate.UTC().Format(time.RFC3339))
+	}
 	return nil
 }
 
@@ -154,9 +171,9 @@ func cipherSuites(values []string) ([]uint16, error) {
 			s, ok := suites[name]
 			switch {
 			case !ok:
-				return nil, fmt.Errorf("--tls-ciphers %q: not a cipher suite; use the IANA name, such as TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256", name)
+				return nil, config.BadOptionf("--tls-ciphers %q: not a cipher suite; use the IANA name, such as TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256", name)
 			case onlyTLS13(s):
-				return nil, fmt.Errorf("--tls-ciphers %s: Go picks the TLS 1.3 suites itself", name)
+				return nil, config.BadOptionf("--tls-ciphers %s: Go picks the TLS 1.3 suites itself", name)
 			}
 			out = append(out, s.ID)
 		}
@@ -177,7 +194,7 @@ func onlyTLS13(s *tls.CipherSuite) bool {
 // format: PEM (the default) or DER.
 func loadClientCert(st config.StealthOptions) (tls.Certificate, error) {
 	if st.ClientKey == "" {
-		return tls.Certificate{}, fmt.Errorf("--tls-cert needs --tls-key")
+		return tls.Certificate{}, config.BadOptionf("--tls-cert needs --tls-key")
 	}
 	switch strings.ToUpper(st.CertType) {
 	case "", "PEM":
@@ -191,7 +208,7 @@ func loadClientCert(st config.StealthOptions) (tls.Certificate, error) {
 	default:
 		// curl takes the P12 password in --cert FILE:PASSWORD; the v1 spec
 		// has no place for it yet.
-		return tls.Certificate{}, fmt.Errorf("--tls-cert-type %s: use PEM or DER", st.CertType)
+		return tls.Certificate{}, config.BadOptionf("--tls-cert-type %s: use PEM or DER", st.CertType)
 	}
 }
 
