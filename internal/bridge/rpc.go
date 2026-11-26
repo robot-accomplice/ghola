@@ -316,8 +316,11 @@ func (s *rpcServer) start(j *rpcJob, resume bool) error {
 	args := append([]string{cli.JobDownload}, j.args...)
 	if resume {
 		args = append(args, "-c")
-		if j.File != "" {
-			args = append(args, "-o", j.File)
+		s.mu.Lock()
+		file := j.File // the run that was paused may still end and set it
+		s.mu.Unlock()
+		if file != "" {
+			args = append(args, "-o", file)
 		}
 	}
 	c, err := cli.Parse(append(args, j.URL))
