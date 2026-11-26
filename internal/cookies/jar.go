@@ -122,8 +122,10 @@ func (j *Jar) Save() error {
 	return os.WriteFile(j.path, data, 0644)
 }
 
-// AddRequestCookies seeds the jar from CLI cookie flags. A seeded cookie is
-// host-only: it goes to the host of the URL.
+// AddRequestCookies seeds the jar from CLI cookie flags. A NAME=VALUE
+// cookie is host-only: it goes to the host of the URL. A value without "="
+// is a file of cookies, as curl -b FILE reads it: a Netscape or a v0 JSON
+// jar. A file that does not exist adds nothing, as in curl.
 func (j *Jar) AddRequestCookies(rawURL string, values []string) error {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -132,6 +134,9 @@ func (j *Jar) AddRequestCookies(rawURL string, values []string) error {
 	for _, value := range values {
 		parts := strings.SplitN(value, "=", 2)
 		if len(parts) != 2 {
+			if err := j.addFile(value); err != nil {
+				return err
+			}
 			continue
 		}
 		j.upsert(Entry{
@@ -141,6 +146,19 @@ func (j *Jar) AddRequestCookies(rawURL string, values []string) error {
 			Path:     "/",
 			HostOnly: true,
 		})
+	}
+	return nil
+}
+
+// addFile adds the cookies of the jar file at path. Load reads it, so a
+// --cookie file and a --cookie-jar file follow the same rules.
+func (j *Jar) addFile(path string) error {
+	src, err := New(path)
+	if err != nil {
+		return fmt.Errorf("--cookie %s: %w", path, err)
+	}
+	for _, e := range src.entries {
+		j.upsert(e)
 	}
 	return nil
 }
@@ -210,20 +228,19 @@ func (j *Jar) AbsorbSetCookies(rawURL string, values []string) {
 // or false when RFC 6265 refuses it.
 func storable(u *url.URL, cookie *http.Cookie, now time.Time) (Entry, bool) {
 	host := strings.ToLower(u.Hostname())
+	if cookie.Secure && !strings.EqualFold(u.Scheme, "https") {
+		return Entry{}, false // only a secure origin sets a Secure cookie (RFC 6265bis, 5.6 step 8)
+	}
 	entry := Entry{
 		Name: cookie.Name, Value: cookie.Value, Domain: host, HostOnly: true,
 		Path: cookie.Path, Secure: cookie.Secure, HTTPOnly: cookie.HttpOnly,
 		SameSite: sameSiteString(cookie.SameSite),
 	}
-	if d := strings.ToLower(strings.TrimPrefix(cookie.Domain, ".")); d != "" && d != host {
-		if suffix, _ := publicsuffix.PublicSuffix(d); suffix == d {
-			return Entry{}, false // a public suffix (5.3 step 5)
-		}
-		if !domainMatch(host, d) {
-			return Entry{}, false // not the host's domain (5.3 step 6)
-		}
-		entry.Domain, entry.HostOnly = d, false
+	domain, hostOnly, ok := cookieDomain(host, cookie.Domain)
+	if !ok {
+		return Entry{}, false
 	}
+	entry.Domain, entry.HostOnly = domain, hostOnly
 	if entry.Path == "" || !strings.HasPrefix(entry.Path, "/") {
 		entry.Path = defaultPath(u)
 	}
@@ -239,6 +256,25 @@ func storable(u *url.URL, cookie *http.Cookie, now time.Time) (Entry, bool) {
 		entry.Expires = &exp
 	}
 	return entry, true
+}
+
+// cookieDomain applies the Domain attribute attr of a cookie that host set
+// (RFC 6265, 5.3 steps 5 and 6). A Domain, also one equal to the host,
+// makes a domain cookie; only no Domain makes a host-only one. ok is false
+// for a public suffix or for a domain that host is not in.
+func cookieDomain(host, attr string) (domain string, hostOnly, ok bool) {
+	d := strings.ToLower(strings.TrimPrefix(attr, "."))
+	if d == "" {
+		return host, true, true
+	}
+	if suffix, _ := publicsuffix.PublicSuffix(d); suffix == d {
+		// The host itself may be a public suffix: then host-only.
+		return host, true, d == host
+	}
+	if !domainMatch(host, d) {
+		return "", false, false
+	}
+	return d, false, true
 }
 
 // defaultPath is the default-path of RFC 6265, 5.1.4: the request path up
