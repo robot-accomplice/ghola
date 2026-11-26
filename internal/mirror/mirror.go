@@ -2,6 +2,7 @@ package mirror
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"github.com/robot-accomplice/ghola/internal/client"
 	"github.com/robot-accomplice/ghola/internal/config"
 	gholatransport "github.com/robot-accomplice/ghola/internal/transport"
+	"github.com/valyala/fasthttp"
 )
 
 // item is one URL in the queue.
@@ -54,9 +56,20 @@ func (m *Mirror) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// One transport for the whole run, so the files reuse connections.
+	pool := &client.Pool{}
+	if m.Stream == nil {
+		m.Stream = pool.Stream
+	}
+	if m.Do == nil {
+		m.Do = pool.Do
+	}
 	m.scope = newScope(start, m.Opts)
 	m.seen, m.saved, m.robots = map[string]bool{}, map[string]string{}, map[string]robotsRules{}
-	m.add(start, 0, false)
+	// The start URL is what the user asked for: the scope rules apply to
+	// its links, not to it, as in wget.
+	m.seen[start.String()] = true
+	m.queue = append(m.queue, item{url: start})
 	for len(m.queue) > 0 && ctx.Err() == nil {
 		it := m.queue[0]
 		m.queue = m.queue[1:]
@@ -105,9 +118,15 @@ func (m *Mirror) visit(ctx context.Context, it item) {
 	opts := m.requestOptions(it.url, local)
 	opts.Output.Events.Start(opts.URL)
 	began := time.Now()
-	err := client.Download(ctx, opts, m.Stream)
+	err := client.Download(ctx, opts, m.inScope(it))
 	info := opts.Output.Info
 	info.Time = time.Since(began)
+	if errors.Is(err, errOutOfScope) {
+		info.ErrorMsg = err.Error()
+		opts.Output.Events.End(*info)
+		m.logf("Skipped: %s: %v", it.url, err)
+		return
+	}
 	if err != nil {
 		info.ExitCode, info.ErrorMsg = m.exitCode(err), err.Error()
 		opts.Output.Events.End(*info)
@@ -137,6 +156,24 @@ func (m *Mirror) visit(ctx context.Context, it item) {
 	m.saved[it.url.String()] = local
 	if info.Status != http.StatusNotModified {
 		m.logf("Saved %s (%d bytes)", local, info.Size)
+	}
+}
+
+// errOutOfScope stops a redirect to a URL that the scope rules refuse.
+var errOutOfScope = errors.New("the redirect leaves the scope")
+
+// inScope is m.Stream for the URL of it, with the scope rules on each
+// redirect: a redirect is a link, and wget follows it only in scope. The
+// start URL may redirect anywhere, as a URL on the command line does.
+func (m *Mirror) inScope(it item) client.Streamer {
+	return func(ctx context.Context, opts *config.Options, req *fasthttp.Request, sink io.Writer) (gholatransport.StreamMeta, error) {
+		if it.depth > 0 {
+			u, err := url.Parse(req.URI().String())
+			if err == nil && u.String() != it.url.String() && !m.scope.allows(u, it.requisite) {
+				return gholatransport.StreamMeta{}, fmt.Errorf("%w: %s", errOutOfScope, u)
+			}
+		}
+		return m.Stream(ctx, opts, req, sink)
 	}
 }
 
@@ -211,18 +248,7 @@ func (m *Mirror) robotsAllow(ctx context.Context, u *url.URL) bool {
 	key := u.Scheme + "://" + u.Host
 	rules, ok := m.robots[key]
 	if !ok {
-		opts := *m.Base
-		opts.URL = key + "/robots.txt"
-		opts.URLs = []string{opts.URL}
-		opts.Output.Fail = false
-		if req, rsp, err := client.FetchURL(ctx, &opts, m.Do); err == nil {
-			if rsp.StatusCode() == http.StatusOK {
-				if body, err := gholatransport.ReadBody(rsp); err == nil {
-					rules = parseRobots(strings.NewReader(string(body)))
-				}
-			}
-			client.Release(req, rsp)
-		}
+		rules = m.fetchRobots(ctx, &url.URL{Scheme: u.Scheme, Host: u.Host, Path: "/robots.txt"})
 		m.robots[key] = rules
 	}
 	p := u.EscapedPath()
@@ -233,6 +259,45 @@ func (m *Mirror) robotsAllow(ctx context.Context, u *url.URL) bool {
 		p += "?" + u.RawQuery
 	}
 	return rules.allows(p)
+}
+
+// fetchRobots fetches robots.txt as a file of the mirror, as wget does:
+// it goes through the same transport, redirects and --warc as the other
+// files. A 4xx answer opens the whole site. A 5xx answer, or no answer,
+// closes it (RFC 9309, 2.3.1.3 and 2.3.1.4).
+func (m *Mirror) fetchRobots(ctx context.Context, u *url.URL) robotsRules {
+	local := localPath(m.Root, u, m.Opts.Layout, m.Opts.CutDirs, m.Opts.FileNames)
+	if m.Opts.Spider { // --spider saves nothing
+		tmp, err := os.CreateTemp("", "ghola-robots-")
+		if err != nil {
+			m.fail(u, err)
+			return disallowAll
+		}
+		tmp.Close()
+		local = tmp.Name()
+		defer os.Remove(local) //nolint:errcheck // a temporary file
+	}
+	opts := m.requestOptions(u, local)
+	opts.Output.Fail = true // an HTTP error writes no file
+	err := client.Download(ctx, opts, m.Stream)
+	status := opts.Output.Info.Status
+	switch {
+	case err == nil:
+		f, err := os.Open(local)
+		if err != nil {
+			m.fail(u, err)
+			return disallowAll
+		}
+		defer f.Close()
+		return parseRobots(f)
+	case errors.Is(err, config.ErrHTTPStatus) && status >= http.StatusBadRequest && status < http.StatusInternalServerError:
+		return robotsRules{}
+	case errors.Is(err, config.ErrHTTPStatus):
+		m.fail(u, fmt.Errorf("%w: %d, so nothing is fetched from the site (RFC 9309)", config.ErrHTTPStatus, status))
+	default:
+		m.fail(u, fmt.Errorf("nothing is fetched from the site: %w", err))
+	}
+	return disallowAll
 }
 
 // pause waits --wait between requests.
