@@ -88,3 +88,30 @@ func TestWithConfig_BadLines(t *testing.T) {
 		}
 	}
 }
+
+// A config file saved with a UTF-8 BOM reads its first line, and " #"
+// after a value starts a comment. Before, the first line was "not a
+// ghola option" and "follow-max = 3 # note" was a strconv error.
+func TestWithConfig_BOMAndInlineComment(t *testing.T) {
+	c, err := configCommand(t, "\ufefffollow-max = 3 # three hops\nreferer = http://r/#top\n", "http://h/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Last("follow-max") != "3" || c.Last("referer") != "http://r/#top" {
+		t.Errorf("follow-max %q, referer %q", c.Last("follow-max"), c.Last("referer"))
+	}
+}
+
+// A bad config line stops only the jobs that read the config: --help,
+// --version, explain, completion and profiles still run. Before, they
+// all exited 2, so the help could not say what was wrong.
+func TestWithConfig_BadLineDoesNotStopHelp(t *testing.T) {
+	for _, args := range [][]string{{"--help"}, {"--version"}, {"explain", "22"}, {"completion", "bash"}, {"profiles"}} {
+		if _, err := configCommand(t, "no-such-option = 1\n", args...); err != nil {
+			t.Errorf("%q: %v", args, err)
+		}
+	}
+	if _, err := configCommand(t, "no-such-option = 1\n", "http://h/"); err == nil {
+		t.Error("a fetch read a bad config file without an error")
+	}
+}

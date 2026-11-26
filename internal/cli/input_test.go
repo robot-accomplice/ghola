@@ -260,3 +260,24 @@ func TestApply_StdoutServesEveryURL(t *testing.T) {
 		t.Errorf("%v %v", cp, err)
 	}
 }
+
+// --help names the whole value of each option, not its first word, and
+// the usage lists every job. Before, it printed "--range BYTE",
+// "--proxy-tls-* (AS" and "-H, --header NAME:", and left out mirror,
+// jobs, inspect and completion.
+func TestHelp_WholeValueAndEveryJob(t *testing.T) {
+	text, err := Help("t", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"--range BYTE-RANGE ", "--local-port PORT-RANGE ", "--interface NAME|ADDRESS ",
+		"-H, --header NAME:VALUE ", "--proxy-tls-* VALUE ", "--next ", "ghola mirror [options] URL...",
+		"ghola jobs [list|pause|resume|cancel|clean]", "ghola inspect URL", "completion SHELL"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("help has no %q", want)
+		}
+	}
+	if strings.Contains(text, "(AS") || strings.Contains(text, "--next (SEPARATOR)") {
+		t.Error("help shows a type note as a value")
+	}
+}

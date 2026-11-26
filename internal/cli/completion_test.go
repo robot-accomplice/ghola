@@ -4,6 +4,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -58,5 +59,47 @@ func TestCompletion_ScriptsParse(t *testing.T) {
 		if out, err := exec.Command(cmd[0], args...).CombinedOutput(); err != nil {
 			t.Errorf("%s does not parse its script: %v\n%s", cmd[0], err, out)
 		}
+	}
+}
+
+// The words: no --no-no-config, and the --proxy-tls-* forms of the TLS
+// options are there. Before, the scripts listed --no-no-config and none
+// of the --proxy-tls-* options.
+func TestCompletion_Words(t *testing.T) {
+	_, options := completionWords()
+	all := " " + strings.Join(options, " ") + " "
+	for _, want := range []string{" --proxy-tls-ca ", " --proxy-tls-pin ", " --no-proxy-tls-verify ", " --no-config "} {
+		if !strings.Contains(all, want) {
+			t.Errorf("no %q", want)
+		}
+	}
+	if strings.Contains(all, "--no-no-") || strings.Contains(all, "*") {
+		t.Errorf("bad words in %s", all)
+	}
+}
+
+// PowerShell offers the job words only for the first argument. Before,
+// "ghola download " offered the job words again.
+func TestCompletion_PowerShellJobsOnlyFirst(t *testing.T) {
+	if _, err := exec.LookPath("pwsh"); err != nil {
+		t.Skip("pwsh is not installed")
+	}
+	script, _ := Completion("powershell")
+	path := filepath.Join(t.TempDir(), "c.ps1")
+	os.WriteFile(path, []byte(script), 0o644) //nolint:errcheck
+	complete := func(line string) string {
+		cmd := ". '" + path + "'; (TabExpansion2 -inputScript '" + line + "' -cursorColumn " + strconv.Itoa(len(line)) +
+			").CompletionMatches | ForEach-Object CompletionText"
+		out, err := exec.Command("pwsh", "-NoProfile", "-Command", cmd).CombinedOutput()
+		if err != nil {
+			t.Fatalf("%v: %s", err, out)
+		}
+		return string(out)
+	}
+	if got := complete("ghola dow"); !strings.Contains(got, "download") {
+		t.Errorf("ghola dow: %q", got)
+	}
+	if got := complete("ghola download "); strings.Contains(got, "mirror") {
+		t.Errorf("ghola download: job words offered: %q", got)
 	}
 }

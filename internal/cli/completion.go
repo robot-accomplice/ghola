@@ -37,16 +37,34 @@ func completionWords() (jobWords, options []string) {
 		jobWords = append(jobWords, j)
 	}
 	sort.Strings(jobWords)
-	for _, o := range table {
-		if strings.HasSuffix(o.Name, "*") {
-			continue // proxy-tls-* stands for a family
-		}
+	for _, o := range completionOptions() {
 		options = append(options, "--"+o.Name)
-		if o.Type == typeBool {
-			options = append(options, "--no-"+o.Name)
+		if o.Type == typeBool && !strings.HasPrefix(o.Name, "no-") {
+			options = append(options, "--no-"+o.Name) // --no-config has no --no-no-config
 		}
 	}
 	return jobWords, options
+}
+
+// completionOptions are the options of the table, with the family row
+// proxy-tls-* replaced by its members: a --proxy-tls-* form of each
+// --tls-* option.
+func completionOptions() []*Option {
+	var out []*Option
+	var proxy []*Option
+	for i := range table {
+		o := &table[i]
+		if strings.HasSuffix(o.Name, "*") {
+			continue
+		}
+		out = append(out, o)
+		if strings.HasPrefix(o.Name, "tls-") {
+			p, _ := lookupLong("proxy-" + o.Name)
+			p.Short = 0 // -k is --tls-verify, not the proxy form
+			proxy = append(proxy, p)
+		}
+	}
+	return append(out, proxy...)
 }
 
 func bashCompletion() string {
@@ -87,10 +105,7 @@ func fishCompletion() string {
 	b.WriteString("# fish completion for ghola. Load it with: ghola completion fish | source\n")
 	jobWords, _ := completionWords()
 	fmt.Fprintf(&b, "complete -c ghola -n '__fish_use_subcommand' -a '%s'\n", strings.Join(jobWords, " "))
-	for _, o := range table {
-		if strings.HasSuffix(o.Name, "*") {
-			continue
-		}
+	for _, o := range completionOptions() {
 		line := "complete -c ghola -l " + o.Name
 		if o.Short != 0 {
 			line += " -s " + string(o.Short)
@@ -122,7 +137,10 @@ Register-ArgumentCompleter -Native -CommandName ghola -ScriptBlock {
     param($wordToComplete, $commandAst, $cursorPosition)
     $jobs = @(%s)
     $options = @(%s)
-    $words = if ($commandAst.CommandElements.Count -le 2 -and -not $wordToComplete.StartsWith('-')) { $jobs } else { $options }
+    # The job words complete only the first argument: "ghola " or "ghola dow".
+    $count = $commandAst.CommandElements.Count
+    $first = $count -eq 1 -or ($count -eq 2 -and $wordToComplete -ne '')
+    $words = if ($first -and -not $wordToComplete.StartsWith('-')) { $jobs } else { $options }
     $words | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
         [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
     }

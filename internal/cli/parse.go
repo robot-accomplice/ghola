@@ -135,6 +135,9 @@ func (p *parser) long(a string) error {
 		return nil
 	}
 	if negated {
+		if flag := "--" + name; otherIndex[flag] != nil || v0Index[flag] != nil {
+			return unknown(flag) // aria2c --no-proxy is --proxy-bypass
+		}
 		return usagef("--%s is not an on/off option, so it has no --no- form", o.Name)
 	}
 	if !hasValue {

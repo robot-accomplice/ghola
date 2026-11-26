@@ -113,6 +113,9 @@ func unknown(flag string) error {
 		if v0.Note != "" {
 			msg += " " + v0.Note
 		}
+		if others := otherIndex[name]; len(others) > 0 {
+			msg += " " + otherMessage(name, others) // -D is also curl's --save-headers
+		}
 		return &UsageError{Msg: msg}
 	}
 	if others := otherIndex[name]; len(others) > 0 {
@@ -153,13 +156,17 @@ func nativeForm(o *Option) string {
 // nearest returns the option name at edit distance 2 or less, the closest
 // first, or "".
 func nearest(name string) []string {
+	if near := shortestWithPrefix(name); len(near) > 0 {
+		return near // --out is the start of --output
+	}
 	type cand struct {
 		name string
 		d    int
 	}
 	var best []cand
 	for n := range byName {
-		if d := distance(name, n); d <= 2 {
+		// A guess that changes most of the name misleads: -9 is not --ip.
+		if d := distance(name, n); d <= 2 && d < len(name) {
 			best = append(best, cand{n, d})
 		}
 	}
@@ -180,6 +187,26 @@ func nearest(name string) []string {
 			out = append(out, c.name)
 		}
 	}
+	return out
+}
+
+// shortestWithPrefix returns the shortest option names that start with
+// name, for a name of 3 letters or more.
+func shortestWithPrefix(name string) []string {
+	if len(name) < 3 {
+		return nil
+	}
+	var out []string
+	for n := range byName {
+		switch {
+		case !strings.HasPrefix(n, name):
+		case len(out) == 0 || len(n) < len(out[0]):
+			out = []string{n}
+		case len(n) == len(out[0]):
+			out = append(out, n)
+		}
+	}
+	sort.Strings(out)
 	return out
 }
 

@@ -121,6 +121,7 @@ const wgetTable = `
 -q --quiet -nv --no-verbose    => -q
 -v --verbose                   => -v
 -c --continue                  => -c
+-nc --no-clobber               => --no-output-overwrite
 --no-check-certificate         => --no-tls-verify
 --content-disposition          => --output-name header
 --connect-timeout              => --timeout-connect %s
@@ -369,6 +370,7 @@ func wgetRecursive(t *translation, name, value string) (bool, error) {
 // G), uses no timestamps unless -N, and -H without -D spans every host.
 func wgetFinish(t *translation) {
 	if t.job != JobMirror {
+		t.out = dropMirrorOptions(t.out) // wget uses -nH, -A, -k ... only with -r
 		return
 	}
 	if !t.noParent {
@@ -383,6 +385,23 @@ func wgetFinish(t *translation) {
 	if t.dir == "" && t.file == "" {
 		t.dir = "." // wget -r saves under the folder, as ghola mirror does
 	}
+}
+
+// dropMirrorOptions removes the native options of ghola mirror, and their
+// values, from args.
+func dropMirrorOptions(args []string) []string {
+	var out []string
+	for i := 0; i < len(args); i++ {
+		o := byName[strings.TrimPrefix(args[i], "--")]
+		if o == nil || o.Scope != JobMirror || !strings.HasPrefix(args[i], "--") {
+			out = append(out, args[i])
+			continue
+		}
+		if o.Type != typeBool {
+			i++ // the value
+		}
+	}
+	return out
 }
 
 var aria2Spec = &toolSpec{

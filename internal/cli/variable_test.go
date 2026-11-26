@@ -82,3 +82,33 @@ func TestFromCurl_Expand(t *testing.T) {
 		t.Errorf("data %q from %v", c.Last("data-literal"), cp.Args)
 	}
 }
+
+// --variable works in every job, so --expand-NAME works in ghola download
+// and ghola mirror too. Before, --variable was fetch-only and the
+// --expand- form of a download or mirror option could only fail.
+func TestParse_VariableInEveryJob(t *testing.T) {
+	for job, name := range map[string]string{"download": "connections", "mirror": "depth", "": "retry-max"} {
+		args := []string{"--variable", "X=4", "--expand-" + name, "{{X}}", "http://h/"}
+		if job != "" {
+			args = append([]string{job}, args...)
+		}
+		c, err := Parse(args)
+		if err != nil || c.Last(name) != "4" {
+			t.Errorf("%s --expand-%s: value %q, err %v", job, name, c.Last(name), err)
+		}
+	}
+}
+
+// The job list does not keep --variable: a variable can hold a secret,
+// and the options that use it already hold the expanded value.
+func TestSessionArgs_DropVariables(t *testing.T) {
+	c, err := Parse([]string{"download", "--variable", "T=secret", "--expand-header", "X: {{T}}", "http://h/"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range sessionArgs(c) {
+		if strings.HasPrefix(a, "--variable") {
+			t.Errorf("session args keep %q", a)
+		}
+	}
+}

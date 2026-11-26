@@ -22,7 +22,10 @@ func ShortUsage(version string) string {
 	fmt.Fprintf(&b, "ghola %s\n", version)
 	b.WriteString("Usage: ghola [options] URL...      fetch\n")
 	b.WriteString("       ghola download [options] URL...\n")
-	b.WriteString("       ghola serve | profiles | explain CODE\n")
+	b.WriteString("       ghola mirror [options] URL...\n")
+	b.WriteString("       ghola inspect URL\n")
+	b.WriteString("       ghola jobs [list|pause|resume|cancel|clean]\n")
+	b.WriteString("       ghola serve | profiles | explain CODE | completion SHELL\n")
 	b.WriteString("       ghola curl|wget|aria2c ARGS  (the syntax of that tool)\n\n")
 	var lettered []*Option
 	for i := range table {
@@ -67,14 +70,32 @@ func helpLine(o *Option) string {
 	if o.Short != 0 {
 		name = fmt.Sprintf("-%c, --%s", o.Short, o.Name)
 	}
-	if o.Type != typeBool && o.Type != typeTopic {
-		name += " " + strings.ToUpper(strings.Fields(o.Type)[0])
+	if v := valuePlaceholder(o.Type); v != "" && o.Type != typeBool && o.Type != typeTopic {
+		name += " " + v
 	}
 	note := ""
 	if _, built := setters[o.Name]; !built && !callerOptions[o.Name] {
 		note = fmt.Sprintf(" [phase %s, not built yet]", o.Phase)
 	}
 	return fmt.Sprintf("  %-34s %s%s\n", name, o.Help, note)
+}
+
+// valuePlaceholder is the value of an option type in --help, as one
+// word: "byte range" is BYTE-RANGE and "Name: value (repeat)" is
+// NAME:VALUE. A note in brackets is not a value: "(as --tls-*)" is VALUE,
+// and "(separator)" has none.
+func valuePlaceholder(typ string) string {
+	switch {
+	case typ == "(separator)":
+		return ""
+	case strings.HasPrefix(typ, "("):
+		return "VALUE"
+	}
+	for _, note := range []string{" (repeat)", " (list)"} {
+		typ = strings.TrimSuffix(typ, note)
+	}
+	typ = strings.NewReplacer(" | ", "|", ": ", ":", " ", "-").Replace(typ)
+	return strings.ToUpper(typ)
 }
 
 func groupNames() string {
