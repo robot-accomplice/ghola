@@ -5,7 +5,7 @@ v0,v1,note
 -c / --chain NAME,--chain NAME,No short letter: -c is --continue.
 --cacert,--tls-ca,
 --cert,--tls-cert,
---compressed,(default),Use --no-compressed to turn it off.
+--compressed,--compressed (the default),Use --no-compressed to turn it off.
 --connect-timeout SECONDS,--timeout-connect DURATION,A bare number is still seconds.
 -n / --connections N,-n / --connections N,Only for ghola download.
 -C / --continue-at OFFSET,-c / --continue or --continue-at OFFSET,-C - becomes -c.
@@ -15,7 +15,7 @@ v0,v1,note
 --data-binary,-d / --data,
 --data-urlencode,--field,
 -D / --drift MS,--wait-jitter DURATION,
--f / --fail,(default),Use --no-fail to turn it off. The rule is now status 400 and above.
+-f / --fail,--fail (the default),Use --no-fail to turn it off. The rule is now status 400 and above.
 -F / --form,--form,No short letter (1.4% of curl files).
 -G / --ghost,(removed),It sent an X-Ghola-Identity header that marked each request as coming from ghola.
 --har,--har,
@@ -24,7 +24,7 @@ v0,v1,note
 --http3,--http 3,
 --impersonate,--impersonate,
 -i / --include,--show-headers,curl 8.10 uses the same name.
--k / --insecure,--no-tls-verify,
+-k / --insecure,-k / --no-tls-verify,
 --jq PATH,--output-select PATH,The syntax is gjson and not jq. See open question 2.
 --key,--tls-key,
 --limit-rate,--rate-max,

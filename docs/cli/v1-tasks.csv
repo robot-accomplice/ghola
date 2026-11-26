@@ -21,7 +21,7 @@ id,task,native,curl,wget,aria2,note
 20,Show only the response headers,ghola -I URL,curl -I URL,wget -S --spider URL,,
 21,Show the response headers and the body,ghola --show-headers URL,curl -i URL,wget -S -qO- URL,,Accepted: --show-headers is in 0.9% of curl files.
 22,Debug a request,ghola -v URL,curl -v URL,wget -d URL,aria2c --console-log-level=debug URL,
-23,Print only the status code,ghola -qo /dev/null -w '%{http_code}' URL,curl -so /dev/null -w '%{http_code}' URL,,,
+23,Print only the status code,ghola -qo /dev/null -w '%{http_code}' URL,curl -so /dev/null -w '%{http_code}' URL,,,"On Windows, write -o NUL for -o /dev/null."
 24,Get one field of a JSON answer,ghola --output-select name URL,,,,
 25,Skip the TLS certificate check,ghola -k URL,curl -k URL,wget -qO- --no-check-certificate URL,aria2c --check-certificate=false URL,
 26,Trust a private CA,ghola --tls-ca ca.pem URL,curl --cacert ca.pem URL,wget -qO- --ca-certificate=ca.pem URL,aria2c --ca-certificate=ca.pem URL,
