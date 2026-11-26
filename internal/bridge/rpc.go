@@ -1,6 +1,7 @@
 package bridge
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -110,7 +111,11 @@ func (c *wsClient) send(b []byte) error {
 func (c *wsClient) reply(s *rpcServer, msg []byte) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.conn.WriteMessage(websocket.TextMessage, s.answer(msg))
+	reply := s.answer(msg)
+	if reply == nil {
+		return nil // a notification gets no reply
+	}
+	return c.conn.WriteMessage(websocket.TextMessage, reply)
 }
 
 type rpcRequest struct {
@@ -139,8 +144,13 @@ func (s *rpcServer) serve(ctx *fasthttp.RequestCtx) {
 		s.serveWS(ctx)
 		return
 	}
+	reply := s.answer(ctx.PostBody())
+	if reply == nil {
+		ctx.SetStatusCode(fasthttp.StatusNoContent) // a notification gets no reply
+		return
+	}
 	ctx.SetContentType("application/json")
-	ctx.SetBody(s.answer(ctx.PostBody()))
+	ctx.SetBody(reply)
 }
 
 // serveWS reads one JSON-RPC request from each message and writes the
@@ -170,16 +180,37 @@ func (s *rpcServer) serveWS(ctx *fasthttp.RequestCtx) {
 }
 
 // answer is the JSON-RPC answer to one request body.
+// answer runs one JSON-RPC 2.0 message and returns the reply, or nil for a
+// notification (a request with no id), which gets no reply. A batch is a
+// valid message that this server does not take: Invalid Request.
 func (s *rpcServer) answer(body []byte) []byte {
+	if trimmed := bytes.TrimSpace(body); len(trimmed) > 0 && trimmed[0] == '[' {
+		return rpcReply(nil, nil, &rpcError{rpcInvalidRequest, "batch requests are not supported; send one request at a time"})
+	}
 	var req rpcRequest
 	if err := json.Unmarshal(body, &req); err != nil {
 		return rpcReply(nil, nil, &rpcError{rpcParseError, "parse error: " + err.Error()})
 	}
-	if req.JSONRPC != "2.0" || req.Method == "" {
-		return rpcReply(req.ID, nil, &rpcError{rpcInvalidRequest, `send {"jsonrpc":"2.0","method":...}`})
+	if req.JSONRPC != "2.0" || req.Method == "" || !validID(req.ID) {
+		return rpcReply(nil, nil, &rpcError{rpcInvalidRequest, `send {"jsonrpc":"2.0","method":...} with an id that is a string, a number or null`})
 	}
 	result, rerr := s.call(req.Method, req.Params)
+	if req.ID == nil {
+		return nil // a notification
+	}
 	return rpcReply(req.ID, result, rerr)
+}
+
+// validID reports whether id is absent, or a string, a number or null.
+func validID(id json.RawMessage) bool {
+	if id == nil {
+		return true
+	}
+	switch c := id[0]; {
+	case c == '"', c == '-', c >= '0' && c <= '9':
+		return true
+	}
+	return string(id) == "null"
 }
 
 // notify sends a notification to each WebSocket client. A client that
@@ -353,6 +384,10 @@ func (s *rpcServer) halt(gid string, stop bool) (any, *rpcError) {
 	j, ok := s.jobs[gid]
 	if !ok {
 		return nil, &rpcError{rpcInvalidParams, "no job " + gid}
+	}
+	if j.Status != "active" && j.Status != "paused" {
+		// A finished or removed job cannot pause or stop: as in aria2.
+		return nil, &rpcError{rpcInvalidParams, "job " + gid + " is " + j.Status}
 	}
 	if j.Status == "active" {
 		j.cancel()
