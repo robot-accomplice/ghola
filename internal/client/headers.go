@@ -22,7 +22,6 @@ func setHeaders(req *fasthttp.Request, opts *config.Options, active profile.Brow
 	for _, generated := range profile.BuildHeaders(active, profile.HeaderOptions{
 		Method:         method,
 		TargetURL:      target,
-		RefererMode:    opts.Stealth.Referer,
 		ExplicitUA:     resolveUserAgent(opts, active),
 		ExplicitLang:   opts.Stealth.AcceptLanguage,
 		StealthHeaders: opts.Stealth.StealthHeaders,
@@ -31,6 +30,13 @@ func setHeaders(req *fasthttp.Request, opts *config.Options, active profile.Brow
 			continue
 		}
 		req.Header.Set(generated.Key, generated.Value)
+	}
+	// --referer URL is a plain header, with or without the profile headers.
+	// auto depends on the hop, so the caller sets it.
+	if ref := opts.Stealth.Referer; ref != "" && ref != "none" && ref != "auto" {
+		if _, overridden := overrides["referer"]; !overridden {
+			req.Header.Set("Referer", ref)
+		}
 	}
 
 	trusted := sendsCredentials(opts, target)

@@ -28,8 +28,11 @@ func ProcessResponse(w, ew io.Writer, opts *config.Options, req *fasthttp.Reques
 	if opts.Output.TraceTime {
 		ew = timedLines{ew} // --trace-time also times the -v lines
 	}
-	if opts.Output.FailsOn(rsp.StatusCode()) {
-		return fmt.Errorf("%w: %d %s", config.ErrHTTPStatus, rsp.StatusCode(), fasthttp.StatusMessage(rsp.StatusCode()))
+	failErr := statusError(opts, rsp.StatusCode())
+	// -o writes no file for a refused status. stdout keeps the body (v1
+	// rule, as curl --fail-with-body); the v0 rule drops it.
+	if failErr != nil && (opts.Output.File != "" || !opts.Output.FailFrom400) {
+		return failErr
 	}
 
 	if err := opts.Output.SaveETag(rsp.StatusCode(), string(rsp.Header.Peek("ETag"))); err != nil {
@@ -91,7 +94,15 @@ func ProcessResponse(w, ew io.Writer, opts *config.Options, req *fasthttp.Reques
 	}
 
 	printTiming(ew, opts, elapsed)
-	return nil
+	return failErr
+}
+
+// statusError returns the error of a status that --fail refuses, else nil.
+func statusError(opts *config.Options, status int) error {
+	if !opts.Output.FailsOn(status) {
+		return nil
+	}
+	return fmt.Errorf("%w: %d %s", config.ErrHTTPStatus, status, fasthttp.StatusMessage(status))
 }
 
 // bodyReader returns the response body as a reader: the stream when the

@@ -48,11 +48,7 @@ func signSigV4(s config.SigV4, req *fasthttp.Request, user string, now time.Time
 		canonHeaders.WriteString(n + ":" + strings.TrimSpace(headers[n]) + "\n")
 	}
 	signed := strings.Join(names, ";")
-	path := u.EscapedPath()
-	if path == "" {
-		path = "/"
-	}
-	canonical := strings.Join([]string{string(req.Header.Method()), path, canonicalQuery(u.Query()), canonHeaders.String(), signed, payload}, "\n")
+	canonical := strings.Join([]string{string(req.Header.Method()), canonicalPath(u.EscapedPath(), service), canonicalQuery(u.Query()), canonHeaders.String(), signed, payload}, "\n")
 	scope := day + "/" + region + "/" + service + "/" + s.Provider1 + "4_request"
 	algo := p1 + "4-HMAC-SHA256"
 	toSign := algo + "\n" + amzDate + "\n" + scope + "\n" + sha256Hex([]byte(canonical))
@@ -63,6 +59,23 @@ func signSigV4(s config.SigV4, req *fasthttp.Request, user string, now time.Time
 	req.Header.Set("Authorization", fmt.Sprintf("%s Credential=%s/%s, SignedHeaders=%s, Signature=%s",
 		algo, access, scope, signed, hex.EncodeToString(hmacSHA256(key, toSign))))
 	return nil
+}
+
+// canonicalPath returns the path of the canonical request. AWS encodes
+// each segment of the path as sent once more, except for S3, which signs
+// the path as sent. So an encoded slash (%2F) stays part of its segment.
+func canonicalPath(escaped, service string) string {
+	if escaped == "" {
+		return "/"
+	}
+	if service == "s3" {
+		return escaped
+	}
+	segments := strings.Split(escaped, "/")
+	for i, seg := range segments {
+		segments[i] = awsEscape(seg)
+	}
+	return strings.Join(segments, "/")
 }
 
 // canonicalQuery sorts the parameters and encodes them as RFC 3986 says.
