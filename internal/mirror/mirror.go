@@ -260,10 +260,19 @@ func (m *Mirror) fail(u *url.URL, err error) {
 	m.logf("Failed: %s: %v", u, err)
 }
 
+// maxLogLine is the longest log line. A page can hold a link of many
+// megabytes, and a log line names the link.
+const maxLogLine = 2048
+
 func (m *Mirror) logf(format string, args ...any) {
-	if m.Log != nil {
-		fmt.Fprintf(m.Log, format+"\n", args...)
+	if m.Log == nil {
+		return
 	}
+	line := fmt.Sprintf(format, args...)
+	if len(line) > maxLogLine {
+		line = fmt.Sprintf("%s... (%d bytes)", line[:maxLogLine], len(line))
+	}
+	fmt.Fprintln(m.Log, line)
 }
 
 // pageKind is "html" or "css" when the file can hold links, else "".
