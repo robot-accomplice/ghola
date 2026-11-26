@@ -225,9 +225,12 @@ type StealthOptions struct {
 
 // ResilienceOptions controls retry, timeout, redirect, and buffer behavior.
 type ResilienceOptions struct {
-	Timeout int
-	Retries int
-	Backoff int
+	// HTTPRedirectsOnly limits redirects to http and https. The bridge sets
+	// it: it fetches http(s) for its clients and never another protocol.
+	HTTPRedirectsOnly bool
+	Timeout           int
+	Retries           int
+	Backoff           int
 	// Wait is the pause between requests (--wait).
 	Wait      time.Duration
 	RetryHTTP bool

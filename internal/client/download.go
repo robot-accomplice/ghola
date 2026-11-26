@@ -194,7 +194,7 @@ func followRedirects(opts *config.Options, url string, get func(string) (gholatr
 		if hops >= opts.Resilience.MaxRedirs {
 			return url, meta, fmt.Errorf("download: %w", tooManyRedirects(opts))
 		}
-		if err := checkRedirectScheme(url, meta.Location); err != nil {
+		if err := checkRedirectScheme(opts, url, meta.Location); err != nil {
 			return url, meta, fmt.Errorf("download: %w", err)
 		}
 		next, ok := resolveLocation(url, meta.Location)

@@ -5,7 +5,11 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"log"
+	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/fasthttp/websocket"
@@ -41,12 +45,14 @@ var upgrader = websocket.FastHTTPUpgrader{}
 
 // rpcOptions are the options that an RPC job may set. A client with the
 // token may send requests already, but not run a command (--on-complete),
-// read a local file (--config, --input) or write logs and traces.
+// read a local file (--config, --input, a file:// --source), write logs
+// and traces, or write outside the serve folder (-o is checked, and
+// --output-overwrite is not allowed: it would replace the user's files).
 var rpcOptions = map[string]bool{
 	"output": true, "output-name": true, "connections": true, "checksum": true, "header": true,
 	"user-agent": true, "referer": true, "rate-max": true, "retry-max": true, "retry-delay": true,
 	"timeout": true, "timeout-connect": true, "source": true, "follow-max": true, "impersonate": true,
-	"output-overwrite": true, "max-size": true, "cookie": true,
+	"max-size": true, "cookie": true,
 }
 
 // rpcJob is one download that the RPC started.
@@ -69,13 +75,18 @@ type rpcJob struct {
 // rpcServer holds the jobs of one bridge.
 type rpcServer struct {
 	mu      sync.Mutex
+	root    string // the folder where ghola serve runs: RPC jobs write only below it
 	jobs    map[string]*rpcJob
 	stream  client.Streamer
 	clients map[*wsClient]bool // the WebSocket clients, for notifications
 }
 
 func newRPC(stream client.Streamer) *rpcServer {
-	return &rpcServer{jobs: map[string]*rpcJob{}, stream: stream, clients: map[*wsClient]bool{}}
+	root, err := os.Getwd()
+	if err != nil {
+		root = "."
+	}
+	return &rpcServer{root: root, jobs: map[string]*rpcJob{}, stream: stream, clients: map[*wsClient]bool{}}
 }
 
 // wsClient is one WebSocket connection. A connection takes one writer at
@@ -245,7 +256,17 @@ func (s *rpcServer) add(urls, args []string) (any, *rpcError) {
 	}
 	for name := range c.Values {
 		if !rpcOptions[name] {
-			return nil, &rpcError{rpcInvalidParams, "--" + name + " is not allowed over RPC"}
+			return nil, refuse("--"+name, "is not allowed over RPC")
+		}
+	}
+	for _, o := range c.Values["output"] {
+		if !insideFolder(s.root, o) {
+			return nil, refuse("-o "+o, "is outside the folder where ghola serve runs")
+		}
+	}
+	for _, src := range c.Values["source"] {
+		if !bridgeScheme(src) {
+			return nil, refuse("--source "+src, "must be http:// or https://")
 		}
 	}
 	var gids []string
@@ -277,6 +298,7 @@ func (s *rpcServer) start(j *rpcJob, resume bool) error {
 		return err
 	}
 	opts.Output.Silent, opts.Output.Progress = true, "off"
+	opts.Resilience.HTTPRedirectsOnly = true // RPC jobs fetch http(s) only, also after a redirect
 	opts.Output.Info = &config.TransferInfo{URL: j.URL}
 	ctx, cancel := context.WithCancel(context.Background())
 	s.mu.Lock()
@@ -374,4 +396,21 @@ func newGID() string {
 	b := make([]byte, 8)
 	rand.Read(b) //nolint:errcheck // crypto/rand does not fail
 	return hex.EncodeToString(b)
+}
+
+// refuse returns the RPC error for an argument that ghola.add does not
+// take, and logs it, so a refused request can be traced.
+func refuse(arg, why string) *rpcError {
+	log.Printf("ghola.add refused: %q %s", arg, why)
+	return &rpcError{rpcInvalidParams, arg + " " + why}
+}
+
+// insideFolder reports whether path, relative to root or absolute, names
+// root or a file below it.
+func insideFolder(root, path string) bool {
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(root, path)
+	}
+	rel, err := filepath.Rel(root, filepath.Clean(path))
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) && !filepath.IsAbs(rel)
 }
