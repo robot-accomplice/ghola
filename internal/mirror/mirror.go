@@ -54,6 +54,14 @@ func (m *Mirror) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// One transport for the whole run, so the files reuse connections.
+	pool := &client.Pool{}
+	if m.Stream == nil {
+		m.Stream = pool.Stream
+	}
+	if m.Do == nil {
+		m.Do = pool.Do
+	}
 	m.scope = newScope(start, m.Opts)
 	m.seen, m.saved, m.robots = map[string]bool{}, map[string]string{}, map[string]robotsRules{}
 	m.add(start, 0, false)
