@@ -125,6 +125,9 @@ func (m *Mirror) visit(ctx context.Context, it item) {
 		}
 	}
 	kind := pageKind(info.ContentType, local)
+	if kind == "" && info.Status == http.StatusNotModified {
+		kind = sniffKind(local) // a 304 often has no Content-Type: the kept file tells
+	}
 	if kind != "" {
 		if body, err := os.ReadFile(local); err == nil {
 			m.follow(it, kind, body)
@@ -277,6 +280,18 @@ func pageKind(contentType, name string) string {
 		return "css"
 	}
 	return ""
+}
+
+// sniffKind is the pageKind of a local file by its first bytes.
+func sniffKind(local string) string {
+	f, err := os.Open(local)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	head := make([]byte, 512)
+	n, _ := io.ReadFull(f, head)
+	return pageKind(http.DetectContentType(head[:n]), local)
 }
 
 // looksLikePage reports a name that may hold an HTML page: a folder, no
