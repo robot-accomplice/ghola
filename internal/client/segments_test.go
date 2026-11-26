@@ -144,27 +144,30 @@ func (s *blockingServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	serveVersion(w, r, 1)
 }
 
-// stateDone returns the number of finished pieces in file's state file.
-func stateDone(file string) int {
-	b, err := os.ReadFile(statePath(file))
-	if err != nil {
-		return -1
+// readState returns file's state file, as bytes and parsed. ok is false
+// when it cannot be read yet.
+func readState(file string) (raw []byte, s resumeState, ok bool) {
+	raw, err := os.ReadFile(statePath(file))
+	if err != nil || json.Unmarshal(raw, &s) != nil {
+		return nil, s, false
 	}
-	var s resumeState
-	if json.Unmarshal(b, &s) != nil {
-		return -1
-	}
-	return len(s.Done)
+	return raw, s, true
 }
 
-// copyFile copies src to dst, as a kill would leave it.
-func copyFile(t *testing.T, src, dst string) {
+// killedFile writes what a kill leaves of a --file-allocation trunc
+// download: the full size, the bytes of the pieces that the state file
+// names, zeros elsewhere, and the state file. The running download locks
+// its own file, so the test cannot copy it; a killed process holds no lock.
+func killedFile(t *testing.T, file string, data, rawState []byte, s resumeState) {
 	t.Helper()
-	b, err := os.ReadFile(src)
-	if err != nil {
+	b := make([]byte, len(data))
+	for _, p := range s.Done {
+		copy(b[p[0]:p[1]+1], data[p[0]:p[1]+1])
+	}
+	if err := os.WriteFile(file, b, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(dst, b, 0o644); err != nil {
+	if err := os.WriteFile(statePath(file), rawState, 0o600); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -178,6 +181,8 @@ func TestSegmented_ResumeAfterKillFillsTheHoles(t *testing.T) {
 	srv := &blockingServer{hold: fmt.Sprint(pieces[1].start), release: make(chan struct{})}
 	ts := httptest.NewServer(srv)
 	defer ts.Close()
+	var once sync.Once
+	release := func() { once.Do(func() { close(srv.release) }) }
 
 	dir := t.TempDir()
 	out := filepath.Join(dir, "f")
@@ -189,22 +194,26 @@ func TestSegmented_ResumeAfterKillFillsTheHoles(t *testing.T) {
 		defer wg.Done()
 		_ = Download(context.Background(), opts, nil)
 	}()
+	defer wg.Wait()
+	defer release() // runs first: the held piece must not block the end
 
-	// Wait until every piece but the held one is done, then copy the file
-	// and its state, as a kill at this moment leaves them.
+	// Wait until every piece but the held one is done, and keep the state
+	// file of that moment: a kill now leaves it.
 	deadline := time.Now().Add(10 * time.Second)
-	for stateDone(out) < len(pieces)-1 {
+	raw, st, ok := readState(out)
+	for !ok || len(st.Done) < len(pieces)-1 {
 		if time.Now().After(deadline) {
-			close(srv.release)
-			wg.Wait()
-			t.Fatalf("no state file with %d done pieces during the download (got %d)", len(pieces)-1, stateDone(out))
+			t.Fatalf("no state file with %d done pieces during the download (got %+v)", len(pieces)-1, st)
 		}
 		time.Sleep(10 * time.Millisecond)
+		raw, st, ok = readState(out)
+	}
+	if st.Size != int64(size) {
+		t.Fatalf("state file size = %d, want %d", st.Size, size)
 	}
 	killed := filepath.Join(dir, "killed")
-	copyFile(t, out, killed)
-	copyFile(t, statePath(out), statePath(killed))
-	close(srv.release)
+	killedFile(t, killed, bigBody(1), raw, st)
+	release()
 	wg.Wait()
 
 	resume := segmentOpts(ts.URL, killed, 1)
