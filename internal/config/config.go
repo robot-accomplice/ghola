@@ -179,6 +179,9 @@ type OutputOptions struct {
 	MaxSize int64
 	// Dir is the folder of -o DIR/: the remote file name goes inside it.
 	Dir string
+	// ExistsHint replaces "--output-overwrite replaces it" in the error for
+	// an existing file. A compatibility command names its own option.
+	ExistsHint string
 	// FailFrom400 is the v1 rule for Fail: status 400 and above fails, as
 	// in curl. The v0 rule fails every status that is not 2xx.
 	FailFrom400 bool

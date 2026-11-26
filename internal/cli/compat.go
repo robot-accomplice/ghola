@@ -37,6 +37,9 @@ type toolSpec struct {
 	// finish adds the native options that depend on several of the tool's
 	// options (wget -r without -np, -H with -D). nil for none.
 	finish func(t *translation)
+	// existsHint is the tool's hint for an existing output file; "" keeps
+	// the native one.
+	existsHint string
 	// downloadWithoutFile starts ghola download when no output file is
 	// given (wget saves under the remote name).
 	downloadWithoutFile bool
@@ -56,6 +59,12 @@ type Compat struct {
 	HideErrors bool
 	// ShowNative is --show-native: print Args and run nothing.
 	ShowNative bool
+	// Notes say where the tool's behaviour differs from the command that
+	// runs. They go to stderr unless -q.
+	Notes []string
+	// ExistsHint is the tool's hint in the error for an existing output
+	// file (config.OutputOptions.ExistsHint).
+	ExistsHint string
 }
 
 // Curl is kept for the callers of FromCurl.
@@ -114,6 +123,7 @@ type translation struct {
 	noParent, timestamping, spanHosts, domains, level bool
 	// aria2c -s and -x; 0 is not set.
 	split, perServer int
+	notes            []string
 }
 
 func translate(spec *toolSpec, args []string) (*Compat, error) {
@@ -137,7 +147,8 @@ func translate(spec *toolSpec, args []string) (*Compat, error) {
 	case spec.downloadWithoutFile && t.file == "":
 		out = append([]string{JobDownload}, out...)
 	}
-	return &Compat{Args: out, HideErrors: t.silent && !t.showError, ShowNative: t.showNative}, nil
+	return &Compat{Args: out, HideErrors: t.silent && !t.showError, ShowNative: t.showNative,
+		Notes: t.notes, ExistsHint: spec.existsHint}, nil
 }
 
 func (t *translation) run(args []string) error {

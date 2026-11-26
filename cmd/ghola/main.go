@@ -67,6 +67,7 @@ func runGroups(ctx context.Context, groups [][]string, hideErrors bool, do clien
 
 // executeOne runs one group of options and URLs.
 func executeOne(ctx context.Context, args []string, hideErrors bool, do client.Doer, stream client.Streamer, w *os.File) int {
+	var compat *cli.Compat // the translation of ghola curl, wget or aria2c; nil for native
 	c, err := cli.Parse(args)
 	if err != nil {
 		return argError(err)
@@ -93,6 +94,7 @@ func executeOne(ctx context.Context, args []string, hideErrors bool, do client.D
 			return argError(err)
 		}
 		hideErrors = native.HideErrors
+		compat = native
 	}
 	if code, done := runJob(c, w); done {
 		return code
@@ -102,6 +104,14 @@ func executeOne(ctx context.Context, args []string, hideErrors bool, do client.D
 		return argErrorOrGlob(err)
 	}
 	opts.Output.HideErrors = hideErrors
+	if compat != nil {
+		opts.Output.ExistsHint = compat.ExistsHint
+		if !opts.Output.Silent {
+			for _, n := range compat.Notes {
+				fmt.Fprintln(os.Stderr, n)
+			}
+		}
+	}
 	noteLateJobWord(c, opts)
 	if opts.Output.Background && c.Last("input") == "-" {
 		return argError(errors.New("--background cannot read --input - : the background process has no stdin; save the list to a file and use --input FILE"))

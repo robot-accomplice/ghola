@@ -46,7 +46,11 @@ func OpenOutput(o OutputOptions, name string, flags int, ownFile bool) (*os.File
 	}
 	f, err := openLocked(name, flags)
 	if errors.Is(err, os.ErrExist) {
-		return nil, fmt.Errorf("%w: %w: %s; --output-overwrite replaces it", ErrWrite, ErrOutputExists, name)
+		hint := o.ExistsHint
+		if hint == "" {
+			hint = "--output-overwrite replaces it"
+		}
+		return nil, fmt.Errorf("%w: %w: %s; %s", ErrWrite, ErrOutputExists, name, hint)
 	}
 	if errors.Is(err, ErrOutputInUse) {
 		return nil, fmt.Errorf("%w: %w: %s", ErrWrite, err, name)

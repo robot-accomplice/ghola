@@ -189,6 +189,26 @@ func TestFromAria2c_Defaults(t *testing.T) {
 	}
 }
 
+// Two aria2 behaviours have no native option in v1.0.1: renaming an
+// existing file (a.1.bin) and --min-split-size. ghola aria2c still runs
+// the command, so aria2 scripts work, and says what differs: a note for
+// --min-split-size, and the aria2 hint in the error when the file exists.
+func TestFromAria2c_NotesTheGaps(t *testing.T) {
+	c, err := FromAria2c([]string{"--min-split-size=1M", "--auto-file-renaming=true", "u"})
+	if err != nil {
+		t.Fatalf("aria2 options without a native form refused the command: %v", err)
+	}
+	if len(c.Notes) != 1 || !strings.Contains(c.Notes[0], "--min-split-size is not used") {
+		t.Errorf("notes = %q, want one --min-split-size note", c.Notes)
+	}
+	if !strings.Contains(c.ExistsHint, "--allow-overwrite=true") {
+		t.Errorf("ExistsHint = %q, want the aria2 option", c.ExistsHint)
+	}
+	if c, _ := FromAria2c([]string{"u"}); len(c.Notes) != 0 {
+		t.Errorf("notes without --min-split-size: %q", c.Notes)
+	}
+}
+
 func TestFromAria2c(t *testing.T) {
 	got := native(t, FromAria2c, "-x16", "-s16", "-k1M", "-d", "dl", "-o", "f.iso", "--max-tries=2", "--timeout=3", "https://h/f.iso")
 	want := "download -r 4 --retry-delay 0 --no-compressed --no-url-glob --auth-netrc -r 1 --stall-time 3 -n 16 -o dl/f.iso https://h/f.iso"

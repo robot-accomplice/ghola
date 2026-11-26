@@ -380,13 +380,14 @@ var aria2Spec = &toolSpec{
 	valueLetters: "MOTUdijklmostux",                                                                          // aria2c 1.37.0 --help=#all
 	equals:       true,
 	flags:        parseToolTable(aria2Table),
-	ignored: words("--no-conf -k --min-split-size --console-log-level " +
-		"--summary-interval --download-result"),
+	ignored: words("--no-conf --console-log-level --summary-interval --download-result " +
+		"--auto-file-renaming"), // ghola keeps an existing file: existsHint says so
 	takesValue: words("-o --out -d --dir -m --max-tries --http-user --http-passwd " +
 		"--allow-overwrite --check-certificate -k --min-split-size --console-log-level " +
-		"--summary-interval --download-result -x --max-connection-per-server -s --split"),
-	special: aria2Special,
-	finish:  aria2Finish,
+		"--summary-interval --download-result -x --max-connection-per-server -s --split --auto-file-renaming"),
+	special:    aria2Special,
+	finish:     aria2Finish,
+	existsHint: "ghola aria2c: an existing file is not renamed (aria2 writes NAME.1); use --allow-overwrite=true or remove the file",
 }
 
 // aria2's defaults for -s (--split) and -x (--max-connection-per-server).
@@ -444,6 +445,8 @@ func aria2Special(t *translation, name, value string, _ bool) (bool, error) {
 		t.dir = value
 	case "-m", "--max-tries":
 		return true, t.tries(value)
+	case "-k", "--min-split-size":
+		t.notes = append(t.notes, "ghola aria2c: --min-split-size is not used; -x and -s set the number of ranges")
 	case "-s", "--split":
 		return true, positive(name, value, &t.split)
 	case "-x", "--max-connection-per-server":
