@@ -230,9 +230,9 @@ func words(s string) map[string]bool {
 }
 
 var curlSpec = &toolSpec{
-	name:         JobCurl,
+	name: JobCurl,
 	// curl sends Accept: */* unless -H sets another.
-	defaults:     append(strings.Fields("--no-follow --follow-max 50 --no-fail -r 0 --no-compressed -H"), "Accept: */*"),
+	defaults: append(strings.Fields("--no-follow --follow-max 50 --no-fail -r 0 --no-compressed -H"), "Accept: */*"),
 	// curl 8.22.0 --help all, without -h: its topic is optional.
 	valueLetters: "ACDEFHKPQTUXYbcdemortuwxyz",
 	flags:        parseToolTable(curlTable),
@@ -241,8 +241,8 @@ var curlSpec = &toolSpec{
 	ignored: words("-N --no-buffer --buffer -q --disable"),
 	takesValue: words("-C --continue-at -K --config --url --variable -d --data --data-ascii --data-binary --data-raw " +
 		"--data-urlencode --json -o --output -e --referer -T --upload-file --output-dir --parallel-max --ech"),
-	special:      curlSpecial,
-	finish:       curlFinish,
+	special: curlSpecial,
+	finish:  curlFinish,
 }
 
 func curlSpecial(t *translation, name, value string, _ bool) (bool, error) {
