@@ -138,6 +138,9 @@ type robotsRules struct {
 	allow, disallow []string
 }
 
+// disallowAll closes a whole site.
+var disallowAll = robotsRules{disallow: []string{"/"}}
+
 // addRobotsRule adds an Allow or a Disallow line to the groups of the
 // current agents. An empty Disallow allows all, so it adds nothing.
 func addRobotsRule(groups map[string]*robotsRules, agents []string, allow bool, path string) {

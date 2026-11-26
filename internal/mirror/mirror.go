@@ -2,6 +2,7 @@ package mirror
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"github.com/robot-accomplice/ghola/internal/client"
 	"github.com/robot-accomplice/ghola/internal/config"
 	gholatransport "github.com/robot-accomplice/ghola/internal/transport"
+	"github.com/valyala/fasthttp"
 )
 
 // item is one URL in the queue.
@@ -54,9 +56,20 @@ func (m *Mirror) Run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// One transport for the whole run, so the files reuse connections.
+	pool := &client.Pool{}
+	if m.Stream == nil {
+		m.Stream = pool.Stream
+	}
+	if m.Do == nil {
+		m.Do = pool.Do
+	}
 	m.scope = newScope(start, m.Opts)
 	m.seen, m.saved, m.robots = map[string]bool{}, map[string]string{}, map[string]robotsRules{}
-	m.add(start, 0, false)
+	// The start URL is what the user asked for: the scope rules apply to
+	// its links, not to it, as in wget.
+	m.seen[start.String()] = true
+	m.queue = append(m.queue, item{url: start})
 	for len(m.queue) > 0 && ctx.Err() == nil {
 		it := m.queue[0]
 		m.queue = m.queue[1:]
@@ -105,9 +118,15 @@ func (m *Mirror) visit(ctx context.Context, it item) {
 	opts := m.requestOptions(it.url, local)
 	opts.Output.Events.Start(opts.URL)
 	began := time.Now()
-	err := client.Download(ctx, opts, m.Stream)
+	err := client.Download(ctx, opts, m.inScope(it))
 	info := opts.Output.Info
 	info.Time = time.Since(began)
+	if errors.Is(err, errOutOfScope) {
+		info.ErrorMsg = err.Error()
+		opts.Output.Events.End(*info)
+		m.logf("Skipped: %s: %v", it.url, err)
+		return
+	}
 	if err != nil {
 		info.ExitCode, info.ErrorMsg = m.exitCode(err), err.Error()
 		opts.Output.Events.End(*info)
@@ -137,6 +156,24 @@ func (m *Mirror) visit(ctx context.Context, it item) {
 	m.saved[it.url.String()] = local
 	if info.Status != http.StatusNotModified {
 		m.logf("Saved %s (%d bytes)", local, info.Size)
+	}
+}
+
+// errOutOfScope stops a redirect to a URL that the scope rules refuse.
+var errOutOfScope = errors.New("the redirect leaves the scope")
+
+// inScope is m.Stream for the URL of it, with the scope rules on each
+// redirect: a redirect is a link, and wget follows it only in scope. The
+// start URL may redirect anywhere, as a URL on the command line does.
+func (m *Mirror) inScope(it item) client.Streamer {
+	return func(ctx context.Context, opts *config.Options, req *fasthttp.Request, sink io.Writer) (gholatransport.StreamMeta, error) {
+		if it.depth > 0 {
+			u, err := url.Parse(req.URI().String())
+			if err == nil && u.String() != it.url.String() && !m.scope.allows(u, it.requisite) {
+				return gholatransport.StreamMeta{}, fmt.Errorf("%w: %s", errOutOfScope, u)
+			}
+		}
+		return m.Stream(ctx, opts, req, sink)
 	}
 }
 
@@ -215,12 +252,23 @@ func (m *Mirror) robotsAllow(ctx context.Context, u *url.URL) bool {
 		opts.URL = key + "/robots.txt"
 		opts.URLs = []string{opts.URL}
 		opts.Output.Fail = false
-		if req, rsp, err := client.FetchURL(ctx, &opts, m.Do); err == nil {
-			if rsp.StatusCode() == http.StatusOK {
-				if body, err := gholatransport.ReadBody(rsp); err == nil {
-					rules = parseRobots(strings.NewReader(string(body)))
-				}
+		robotsURL := &url.URL{Scheme: u.Scheme, Host: u.Host, Path: "/robots.txt"}
+		req, rsp, err := client.FetchURL(ctx, &opts, m.Do)
+		switch {
+		case err != nil:
+			// An unreachable robots.txt closes the site (RFC 9309, 2.3.1.4).
+			rules = disallowAll
+			m.fail(robotsURL, fmt.Errorf("nothing is fetched from the site: %w", err))
+		case rsp.StatusCode() >= http.StatusInternalServerError:
+			// A server error closes the site too: it is not a permission.
+			rules = disallowAll
+			m.fail(robotsURL, fmt.Errorf("%w: %d, so nothing is fetched from the site (RFC 9309)", config.ErrHTTPStatus, rsp.StatusCode()))
+		case rsp.StatusCode() == http.StatusOK:
+			if body, err := gholatransport.ReadBody(rsp); err == nil {
+				rules = parseRobots(strings.NewReader(string(body)))
 			}
+		}
+		if err == nil {
 			client.Release(req, rsp)
 		}
 		m.robots[key] = rules
