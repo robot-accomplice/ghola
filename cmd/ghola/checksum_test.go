@@ -14,9 +14,9 @@ import (
 
 // --checksum checks the body against a digest, and the server's
 // Content-Digest is checked by default: a corrupt download exits 32
-// (aria2's code) and does not pass as done. The file stays, since the
-// digest may be the wrong one. A Content-Digest of an encoded body is not
-// compared with the decoded file.
+// (aria2's code) and does not pass as done. The file does not stay under
+// the final name, where it would look verified. A Content-Digest of an
+// encoded body is not compared with the decoded file.
 func TestExecute_Checksum(t *testing.T) {
 	const body = "the file"
 	sum := sha256.Sum256([]byte(body))
@@ -61,7 +61,7 @@ func TestExecute_Checksum(t *testing.T) {
 			}
 		})
 	}
-	if b, err := os.ReadFile(filepath.Join(dir, "1")); err != nil || string(b) != body {
-		t.Errorf("the file of the wrong checksum: %q, %v; it must stay", b, err)
+	if _, err := os.Stat(filepath.Join(dir, "1")); !os.IsNotExist(err) {
+		t.Errorf("the file of the wrong checksum stays under the final name (stat: %v)", err)
 	}
 }

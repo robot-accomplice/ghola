@@ -15,6 +15,25 @@ import (
 // the full body instead of the requested part.
 var errRangeIgnored = errors.New("server ignored the Range request (status 200)")
 
+// errComplete stops a resume at a 416 that says the local file is
+// complete. The download is then a success, as in curl, Wget2 and aria2.
+var errComplete = errors.New("the file is complete")
+
+// completeAt reports a 416 answer to a resume at offset that says the
+// remote file has offset bytes: "Content-Range: bytes */offset". A 416
+// with no Content-Range counts as complete, as in curl.
+func completeAt(meta gholatransport.StreamMeta, offset int64) bool {
+	if offset <= 0 || meta.StatusCode != fasthttp.StatusRequestedRangeNotSatisfiable {
+		return false
+	}
+	if meta.ContentRange == "" {
+		return true
+	}
+	total, ok := strings.CutPrefix(strings.TrimSpace(meta.ContentRange), "bytes */")
+	n, err := strconv.ParseInt(total, 10, 64)
+	return ok && err == nil && n == offset
+}
+
 // errUncheckedBody reports a Streamer that wrote body bytes without calling
 // CheckHeaders first. It is a programming error in the Streamer.
 var errUncheckedBody = errors.New("response body written before its headers were checked")

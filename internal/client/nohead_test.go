@@ -67,7 +67,7 @@ func redirectingBlob(t *testing.T, data []byte, log *requestLog) Streamer {
 func redirectOpts(t *testing.T, url string, n int) *config.Options {
 	opts := downloadOpts(filepath.Join(t.TempDir(), "f"), n, "")
 	opts.URL = url
-	opts.Resilience.MaxRedirs = 5
+	opts.Resilience.Location, opts.Resilience.MaxRedirs = true, 5 // -L is the default of ghola download
 	return opts
 }
 
