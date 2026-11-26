@@ -3,6 +3,7 @@ package transport
 import (
 	"bufio"
 	"compress/flate"
+	"compress/gzip"
 	"compress/zlib"
 	"errors"
 	"fmt"
@@ -73,9 +74,10 @@ func DecodeBody(r io.Reader, contentEncoding string) (io.Reader, error) {
 func decodeOne(r io.Reader, coding string) (io.Reader, error) {
 	switch coding {
 	case "gzip", "x-gzip":
-		// A server that says gzip and sends plain bytes is common; those
-		// bytes pass through unchanged, as before.
-		return DecodeGzip(r)
+		// The header decides: a body that says gzip and is not gzip is a
+		// bad content encoding, as in curl (exit 61). Plain bytes would
+		// reach the output as if they were the decoded body.
+		return gzip.NewReader(r)
 	case "deflate":
 		return decodeDeflate(r)
 	case "br":

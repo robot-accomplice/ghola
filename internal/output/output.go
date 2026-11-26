@@ -4,6 +4,7 @@ package output
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"hash"
 	"io"
@@ -122,13 +123,64 @@ func bodyReader(opts *config.Options, rsp *fasthttp.Response) (io.Reader, error)
 	if opts.Output.TooLarge(int64(rsp.Header.ContentLength())) {
 		return nil, config.ErrTooLarge
 	}
-	body = opts.Output.LimitReader(body)
 	if opts.Stealth.Compressed {
-		if body, err = transport.DecodeBody(body, string(rsp.Header.Peek("Content-Encoding"))); err != nil {
+		if body, err = decodedBody(body, string(rsp.Header.Peek("Content-Encoding"))); err != nil {
 			return nil, err
 		}
 	}
-	return body, nil
+	// --max-size counts the bytes that ghola writes, after the decoder, as
+	// the download path does. So a small compressed body that decodes to
+	// gigabytes stops at the limit.
+	return opts.Output.LimitReader(body), nil
+}
+
+// decodedBody removes the content codings from body. A body that does not
+// decode is a bad content encoding (curl exit 61), not a receive failure:
+// a read error that does not come from the network is the decoder's.
+func decodedBody(body io.Reader, contentEncoding string) (io.Reader, error) {
+	wire := &readSpy{r: body}
+	decoded, err := transport.DecodeBody(wire, contentEncoding)
+	if err != nil {
+		return nil, badEncoding(wire, err)
+	}
+	return decodeErrors{decoded, wire}, nil
+}
+
+// readSpy keeps the last error of the network reader.
+type readSpy struct {
+	r   io.Reader
+	err error
+}
+
+func (s *readSpy) Read(p []byte) (int, error) {
+	n, err := s.r.Read(p)
+	if err != nil && err != io.EOF {
+		s.err = err
+	}
+	return n, err
+}
+
+// decodeErrors marks the read errors of the decoder.
+type decodeErrors struct {
+	r    io.Reader
+	wire *readSpy
+}
+
+func (d decodeErrors) Read(p []byte) (int, error) {
+	n, err := d.r.Read(p)
+	if err != nil && err != io.EOF {
+		err = badEncoding(d.wire, err)
+	}
+	return n, err
+}
+
+// badEncoding marks err as a bad content encoding, unless the network
+// reader failed.
+func badEncoding(wire *readSpy, err error) error {
+	if wire.err != nil || errors.Is(err, transport.ErrBadEncoding) {
+		return err
+	}
+	return fmt.Errorf("%w: %w", transport.ErrBadEncoding, err)
 }
 
 // writeFile copies body to the file at name.

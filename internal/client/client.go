@@ -218,6 +218,9 @@ func FetchURL(ctx context.Context, opts *config.Options, do Doer) (*fasthttp.Req
 	if opts.Resilience.Retries < 0 {
 		return nil, nil, fmt.Errorf("retries cannot be negative: %d", opts.Resilience.Retries)
 	}
+	if err := checkRequest(opts); err != nil {
+		return nil, nil, err
+	}
 	state, err := newFetchState(opts, do)
 	if err != nil {
 		return nil, nil, err
@@ -283,6 +286,9 @@ func (s *fetchState) try(ctx context.Context, opts *config.Options, req *fasthtt
 	s.prepareRequest(req, opts, h.url, h.method, h.data, h.previous)
 	wait := backoffWait(opts, attempt+1)
 	if err := s.do(ctx, &s.effectiveOpts, req, rsp); err != nil {
+		if permanent(err) {
+			return failed, 0, err
+		}
 		return retryError, wait, err
 	}
 	if err := s.absorb(opts, rsp, h); err != nil {
