@@ -160,7 +160,7 @@ func fetchToFile(ctx context.Context, opts *config.Options, stream Streamer, lim
 		if progress != nil {
 			progress.setTotal(meta.ContentLength)
 		}
-		err := downloadSegmented(ctx, opts, stream, url, meta.ContentLength, limiter, progress)
+		err := downloadSegmented(ctx, opts, stream, url, meta, limiter, progress)
 		if !errors.Is(err, errRangeIgnored) {
 			return meta, err
 		}
@@ -281,10 +281,14 @@ func mightSegment(opts *config.Options) bool {
 		opts.Output.ContinueAt == "" // wired in Task 5; resume forces single-stream
 }
 
-// downloadSegmented fetches the file as parallel ranges. On any error it
-// removes the output file, so that a preallocated file of the full size
-// never looks like a finished download.
-func downloadSegmented(ctx context.Context, opts *config.Options, stream Streamer, url string, size int64, limiter *rateLimiter, progress *progressWriter) (err error) {
+// downloadSegmented fetches the file as parallel ranges. probe is the
+// answer to the probe: its size and validators are the version that every
+// piece must come from. On any error it removes the output file and its
+// state file, so that a preallocated file of the full size never looks
+// like a finished download. A killed download leaves the state file, which
+// names the finished pieces.
+func downloadSegmented(ctx context.Context, opts *config.Options, stream Streamer, url string, probe gholatransport.StreamMeta, limiter *rateLimiter, progress *progressWriter) (err error) {
+	size := probe.ContentLength
 	if opts.Output.TooLarge(size) {
 		return config.ErrTooLarge
 	}
@@ -296,8 +300,15 @@ func downloadSegmented(ctx context.Context, opts *config.Options, stream Streame
 		f.Close()
 		if err != nil {
 			os.Remove(opts.Output.File)
+			_ = removeState(opts.Output.File)
 		}
 	}()
+	out := segmentOut{f: f, limiter: limiter, progress: progress, version: versionOf(url, probe)}
+	if !opts.Output.NoSession { // before the first byte, so a kill leaves the record
+		if out.pieces, err = newPieceMap(opts.Output.File, url, size, probe); err != nil {
+			return err
+		}
+	}
 	if err := reserve(f, size, opts.Output.FileAllocation); err != nil {
 		return err
 	}
@@ -326,7 +337,7 @@ func downloadSegmented(ctx context.Context, opts *config.Options, stream Streame
 		go func(home int) {
 			defer wg.Done()
 			for r := range queue {
-				if err := fetchFromMirrors(ctx, opts, stream, mirrors, home, r, segmentOut{f, limiter, progress}); err != nil {
+				if err := fetchFromMirrors(ctx, opts, stream, mirrors, home, r, out); err != nil {
 					cancel()
 					errs <- err
 					return
@@ -360,19 +371,23 @@ func downloadSegmented(ctx context.Context, opts *config.Options, stream Streame
 const piecesPerWorker = 4
 
 // segmentOut is where the pieces of a segmented download go: the file,
-// and the rate limiter and the meter that the pieces share (nil when off).
+// the rate limiter and the meter that the pieces share (nil when off), the
+// version that every piece must come from, and the piece map (nil with
+// --no-session).
 type segmentOut struct {
 	f        *os.File
 	limiter  *rateLimiter
 	progress *progressWriter
+	version  remoteVersion
+	pieces   *pieceMap
 }
 
 // fetchFromMirrors fetches one piece from the worker's own mirror, and
 // once from the next mirror when that fails.
 func fetchFromMirrors(ctx context.Context, opts *config.Options, stream Streamer, mirrors []string, home int, r byteRange, out segmentOut) error {
 	err := fetchSegment(ctx, opts, stream, mirrors[home], r, out)
-	if err == nil || len(mirrors) == 1 || ctx.Err() != nil {
-		return err
+	if err == nil || len(mirrors) == 1 || ctx.Err() != nil || errors.Is(err, errRemoteChanged) {
+		return err // sources with two versions: ghola cannot tell which one is right
 	}
 	if err2 := fetchSegment(ctx, opts, stream, mirrors[(home+1)%len(mirrors)], r, out); err2 != nil {
 		return errors.Join(err, err2)
@@ -386,12 +401,20 @@ func fetchSegment(ctx context.Context, opts *config.Options, stream Streamer, ur
 	defer fasthttp.ReleaseRequest(req)
 	buildDownloadRequest(req, opts, url, fasthttp.MethodGet, "")
 	req.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", r.start, r.end))
+	if v := out.version.ifRange; v != "" && url == out.version.url {
+		// A changed file gets a 200, not a piece of the new version. A
+		// --source mirror gets no If-Range: its validators are its own,
+		// and the piece check compares them.
+		req.Header.Set("If-Range", v)
+	}
 
-	// Sink nesting (innermost first): file offset writer → rate limit → progress.
+	// Sink nesting (innermost first): file offset writer → length check →
+	// rate limit → progress.
 	// Each segment uses its own offset writer; limiter and progress are shared
 	// across goroutines (both are mutex-guarded). The segment progress tap
 	// forwards bytes to its local sink while counting into the shared progress.
-	w := config.MarkWrites(io.NewOffsetWriter(out.f, r.start))
+	piece := &rangeWriter{w: config.MarkWrites(io.NewOffsetWriter(out.f, r.start)), left: r.end - r.start + 1}
+	var w io.Writer = piece
 	if out.limiter != nil {
 		w = newRateLimitedWriter(w, out.limiter)
 	}
@@ -400,9 +423,18 @@ func fetchSegment(ctx context.Context, opts *config.Options, stream Streamer, ur
 		// also counts into the aggregate progress (mutex-guarded in Write).
 		w = newProgressTap(w, out.progress)
 	}
-	// Outermost: no byte reaches the file unless the server sent exactly r.
-	_, err := stream(ctx, opts, req, newCheckedSink(w, expectRange(r.start, r.end)))
-	return err
+	// Outermost: no byte reaches the file unless the server sent exactly r,
+	// of the version that the probe saw.
+	if _, err := stream(ctx, opts, req, newCheckedSink(w, out.version.check(r))); err != nil {
+		return err
+	}
+	if piece.left != 0 {
+		return fmt.Errorf("%w: bytes %d-%d: %d bytes missing", errSegmentLength, r.start, r.end, piece.left)
+	}
+	if out.pieces != nil {
+		out.pieces.done(r)
+	}
+	return nil
 }
 
 // singlePlan returns the open flags, the resume offset and the Range header
@@ -672,7 +704,28 @@ func resumeOffset(opts *config.Options) (int64, error) {
 		}
 		return 0, fmt.Errorf("stat for resume: %w", err)
 	}
-	return info.Size(), nil
+	st, err := loadState(opts.Output.File)
+	if err != nil || !st.segmented() {
+		return info.Size(), err
+	}
+	return resumeSegmented(opts, st, info.Size())
+}
+
+// resumeSegmented returns the resume offset of a killed segmented
+// download: the end of the finished pieces from byte 0. The bytes after it
+// may be holes, so the file is cut there, and the rest comes again.
+func resumeSegmented(opts *config.Options, st resumeState, size int64) (int64, error) {
+	offset := st.donePrefix()
+	if offset >= size {
+		return size, nil
+	}
+	if err := os.Truncate(opts.Output.File, offset); err != nil {
+		return 0, fmt.Errorf("resume: %w", config.WriteError(err))
+	}
+	if !opts.Output.Silent {
+		fmt.Fprintf(os.Stderr, "Note: %s is a partial segmented download; resuming at byte %d, after the pieces that are done in order\n", opts.Output.File, offset)
+	}
+	return offset, nil
 }
 
 // dispositionFilename extracts a safe basename from a Content-Disposition
