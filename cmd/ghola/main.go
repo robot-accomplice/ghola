@@ -413,8 +413,8 @@ func transferAll(ctx context.Context, opts *config.Options, do client.Doer, stre
 				return argError(err) // Apply parsed them; a setter may still refuse a value
 			}
 		}
-		if runs[i].Output.RemoteName && len(opts.URLs) > 1 {
-			config.TakeRemoteName(&runs[i]) // each URL under its own name
+		if runs[i].Output.RemoteName && (len(opts.URLs) > 1 || runs[i].Output.Dir != opts.Output.Dir) {
+			config.TakeRemoteName(&runs[i]) // each URL under its own name, in its own dir= folder
 		}
 	}
 	codes, err := runAll(ctx, runs, do, stream, w)

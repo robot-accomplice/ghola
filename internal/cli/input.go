@@ -108,7 +108,7 @@ func aria2Options(args []string) ([]string, error) {
 	if out := joinOutput(t.dir, t.file); out != "" {
 		t.out = append(t.out, "-o", out)
 	}
-	return t.out, nil
+	return append(t.out, aria2Connections(t)...), nil
 }
 
 // inputHTML takes the href of each <a> and the src of each <img>, as

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -178,7 +179,7 @@ const aria2Table = `
 -q --quiet                     => -q
 -c --continue                  => -c
 -R --remote-time               => --output-remote-time
--x --max-connection-per-server -s --split => -n %s
+
 --header                       => -H %s
 -U --user-agent                => --user-agent %s
 --referer                      => --referer %s
@@ -384,8 +385,56 @@ var aria2Spec = &toolSpec{
 		"--summary-interval --download-result"),
 	takesValue: words("-o --out -d --dir -m --max-tries --http-user --http-passwd " +
 		"--allow-overwrite --check-certificate -k --min-split-size --console-log-level " +
-		"--summary-interval --download-result"),
+		"--summary-interval --download-result -x --max-connection-per-server -s --split"),
 	special: aria2Special,
+	finish:  aria2Finish,
+}
+
+// aria2's defaults for -s (--split) and -x (--max-connection-per-server).
+const (
+	aria2Split     = 5
+	aria2PerServer = 1
+)
+
+// aria2Finish applies aria2's defaults that depend on several options:
+// the URIs of one command line are mirrors of one file, the file name
+// comes from Content-Disposition unless -o names the file, and the
+// connections to one server are the smaller of -s and -x.
+func aria2Finish(t *translation) {
+	for _, u := range t.tail[min(1, len(t.tail)):] {
+		t.out = append(t.out, "--source", u)
+	}
+	t.tail = t.tail[:min(1, len(t.tail))]
+	if t.file == "" {
+		t.out = append(t.out, "--output-name", "header")
+	}
+	t.out = append(t.out, aria2Connections(t)...)
+}
+
+// aria2Connections returns -n for aria2's -s and -x, or nothing when the
+// arguments set neither.
+func aria2Connections(t *translation) []string {
+	if t.split == 0 && t.perServer == 0 {
+		return nil
+	}
+	split, perServer := t.split, t.perServer
+	if split == 0 {
+		split = aria2Split
+	}
+	if perServer == 0 {
+		perServer = aria2PerServer
+	}
+	return []string{"-n", strconv.Itoa(min(split, perServer))}
+}
+
+// positive reads a count of 1 or more into n.
+func positive(name, value string, n *int) error {
+	v, err := strconv.Atoi(value)
+	if err != nil || v < 1 {
+		return usagef("%s %q: use a number of 1 or more", name, value)
+	}
+	*n = v
+	return nil
 }
 
 func aria2Special(t *translation, name, value string, _ bool) (bool, error) {
@@ -396,6 +445,10 @@ func aria2Special(t *translation, name, value string, _ bool) (bool, error) {
 		t.dir = value
 	case "-m", "--max-tries":
 		return true, t.tries(value)
+	case "-s", "--split":
+		return true, positive(name, value, &t.split)
+	case "-x", "--max-connection-per-server":
+		return true, positive(name, value, &t.perServer)
 	case "--http-user":
 		t.user = value
 	case "--http-passwd":

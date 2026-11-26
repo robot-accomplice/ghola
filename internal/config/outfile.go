@@ -32,6 +32,11 @@ func OpenOutput(o OutputOptions, name string, flags int, ownFile bool) (*os.File
 		if err := os.MkdirAll(filepath.Dir(name), 0o755); err != nil {
 			return nil, WriteError(err)
 		}
+	} else if o.Dir != "" && filepath.Dir(name) == filepath.Clean(o.Dir) {
+		// -o DIR/ names the folder: make it, but not a missing parent.
+		if err := os.Mkdir(o.Dir, 0o755); err != nil && !errors.Is(err, os.ErrExist) {
+			return nil, WriteError(err)
+		}
 	}
 	if o.NoOverwrite && !ownFile && flags&os.O_APPEND == 0 {
 		flags |= os.O_EXCL

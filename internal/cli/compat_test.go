@@ -165,14 +165,38 @@ func TestFromWget(t *testing.T) {
 // aria2c: -x and -s are connections, -d and -o join, --max-tries counts
 // tries, --timeout is a read timeout, and tuning options such as -k are
 // accepted and dropped.
+// ghola aria2c keeps aria2's defaults: the URIs of one command line are
+// mirrors of one file, the name comes from Content-Disposition unless -o
+// names the file, and aria2 opens min(-s, -x) connections to one server
+// (-s is 5 and -x is 1 by default), so -x16 alone is not 16 ranges.
+func TestFromAria2c_Defaults(t *testing.T) {
+	for _, c := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"http://a/f", "http://b/f"}, " --source http://b/f --output-name header http://a/f"},
+		{[]string{"-o", "f", "u"}, " -o f u"},
+		{[]string{"-x16", "u"}, " --output-name header -n 5 u"},
+		{[]string{"-s4", "u"}, " --output-name header -n 1 u"},
+		{[]string{"-x4", "-s4", "u"}, " --output-name header -n 4 u"},
+	} {
+		if got := native(t, FromAria2c, c.args...); !strings.HasSuffix(got, "--auth-netrc"+c.want) {
+			t.Errorf("aria2c %s:\n got %s\nwant ...--auth-netrc%s", strings.Join(c.args, " "), got, c.want)
+		}
+	}
+	if _, err := FromAria2c([]string{"-x0", "u"}); err == nil {
+		t.Error("-x0 was accepted")
+	}
+}
+
 func TestFromAria2c(t *testing.T) {
 	got := native(t, FromAria2c, "-x16", "-s16", "-k1M", "-d", "dl", "-o", "f.iso", "--max-tries=2", "--timeout=3", "https://h/f.iso")
-	want := "download -r 4 --retry-delay 0 --no-compressed --no-url-glob --auth-netrc -n 16 -n 16 -r 1 --stall-time 3 -o dl/f.iso https://h/f.iso"
+	want := "download -r 4 --retry-delay 0 --no-compressed --no-url-glob --auth-netrc -r 1 --stall-time 3 -n 16 -o dl/f.iso https://h/f.iso"
 	if got != want {
 		t.Errorf("\n got %s\nwant %s", got, want)
 	}
 	// aria2c keeps an existing file by default, as ghola download does.
-	for value, want := range map[string]string{"true": " --output-overwrite u", "false": " u"} {
+	for value, want := range map[string]string{"true": " --output-overwrite --output-name header u", "false": " --output-name header u"} {
 		if got := native(t, FromAria2c, "--allow-overwrite="+value, "u"); !strings.HasSuffix(got, "--auth-netrc"+want) {
 			t.Errorf("--allow-overwrite=%s: got %s", value, got)
 		}

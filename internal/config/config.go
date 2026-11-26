@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"time"
 
@@ -412,6 +413,9 @@ func checkValues(opts *Options) error {
 		if _, err := strconv.ParseInt(c, 10, 64); err != nil {
 			return fmt.Errorf("invalid --continue-at value %q (want a byte offset)", c)
 		}
+	}
+	if opts.Output.FileAllocation == "falloc" && runtime.GOOS != "linux" {
+		return fmt.Errorf("--file-allocation falloc needs Linux: use prealloc or trunc")
 	}
 	if opts.Output.LimitRate != "" {
 		if _, err := ParseRate(opts.Output.LimitRate); err != nil {

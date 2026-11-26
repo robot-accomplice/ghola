@@ -257,7 +257,7 @@ The phase column says where each option is built. 0B is the parser build (step 7
 | `--jobs`, `-j` | int | 1 | -Z / --parallel-max |  | -j | 3 | Run up to N transfers at the same time. |
 | `--source` (download) | URL (repeat) |  |  |  | (several URIs on one line) | 3 | Another mirror of the same file. Segments go to the faster mirrors. |
 | `--file-allocation` (download) | none\|prealloc\|falloc\|trunc | none |  |  | --file-allocation | 3 | How the file space is reserved before the download. |
-| `--checksum` | algo=hex |  |  |  | --checksum | 3 | Check the file against this digest before the job is done. Content-Digest and Metalink digests are checked by default. |
+| `--checksum` | algo=hex |  |  |  | --checksum | 3 | Check the file against this digest before the job is done. A file that does not match is removed. The server's Content-Digest is checked by default, for a whole 200 answer that ghola does not decode: not with -n, --source, -c or --range. Metalink digests are checked by default. |
 | `--session` (download) | bool | true |  |  | --save-session | 3 | Keep a state file next to each partial download, so ghola jobs resume can restart it. |
 | `--on-complete` (download) | command |  |  |  | --on-download-complete | 3 | Run this command when a job finishes. |
 | `--on-error` (download) | command |  |  |  | --on-download-error | 3 | Run this command when a job fails. |

@@ -106,7 +106,7 @@ var exitCodes = map[int][2]string{
 	55: {"The request failed for another cause.", "ghola -v shows the steps."},
 	56: {"The connection failed after it was ready, for example a reset.", "Retry; the server or a middlebox closed the connection."},
 	60: {"The server certificate did not verify, or the SSH host key is not in ~/.ssh/known_hosts.", "Add the CA with --tls-ca, or the host key to known_hosts; -k skips the check."},
-	32: {"The body does not match --checksum, or the server's Content-Digest.", "Check the digest; a download that ghola checks keeps its file."},
+	32: {"The body does not match --checksum, or the server's Content-Digest.", "Check the digest; ghola removes a downloaded file that does not match."},
 	63: {"The body is larger than --max-size.", "Raise --max-size, or check the URL."},
 	90: {"The server public key does not match --tls-pin.", "Check the pin; the server key may have changed."},
 	91: {"The server sent no good OCSP staple (--tls-ocsp).", "Ask the server owner to staple OCSP, or run without --tls-ocsp."},

@@ -112,6 +112,8 @@ type translation struct {
 	job string
 	// wget -r state: -np, -N, -H, -D, -l.
 	noParent, timestamping, spanHosts, domains, level bool
+	// aria2c -s and -x; 0 is not set.
+	split, perServer int
 }
 
 func translate(spec *toolSpec, args []string) (*Compat, error) {
