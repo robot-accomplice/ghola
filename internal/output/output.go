@@ -4,6 +4,7 @@ package output
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"hash"
 	"io"
@@ -28,8 +29,11 @@ func ProcessResponse(w, ew io.Writer, opts *config.Options, req *fasthttp.Reques
 	if opts.Output.TraceTime {
 		ew = timedLines{ew} // --trace-time also times the -v lines
 	}
-	if opts.Output.FailsOn(rsp.StatusCode()) {
-		return fmt.Errorf("%w: %d %s", config.ErrHTTPStatus, rsp.StatusCode(), fasthttp.StatusMessage(rsp.StatusCode()))
+	failErr := statusError(opts, rsp.StatusCode())
+	// -o writes no file for a refused status. stdout keeps the body (v1
+	// rule, as curl --fail-with-body); the v0 rule drops it.
+	if failErr != nil && (opts.Output.File != "" || !opts.Output.FailFrom400) {
+		return failErr
 	}
 
 	if err := opts.Output.SaveETag(rsp.StatusCode(), string(rsp.Header.Peek("ETag"))); err != nil {
@@ -91,7 +95,15 @@ func ProcessResponse(w, ew io.Writer, opts *config.Options, req *fasthttp.Reques
 	}
 
 	printTiming(ew, opts, elapsed)
-	return nil
+	return failErr
+}
+
+// statusError returns the error of a status that --fail refuses, else nil.
+func statusError(opts *config.Options, status int) error {
+	if !opts.Output.FailsOn(status) {
+		return nil
+	}
+	return fmt.Errorf("%w: %d %s", config.ErrHTTPStatus, status, fasthttp.StatusMessage(status))
 }
 
 // bodyReader returns the response body as a reader: the stream when the
@@ -111,13 +123,64 @@ func bodyReader(opts *config.Options, rsp *fasthttp.Response) (io.Reader, error)
 	if opts.Output.TooLarge(int64(rsp.Header.ContentLength())) {
 		return nil, config.ErrTooLarge
 	}
-	body = opts.Output.LimitReader(body)
 	if opts.Stealth.Compressed {
-		if body, err = transport.DecodeBody(body, string(rsp.Header.Peek("Content-Encoding"))); err != nil {
+		if body, err = decodedBody(body, string(rsp.Header.Peek("Content-Encoding"))); err != nil {
 			return nil, err
 		}
 	}
-	return body, nil
+	// --max-size counts the bytes that ghola writes, after the decoder, as
+	// the download path does. So a small compressed body that decodes to
+	// gigabytes stops at the limit.
+	return opts.Output.LimitReader(body), nil
+}
+
+// decodedBody removes the content codings from body. A body that does not
+// decode is a bad content encoding (curl exit 61), not a receive failure:
+// a read error that does not come from the network is the decoder's.
+func decodedBody(body io.Reader, contentEncoding string) (io.Reader, error) {
+	wire := &readSpy{r: body}
+	decoded, err := transport.DecodeBody(wire, contentEncoding)
+	if err != nil {
+		return nil, badEncoding(wire, err)
+	}
+	return decodeErrors{decoded, wire}, nil
+}
+
+// readSpy keeps the last error of the network reader.
+type readSpy struct {
+	r   io.Reader
+	err error
+}
+
+func (s *readSpy) Read(p []byte) (int, error) {
+	n, err := s.r.Read(p)
+	if err != nil && err != io.EOF {
+		s.err = err
+	}
+	return n, err
+}
+
+// decodeErrors marks the read errors of the decoder.
+type decodeErrors struct {
+	r    io.Reader
+	wire *readSpy
+}
+
+func (d decodeErrors) Read(p []byte) (int, error) {
+	n, err := d.r.Read(p)
+	if err != nil && err != io.EOF {
+		err = badEncoding(d.wire, err)
+	}
+	return n, err
+}
+
+// badEncoding marks err as a bad content encoding, unless the network
+// reader failed.
+func badEncoding(wire *readSpy, err error) error {
+	if wire.err != nil || errors.Is(err, transport.ErrBadEncoding) {
+		return err
+	}
+	return fmt.Errorf("%w: %w", transport.ErrBadEncoding, err)
 }
 
 // writeFile copies body to the file at name.

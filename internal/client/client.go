@@ -100,18 +100,42 @@ func newFetchState(opts *config.Options, do Doer) (*fetchState, error) {
 }
 
 // prepareRequest sets URI, body, headers, auth and cookies
-// on the request object for a single attempt.
-func (s *fetchState) prepareRequest(req *fasthttp.Request, opts *config.Options, effectiveURL, effectiveMethod, effectiveData string) {
+// on the request object for a single attempt. previousURL is the URL of
+// the hop before a redirect, "" on the first hop.
+func (s *fetchState) prepareRequest(req *fasthttp.Request, opts *config.Options, effectiveURL, effectiveMethod, effectiveData, previousURL string) {
 	req.SetRequestURI(effectiveURL)
+	// An encoded slash (%2F) is part of a name, not a separator: the path
+	// goes on the wire as the user wrote it.
+	req.URI().DisablePathNormalizing = true
 	req.SetBodyString(effectiveData)
-	setHeaders(req, opts, s.activeProfile, s.headerOverrides, effectiveURL, effectiveMethod)
+	// The method comes first: the SigV4 signature in setHeaders covers it.
 	req.Header.SetMethod(effectiveMethod)
+	setHeaders(req, opts, s.activeProfile, s.headerOverrides, effectiveURL, effectiveMethod)
+	if _, overridden := s.headerOverrides["referer"]; !overridden && opts.Stealth.Referer == "auto" && previousURL != "" {
+		req.Header.Set("Referer", previousURL) // as curl -e ";auto"
+	}
+	if r := rangeHeader(opts.Output); r != "" {
+		req.Header.Set("Range", r)
+	}
 
 	if _, overridden := s.headerOverrides["cookie"]; !overridden {
 		if cookieHeader := s.jar.HeaderValue(effectiveURL); cookieHeader != "" {
 			req.Header.Set("Cookie", cookieHeader)
 		}
 	}
+}
+
+// rangeHeader returns the Range header of --range or --continue-at on
+// stdout, or "". --continue-at - needs a file to find the offset, so on
+// stdout it starts at 0, as in curl.
+func rangeHeader(out config.OutputOptions) string {
+	switch {
+	case out.Range != "":
+		return "bytes=" + strings.TrimPrefix(out.Range, "bytes=")
+	case out.ContinueAt != "" && out.ContinueAt != "-" && out.ContinueAt != "0":
+		return "bytes=" + out.ContinueAt + "-"
+	}
+	return ""
 }
 
 // handleRedirect resolves the redirect target and determines the new HTTP
@@ -164,6 +188,24 @@ func WithTimeout(ctx context.Context, opts *config.Options) (context.Context, co
 	return context.WithTimeout(ctx, time.Duration(opts.Resilience.Timeout)*time.Millisecond)
 }
 
+// hop is the request of one redirect hop: its URL, method and body, and
+// the URL before it ("" on the first hop).
+type hop struct {
+	url, method, data, previous string
+	redirects                   int
+}
+
+// outcome is the result of one attempt.
+type outcome int
+
+const (
+	answered    outcome = iota // the response is the result
+	redirected                 // h holds the next hop
+	retryError                 // no response: a retry may help
+	retryStatus                // a retryable status: a retry may help, else the response stands
+	failed                     // stop with the error
+)
+
 // FetchURL sends an HTTP request according to opts, with retry and jitter.
 // It does not apply --timeout: use WithTimeout on ctx. The response body
 // can be a stream that needs ctx to stay alive until it is read.
@@ -176,6 +218,9 @@ func FetchURL(ctx context.Context, opts *config.Options, do Doer) (*fasthttp.Req
 	if opts.Resilience.Retries < 0 {
 		return nil, nil, fmt.Errorf("retries cannot be negative: %d", opts.Resilience.Retries)
 	}
+	if err := checkRequest(opts); err != nil {
+		return nil, nil, err
+	}
 	state, err := newFetchState(opts, do)
 	if err != nil {
 		return nil, nil, err
@@ -183,113 +228,122 @@ func FetchURL(ctx context.Context, opts *config.Options, do Doer) (*fasthttp.Req
 
 	req := fasthttp.AcquireRequest()
 	rsp := fasthttp.AcquireResponse()
-
-	effectiveURL := opts.URL
-	effectiveMethod := opts.Method
-	effectiveData := opts.Data
-	redirectsFollowed := 0
+	h := hop{url: opts.URL, method: opts.Method, data: opts.Data}
 	start := time.Now() // --retry-max-time counts from the first attempt
 
-redirectLoop:
-	for {
-		var lastErr error
-		var nextWait time.Duration
-		var haveNextWait bool
-
-		for attempt := 0; attempt <= opts.Resilience.Retries; attempt++ {
-			if err := ctx.Err(); err != nil {
-				lastErr = err
-				break
-			}
-
-			if attempt > 0 {
-				wait := backoffWait(opts, attempt)
-				if haveNextWait {
-					wait = nextWait
-					haveNextWait = false
-				}
-				if err := waitToRetry(ctx, opts, attempt, wait); err != nil {
-					lastErr = err
-					break
-				}
-			}
-
-			req.Reset()
-			rsp.Reset()
-
-			if opts.Stealth.Drift > 0 {
-				if err := applyDrift(ctx, opts.Stealth.Drift); err != nil {
-					lastErr = err
-					break
-				}
-			}
-
-			state.prepareRequest(req, opts, effectiveURL, effectiveMethod, effectiveData)
-
-			lastErr = state.do(ctx, &state.effectiveOpts, req, rsp)
-			if lastErr != nil {
-				if !retryTimeLeft(opts, start) {
-					break
-				}
-				continue
-			}
-			state.jar.AbsorbResponse(effectiveURL, rsp)
-			if out := opts.Output.HeaderOut; out != nil {
-				if _, err := out.Write(rsp.Header.Header()); err != nil {
-					lastErr = fmt.Errorf("--save-headers: %w", config.WriteError(err))
-					break
-				}
-			}
-			if err := state.jar.Save(); err != nil {
-				lastErr = err
-				break
-			}
-
-			status := rsp.StatusCode()
-			if info := opts.Output.Info; info != nil {
-				info.EffectiveURL, info.Status, info.Redirects = effectiveURL, status, redirectsFollowed
-				info.ContentType = string(rsp.Header.ContentType())
-			}
-
-			if opts.Resilience.RetryHTTP && attempt < opts.Resilience.Retries && isRetryableHTTPStatus(opts, status) && retryTimeLeft(opts, start) {
-				if d, ok := parseRetryAfter(rsp); ok {
-					nextWait = d
-					haveNextWait = true
-				}
-				continue
-			}
-
-			if opts.Resilience.Location && isRedirectStatus(status) {
-				loc := string(rsp.Header.Peek("Location"))
-				if err := checkRedirectScheme(opts, effectiveURL, loc); err != nil {
-					fasthttp.ReleaseRequest(req)
-					fasthttp.ReleaseResponse(rsp)
-					return nil, nil, err
-				}
-				if newURL, newMethod, newData, ok := handleRedirect(status, effectiveMethod, effectiveData, loc, effectiveURL); ok {
-					// One more hop than --max-redirs is an error, as in curl
-					// (audit finding H6). A 3xx without a usable Location is
-					// the answer.
-					if redirectsFollowed >= opts.Resilience.MaxRedirs {
-						fasthttp.ReleaseRequest(req)
-						fasthttp.ReleaseResponse(rsp)
-						return nil, nil, tooManyRedirects(opts)
-					}
-					redirectsFollowed++
-					effectiveURL = newURL
-					effectiveMethod = newMethod
-					effectiveData = newData
-					continue redirectLoop
-				}
-			}
-
+	for attempt := 0; ; {
+		out, wait, err := state.try(ctx, opts, req, rsp, &h, attempt)
+		if out == answered || (out == retryStatus && !mayRetry(ctx, opts, attempt, start, wait)) {
 			return req, rsp, nil
 		}
-
-		fasthttp.ReleaseRequest(req)
-		fasthttp.ReleaseResponse(rsp)
-		return nil, nil, lastErr
+		switch {
+		case out == redirected:
+			attempt = 0
+			continue
+		case out == failed, !mayRetry(ctx, opts, attempt, start, wait):
+		default:
+			attempt++
+			if err = waitToRetry(ctx, opts, attempt, wait); err == nil {
+				continue
+			}
+		}
+		Release(req, rsp)
+		return nil, nil, err
 	}
+}
+
+// mayRetry reports whether retry number attempt+1 may start after wait:
+// a retry is left, the wait ends inside --retry-max-time, and the wait
+// ends before the deadline of ctx. A wait that cannot be followed by a
+// request does not run, as in curl.
+func mayRetry(ctx context.Context, opts *config.Options, attempt int, start time.Time, wait time.Duration) bool {
+	if attempt >= opts.Resilience.Retries {
+		return false
+	}
+	if limit := opts.Resilience.RetryMaxTime; limit > 0 && time.Since(start)+wait >= limit {
+		return false
+	}
+	if deadline, ok := ctx.Deadline(); ok && time.Now().Add(wait).After(deadline) {
+		return false
+	}
+	return true
+}
+
+// try sends one attempt of hop h. For a retry it returns the wait before
+// it: --retry-delay doubled for each retry, or the Retry-After of the
+// server.
+func (s *fetchState) try(ctx context.Context, opts *config.Options, req *fasthttp.Request, rsp *fasthttp.Response, h *hop, attempt int) (outcome, time.Duration, error) {
+	if err := ctx.Err(); err != nil {
+		return failed, 0, err
+	}
+	req.Reset()
+	rsp.Reset()
+	if opts.Stealth.Drift > 0 {
+		if err := applyDrift(ctx, opts.Stealth.Drift); err != nil {
+			return failed, 0, err
+		}
+	}
+	s.prepareRequest(req, opts, h.url, h.method, h.data, h.previous)
+	wait := backoffWait(opts, attempt+1)
+	if err := s.do(ctx, &s.effectiveOpts, req, rsp); err != nil {
+		if permanent(err) {
+			return failed, 0, err
+		}
+		return retryError, wait, err
+	}
+	if err := s.absorb(opts, rsp, h); err != nil {
+		return failed, 0, err
+	}
+	status := rsp.StatusCode()
+	if opts.Resilience.RetryHTTP && isRetryableHTTPStatus(opts, status) {
+		if d, ok := parseRetryAfter(rsp); ok {
+			wait = d
+		}
+		return retryStatus, wait, nil
+	}
+	if opts.Resilience.Location && isRedirectStatus(status) {
+		return nextHop(opts, rsp, h)
+	}
+	return answered, 0, nil
+}
+
+// absorb takes the cookies of the response, writes its head to
+// --save-headers, and records it for --output-template.
+func (s *fetchState) absorb(opts *config.Options, rsp *fasthttp.Response, h *hop) error {
+	s.jar.AbsorbResponse(h.url, rsp)
+	if out := opts.Output.HeaderOut; out != nil {
+		if _, err := out.Write(rsp.Header.Header()); err != nil {
+			return fmt.Errorf("--save-headers: %w", config.WriteError(err))
+		}
+	}
+	if err := s.jar.Save(); err != nil {
+		return err
+	}
+	if info := opts.Output.Info; info != nil {
+		info.EffectiveURL, info.Status, info.Redirects = h.url, rsp.StatusCode(), h.redirects
+		info.ContentType = string(rsp.Header.ContentType())
+	}
+	return nil
+}
+
+// nextHop moves h to the target of a redirect answer. A 3xx without a
+// usable Location is the answer.
+func nextHop(opts *config.Options, rsp *fasthttp.Response, h *hop) (outcome, time.Duration, error) {
+	loc := string(rsp.Header.Peek("Location"))
+	if err := checkRedirectScheme(opts, h.url, loc); err != nil {
+		return failed, 0, err
+	}
+	newURL, newMethod, newData, ok := handleRedirect(rsp.StatusCode(), h.method, h.data, loc, h.url)
+	if !ok {
+		return answered, 0, nil
+	}
+	// One more hop than --max-redirs is an error, as in curl (audit
+	// finding H6).
+	if h.redirects >= opts.Resilience.MaxRedirs {
+		return failed, 0, tooManyRedirects(opts)
+	}
+	*h = hop{url: newURL, method: newMethod, data: newData, previous: h.url, redirects: h.redirects + 1}
+	return redirected, 0, nil
 }
 
 // Release gives the request and the answer of FetchURL back.

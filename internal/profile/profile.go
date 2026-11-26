@@ -2,7 +2,6 @@ package profile
 
 import (
 	"fmt"
-	"net/url"
 	"regexp"
 	"strings"
 )
@@ -33,7 +32,6 @@ type BrowserProfile struct {
 type HeaderOptions struct {
 	Method         string
 	TargetURL      string
-	RefererMode    string
 	ExplicitUA     string
 	ExplicitLang   string
 	StealthHeaders bool
@@ -185,10 +183,6 @@ func BuildHeaders(p BrowserProfile, opts HeaderOptions) []HeaderKV {
 		{Key: "Connection", Value: "keep-alive"},
 	}
 
-	if ref := buildReferer(opts.RefererMode, opts.TargetURL); ref != "" {
-		headers = append(headers, HeaderKV{Key: "Referer", Value: ref})
-	}
-
 	method := strings.ToUpper(opts.Method)
 	if method == "" {
 		method = "GET"
@@ -223,20 +217,6 @@ func BuildHeaders(p BrowserProfile, opts HeaderOptions) []HeaderKV {
 	}
 
 	return headers
-}
-
-func buildReferer(mode, rawURL string) string {
-	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case "", "none":
-		return ""
-	case "auto":
-		return "https://www.google.com/"
-	default:
-		if _, err := url.ParseRequestURI(mode); err == nil {
-			return mode
-		}
-		return ""
-	}
 }
 
 func firstNonEmpty(values ...string) string {

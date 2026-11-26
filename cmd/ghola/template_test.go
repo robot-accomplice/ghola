@@ -66,7 +66,9 @@ func TestExecute_OutputTemplate(t *testing.T) {
 			}
 		})
 	}
-	code, got := gholaStdout(t, "-q", "--output-template", `%{json}`, srv.URL+"/missing")
+	// -o keeps the 404 body off stdout (stdout keeps the body of a refused
+	// status), so stdout holds only the template.
+	code, got := gholaStdout(t, "-q", "--output-template", `%{json}`, "-o", filepath.Join(dir, "c"), srv.URL+"/missing")
 	var j map[string]any
 	if err := json.Unmarshal([]byte(got), &j); err != nil {
 		t.Fatalf("after a 404: %q is not JSON: %v", got, err)
