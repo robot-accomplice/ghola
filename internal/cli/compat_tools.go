@@ -45,18 +45,12 @@ const curlTable = `
 --request-target               => --request-target %s
 -v --verbose                   => -v
 -R --remote-time               => --output-remote-time
--O --remote-name               => -o ./
 -J --remote-header-name        => --output-name header
 -# --progress-bar              => --progress
 --no-progress-meter            => --no-progress
 -g --globoff                   => --no-url-glob
--o --output                    => -o %s
 -H --header                    => -H %s
 -A --user-agent                => --user-agent %s
--e --referer                   => --referer %s
--d --data --data-ascii --data-binary => -d %s
---data-raw                     => --data-literal %s
---data-urlencode               => --field %s
 -F --form                      => --form %s
 -X --request                   => -m %s
 -u --user                      => -u %s
@@ -90,11 +84,8 @@ const curlTable = `
 --retry-delay                  => --retry-delay %s
 --retry-max-time               => --retry-max-time %s
 --max-redirs                   => --follow-max %s
--T --upload-file               => --upload %s
---json                         => --json %s
 --oauth2-bearer                => --auth-bearer %s
 --url-query                    => --query %s
---variable                     => --variable %s
 -n --netrc                     => --auth-netrc
 --netrc-file                   => --auth-netrc-file %s
 --pinnedpubkey                 => --tls-pin %s
@@ -102,7 +93,7 @@ const curlTable = `
 --tlsv1.2                      => --tls-min 1.2
 --tlsv1.3                      => --tls-min 1.3
 --tls-max                      => --tls-max %s
---ciphers                      => --tls-ciphers %s
+--ciphers --tls13-ciphers      => --tls-ciphers %s
 --crlfile                      => --tls-crl %s
 --cert-status                  => --tls-ocsp
 --cert-type                    => --tls-cert-type %s
@@ -116,6 +107,10 @@ const curlTable = `
 --doh-url                      => --doh %s
 --create-dirs                  => --output-create-dirs
 --max-filesize                 => --max-size %s
+--no-clobber                   => --no-output-overwrite
+--stderr                       => --log %s
+-h --help                      => --help
+-V --version                   => --version
 `
 
 // wget saves under the remote name (ghola download), follows up to 20
@@ -235,16 +230,30 @@ func words(s string) map[string]bool {
 }
 
 var curlSpec = &toolSpec{
-	name:         JobCurl,
-	defaults:     strings.Fields("--no-follow --follow-max 50 --no-fail -r 0 --no-compressed"),
-	valueLetters: "ACDEFHKPQTUXYbcdehmortuwxyz", // curl 8.22.0 --help all
+	name: JobCurl,
+	// curl sends Accept: */* unless -H sets another.
+	defaults: append(strings.Fields("--no-follow --follow-max 50 --no-fail -r 0 --no-compressed -H"), "Accept: */*"),
+	// curl 8.22.0 --help all, without -h: its topic is optional.
+	valueLetters: "ACDEFHKPQTUXYbcdemortuwxyz",
 	flags:        parseToolTable(curlTable),
-	takesValue:   words("-C --continue-at -K --config --url"),
-	special:      curlSpecial,
+	// -N and --buffer tune the output buffer, and -q not first changes
+	// nothing: ghola curl reads no .curlrc.
+	ignored: words("-N --no-buffer --buffer -q --disable"),
+	takesValue: words("-C --continue-at -K --config --url --variable -d --data --data-ascii --data-binary --data-raw " +
+		"--data-urlencode --json -o --output -e --referer -T --upload-file --output-dir --parallel-max --ech"),
+	special: curlSpecial,
+	finish:  curlFinish,
 }
 
 func curlSpecial(t *translation, name, value string, _ bool) (bool, error) {
+	if kind, ok := curlDataKinds[name]; ok {
+		return true, t.addData(kind, value)
+	}
 	switch name {
+	case "-G", "--get":
+		t.body.get = true
+	case "--variable":
+		return true, t.variable(value)
 	case "-s", "--silent":
 		t.silent = true
 		t.out = append(t.out, "-q")
@@ -258,10 +267,12 @@ func curlSpecial(t *translation, name, value string, _ bool) (bool, error) {
 		}
 	case "-K", "--config":
 		return true, t.config(value)
+	case "--ech":
+		return true, curlECH(t, value)
 	case "--url":
 		t.tail = append(t.tail, value)
 	default:
-		return false, nil
+		return curlOutputOption(t, name, value)
 	}
 	return true, nil
 }

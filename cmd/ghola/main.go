@@ -321,11 +321,19 @@ func locked(w io.Writer) io.Writer {
 // cannot be read exits 26.
 func readBodySources(opts *config.Options) error {
 	if opts.Transfer != "" {
-		b, err := os.ReadFile(opts.Transfer)
+		// "-" is stdin, as curl -T - reads it. The file is the body as it
+		// is, so a file that starts with @ names no other file.
+		var b []byte
+		var err error
+		if opts.Transfer == "-" {
+			b, err = io.ReadAll(os.Stdin)
+		} else {
+			b, err = os.ReadFile(opts.Transfer)
+		}
 		if err != nil {
 			return fmt.Errorf("read upload file: %w", err)
 		}
-		opts.Data = string(b)
+		opts.Data, opts.DataLiteral = string(b), true
 	}
 	if err := readDataArg(opts); err != nil {
 		return err

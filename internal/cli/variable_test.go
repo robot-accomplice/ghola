@@ -78,7 +78,7 @@ func TestFromCurl_Expand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v: %v", cp.Args, err)
 	}
-	if c.Last("data") != "count=5" {
-		t.Errorf("data %q from %v", c.Last("data"), cp.Args)
+	if c.Last("data-literal") != "count=5" {
+		t.Errorf("data %q from %v", c.Last("data-literal"), cp.Args)
 	}
 }
