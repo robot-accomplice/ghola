@@ -179,7 +179,6 @@ const aria2Table = `
 -q --quiet                     => -q
 -c --continue                  => -c
 -R --remote-time               => --output-remote-time
-
 --header                       => -H %s
 -U --user-agent                => --user-agent %s
 --referer                      => --referer %s
